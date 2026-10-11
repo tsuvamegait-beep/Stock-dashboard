@@ -669,10 +669,11 @@ async function syncSheet(silent) {
     const res = await fetch(url, {cache: 'no-store'}); if (!res.ok) throw new Error('http ' + res.status);
     const rows = parseCsv(await res.text());
     let hi = rows.findIndex(r => r.some(c => /^(현재가|price)$/i.test(String(c).trim())));
-    let pc = 1, codeCols = [0], nameCols = [];
+    let pc = 1, lc = -1, codeCols = [0], nameCols = [];
     if (hi >= 0) {
       const H = rows[hi].map(c => String(c).trim().toLowerCase());
       pc = H.findIndex(c => c === '현재가' || c === 'price');
+      lc = H.findIndex(c => ['현지가', '현지통화가', '현지가격', 'local', 'localprice'].includes(c));
       codeCols = []; H.forEach((c, i2) => { if (['종목코드', '티커', '코드', 'ticker', 'symbol'].includes(c)) codeCols.push(i2); });
       H.forEach((c, i2) => { if (['종목명', '이름', 'name'].includes(c)) nameCols.push(i2); });
       if (!codeCols.length && !nameCols.length) codeCols = [0];
@@ -682,21 +683,22 @@ async function syncSheet(silent) {
     const held = {}; Object.keys(state.accounts).forEach(a => replay(state.accounts[a].data, {}).forEach(h => { held[keyOf(h.name)] = h; }));
     Object.keys(held).forEach(k => nameList.push([normName(held[k].name), k]));
     const findByName = nm => { const n = normName(nm); if (!n) return null; let hit = nameList.find(x => x[0] === n); if (!hit) hit = nameList.find(x => n.length >= 2 && (x[0].startsWith(n) || n.startsWith(x[0]))); return hit ? hit[1] : null; };
-    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0; const writes = [], done = {};
+    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0, nolocal = 0; const writes = [], done = {};
     rows.slice(hi + 1).forEach(r => {
-      const v = numOf(r[pc]); if (!(v > 0)) return;
+      let v = numOf(r[pc]); const lv = lc >= 0 ? numOf(r[lc]) : NaN; if (!(v > 0) && !(lv > 0)) return;
       const ids = codeCols.map(c => String(r[c] || '').trim()).filter(Boolean), names = nameCols.map(c => String(r[c] || '').trim()).filter(Boolean);
       const fxId = ids.concat(names).map(x => x.toUpperCase().replace(/[\/\s]/g, '')).find(x => x === 'USDKRW' || x === 'JPYKRW');
-      if (fxId) { if (!done[fxId]) { done[fxId] = 1; writes.push(['fx', fxId, {ccy: fxId.slice(0, 3), rate: v, asof: now, src: 'sheet'}]); nf++; } return; }
+      if (fxId) { if (lv > 0) v = lv; if (!done[fxId]) { done[fxId] = 1; writes.push(['fx', fxId, {ccy: fxId.slice(0, 3), rate: v, asof: now, src: 'sheet'}]); nf++; } return; }
       let k = null; for (const id of ids) { k = byTicker[id.toUpperCase()]; if (k) break; }
       if (!k) for (const nm of names.concat(ids)) { k = findByName(nm); if (k) break; }
       if (!k || done[k]) return; done[k] = 1;
-      const h = held[k], s = state.symbols[k] || {}, old = state.prices[k];
+      const h = held[k], s = state.symbols[k] || {}, old = state.prices[k], ccy = (h && h.ccy) || s.ccy || 'KRW';
+      if (ccy === 'KRW') { if (!(v > 0)) return; } else { if (lv > 0) v = lv; else { nolocal++; return; } }
       if (old && old.price > 0 && (v / old.price > 3 || v / old.price < 1 / 3)) { skipped++; return; }
-      writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy: (h && h.ccy) || s.ccy || 'KRW', price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || ''}]); np++;
+      writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy, price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || ''}]); np++;
     });
     for (const w of writes) await store.set(w[0], w[1], w[2]);
-    state.sheetMsg = '시트에서 시세 ' + np + '건, 환율 ' + nf + '건을 불러왔습니다.' + (skipped ? ' 이전 값과 3배 이상 차이 나는 ' + skipped + '건은 건너뛰었습니다(통화를 확인하세요).' : '');
+    state.sheetMsg = '시트에서 시세 ' + np + '건, 환율 ' + nf + '건을 불러왔습니다.' + (nolocal ? ' 해외 종목 ' + nolocal + '건은 현지통화 가격 열("현지가")이 없어 건너뛰었습니다.' : '') + (skipped ? ' 이전 값과 3배 이상 차이 나는 ' + skipped + '건은 건너뛰었습니다(통화를 확인하세요).' : '');
     if (!silent) toast(state.sheetMsg);
   } catch (e) {
     state.sheetMsg = '시트를 불러오지 못했습니다. 주소와 "웹에 게시" 설정을 확인하세요.';
@@ -714,7 +716,7 @@ function renderPrices(C) {
 
   } else {
     const sh = mk('div', {class: 'card'}, out); mk('h2', {}, sh, '구글 시트에서 시세 불러오기');
-    mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, sh, '시트 첫 행에 ‘종목코드’, ‘종목명’, ‘현재가’ 제목을 두고(환율은 USDKRW, JPYKRW 행), 시트를 CSV로 "웹에 게시"한 주소를 아래에 붙여 넣으세요. 현재가는 그 종목의 거래 통화 기준이어야 합니다(미국 종목은 달러, 원화 환산 값 아님). 페이지를 열 때마다 자동으로 불러옵니다.');
+    mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, sh, '시트 첫 행에 ‘종목코드’, ‘종목명’, ‘현재가’ 제목을 두고(환율은 USDKRW, JPYKRW 행), 시트를 CSV로 "웹에 게시"한 주소를 아래에 붙여 넣으세요. 국내 종목은 "현재가"(원), 해외 종목은 현지통화 가격을 "현지가" 열에 적어 주세요(원화 환산 값은 쓰지 않습니다). 페이지를 열 때마다 자동으로 불러옵니다.');
     const sr = mk('div', {class: 'row'}, sh);
     const si = mk('input', {type: 'text', placeholder: 'https://docs.google.com/spreadsheets/d/e/.../pub?output=csv', value: getSheetUrl(), 'aria-label': '시세 시트 주소', style: 'flex:1;min-width:0'}, sr);
     const sb = mk('button', {type: 'button'}, sr, '저장하고 불러오기');

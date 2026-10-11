@@ -825,7 +825,7 @@ function render() {
   if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts') && ae.type === 'text') { pendingAfterBlur = true; return; }
   const C = compute();
   $('banner').hidden = !(state.ready && !state.persist) && state.writable;
-  if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '저장소에 연결되지 않아 이 화면을 닫으면 올린 데이터가 사라집니다. Claude에서 로그인한 상태로 페이지를 열어 주세요.'; }
+  if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');

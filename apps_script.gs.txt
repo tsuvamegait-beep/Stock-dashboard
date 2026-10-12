@@ -1,0 +1,42 @@
+/**
+ * 주식 대시보드 동기화용 Apps Script
+ * 1) 아래 SECRET_KEY를 나만 아는 긴 문자열로 바꾸세요.
+ * 2) 배포 > 새 배포 > 유형: 웹 앱 > 실행 계정: 나 > 액세스 권한: 모든 사용자
+ */
+const SECRET_KEY = '여기에-나만-아는-긴-비밀번호를-적으세요';
+const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
+
+function out_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+function load_() {
+  const p = PropertiesService.getScriptProperties();
+  const n = +p.getProperty('n') || 0;
+  if (!n) return {updatedAt: 0, data: null};
+  let s = '';
+  for (let i = 0; i < n; i++) s += p.getProperty('c' + i) || '';
+  return JSON.parse(s);
+}
+function save_(obj) {
+  const p = PropertiesService.getScriptProperties();
+  const s = JSON.stringify(obj), n = Math.ceil(s.length / CHUNK), old = +p.getProperty('n') || 0;
+  const all = {};
+  for (let i = 0; i < n; i++) all['c' + i] = s.substr(i * CHUNK, CHUNK);
+  all.n = String(n);
+  p.setProperties(all);
+  for (let i = n; i < old; i++) p.deleteProperty('c' + i);
+}
+function doGet(e) {
+  if (!e || !e.parameter || e.parameter.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
+  const d = load_();
+  return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
+}
+function doPost(e) {
+  let body;
+  try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ok: false, error: '요청 형식 오류'}); }
+  if (body.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
+  const cur = load_();
+  if (body.updatedAt < cur.updatedAt) return out_({ok: false, error: '서버에 더 최신 데이터가 있습니다. 새로고침 후 다시 시도하세요'});
+  save_({updatedAt: body.updatedAt, data: body.data});
+  return out_({ok: true, updatedAt: body.updatedAt});
+}

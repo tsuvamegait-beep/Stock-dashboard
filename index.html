@@ -416,9 +416,9 @@ const store = {
     }
   },
   saveLocal() { try { const o = {}; COLS.forEach(c => { o[c] = state[c]; }); localStorage.setItem('portfolio-data-v1', JSON.stringify(o)); } catch (e) { toast('이 브라우저에 저장하지 못했습니다.'); } },
-  async write(fn, memFn) {
+  async write(fn, memFn, col) {
     try {
-      if (this.db) await fn(this.db); else { memFn(); this.saveLocal(); scheduleRender(); }
+      if (this.db) await fn(this.db); else { memFn(); if (SYNC_COLS.indexOf(col) >= 0) { touchLocal(); schedulePush(); } this.saveLocal(); scheduleRender(); }
       return true;
     } catch (e) {
       const code = e && e.code;
@@ -428,9 +428,9 @@ const store = {
       return false;
     }
   },
-  set(col, id, data) { return this.write(db => db.doc(col + '/' + id).set(data), () => { state[col][id] = data; }); },
-  update(col, id, patch) { return this.write(db => db.doc(col + '/' + id).update(patch), () => { state[col][id] = Object.assign({}, state[col][id], patch); }); },
-  del(col, id) { return this.write(db => db.doc(col + '/' + id).delete(), () => { delete state[col][id]; }); }
+  set(col, id, data) { return this.write(db => db.doc(col + '/' + id).set(data), () => { state[col][id] = data; }, col); },
+  update(col, id, patch) { return this.write(db => db.doc(col + '/' + id).update(patch), () => { state[col][id] = Object.assign({}, state[col][id], patch); }, col); },
+  del(col, id) { return this.write(db => db.doc(col + '/' + id).delete(), () => { delete state[col][id]; }, col); }
 };
 
 /* ================= 계산 ================= */
@@ -773,6 +773,53 @@ async function handleFile(file) {
   } catch (e) { toast(e && e.message ? e.message : '파일을 읽지 못했습니다.'); }
 }
 
+/* ===== 기기 간 동기화 (Google Apps Script) ===== */
+const SYNC_LS = 'portfolio-sync', TS_LS = 'portfolio-data-ts', SYNC_COLS = ['accounts', 'basis', 'symbols'];
+function getSync() { try { const o = JSON.parse(localStorage.getItem(SYNC_LS) || 'null'); return o && o.url && o.key ? o : null; } catch (e) { return null; } }
+function localTs() { try { return +localStorage.getItem(TS_LS) || 0; } catch (e) { return 0; } }
+function touchLocal() { try { localStorage.setItem(TS_LS, String(Date.now())); } catch (e) {} }
+let pushT = null;
+function schedulePush() { if (!getSync() || store.db) return; clearTimeout(pushT); pushT = setTimeout(syncPush, 1500); }
+const hasLocal = () => Object.keys(state.accounts).length > 0 || Object.keys(state.basis).length > 0;
+async function syncPush() {
+  const cfg = getSync(); if (!cfg) return;
+  try {
+    const data = {}; SYNC_COLS.forEach(c => { data[c] = state[c]; });
+    let ts = localTs(); if (!ts) { ts = Date.now(); try { localStorage.setItem(TS_LS, String(ts)); } catch (e) {} }
+    const res = await fetch(cfg.url, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: cfg.key, updatedAt: ts, data})});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '저장 실패');
+    state.syncMsg = '동기화됨 · ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { state.syncMsg = '동기화 실패: ' + (e && e.message ? e.message : e); }
+  scheduleRender();
+}
+async function syncPull() {
+  const cfg = getSync(); if (!cfg) return;
+  try {
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key), {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    if (j.data && j.updatedAt > localTs()) {
+      SYNC_COLS.forEach(c => { state[c] = j.data[c] || {}; });
+      try { localStorage.setItem(TS_LS, String(j.updatedAt)); } catch (e) {}
+      store.saveLocal(); state.syncMsg = '서버에서 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
+    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); return; }
+    else state.syncMsg = '최신 상태입니다 · ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { state.syncMsg = '동기화 실패: ' + (e && e.message ? e.message : e); }
+  scheduleRender();
+}
+function renderSyncCard(out) {
+  if (store.db) return;
+  const cfg = getSync(), c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '기기 간 동기화');
+  mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, c, '내 구글 계정의 Apps Script를 저장소로 써서 PC와 모바일이 같은 데이터를 보게 합니다. 이 기기에서도 주소와 비밀번호를 한 번 입력해야 합니다. 주소와 비밀번호는 이 브라우저에만 저장됩니다.');
+  const g = mk('div', {class: 'fxg'}, c);
+  const l1 = mk('label', {}, g, '웹 앱 주소'), i1 = mk('input', {type: 'text', placeholder: 'https://script.google.com/macros/s/.../exec', value: cfg ? cfg.url : '', 'aria-label': '웹 앱 주소'}, l1);
+  const l2 = mk('label', {}, g, '비밀번호'), i2 = mk('input', {type: 'password', placeholder: '스크립트에 적은 비밀번호', value: cfg ? cfg.key : '', 'aria-label': '비밀번호', autocomplete: 'off'}, l2);
+  const r = mk('div', {class: 'row', style: 'margin-top:8px'}, c);
+  const b1 = mk('button', {type: 'button', class: 'primary'}, r, '저장하고 동기화');
+  b1.addEventListener('click', () => { const url = i1.value.trim(), key = i2.value; if (!/^https:\/\//.test(url) || !key) { toast('주소와 비밀번호를 입력하세요.'); return; } try { localStorage.setItem(SYNC_LS, JSON.stringify({url, key})); } catch (e) {} state.syncMsg = '연결 중…'; render(); syncPull(); });
+  if (cfg) { const b2 = mk('button', {type: 'button'}, r, '지금 서버로 저장'); b2.addEventListener('click', () => { touchLocal(); syncPush(); }); const b3 = mk('button', {type: 'button'}, r, '연결 해제'); b3.addEventListener('click', () => { try { localStorage.removeItem(SYNC_LS); } catch (e) {} state.syncMsg = ''; render(); }); }
+  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, c, state.syncMsg || (cfg ? '연결됨' : '연결 안 됨'));
+}
+
 function parseOpeningRows(rows) {
   let hi = -1, c = {};
   for (let i = 0; i < Math.min(15, rows.length); i++) {
@@ -875,6 +922,7 @@ function renderOpening(C) {
 }
 function renderAccounts(C) {
   const out = $('res-accounts'); out.replaceChildren();
+  renderSyncCard(out);
   const up = mk('div', {class: 'card'}, out); mk('h2', {}, up, '거래내역 올리기');
   mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, up, '삼성증권 종합 거래내역 엑셀(.xlsx)을 선택합니다. 같은 계좌의 새 파일은 기존 계좌를 갱신하면 됩니다. 파일은 이 브라우저에서만 읽고, 계산 결과만 저장됩니다.');
   const ub = mk('button', {type: 'button', class: 'primary'}, up, '엑셀 파일 선택'); ub.addEventListener('click', openUpload);
@@ -952,7 +1000,7 @@ function syncSegs() {
   $('file').addEventListener('change', e => handleFile(e.target.files[0]));
   $('file2').addEventListener('change', e => handleOpening(e.target.files[0]));
   syncTabs(); syncSegs(); render();
-  store.init().then(() => { if (!store.db) setTimeout(() => syncSheet(true), 50); });
+  store.init().then(async () => { if (!store.db) { await syncPull(); setTimeout(() => syncSheet(true), 50); } });
   let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { if (state.ready) render(); }, 120); }).observe(document.body);
 })();
 </script>

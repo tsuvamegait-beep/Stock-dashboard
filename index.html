@@ -510,6 +510,7 @@ function hbars(parent, items, diverge) {
     hover(r, it.label, it.tip);
   });
 }
+const upDn = v => (v > 0 ? '▲ ' : v < 0 ? '▼ ' : '') + money('KRW', Math.abs(v));
 function tile(parent, l, v, n) { const t = mk('div', {class: 'tile'}, parent); mk('div', {class: 'l'}, t, l); mk('div', {class: 'v', title: v}, t, v); if (n) mk('div', {class: 'n'}, t, n); }
 
 function renderHoldings(C) {
@@ -567,6 +568,13 @@ function renderHoldings(C) {
   // 표
   const tcard = mk('div', {class: 'card'}, out); const th = mk('div', {class: 'sec-h'}, tcard); mk('h2', {}, th, '보유 종목');
   const share = T.val;
+  if (rows.length) {
+    const hs = mk('div', {class: 'tiles', style: 'margin:10px 0 14px'}, tcard);
+    tile(hs, '총 평가금액', money('KRW', T.val), '시세·환율이 있는 종목 기준');
+    tile(hs, '투자원금', T.costK > 0 ? money('KRW', T.costK) : '—', '평가손익을 계산한 종목의 취득원가');
+    tile(hs, '총 평가손익', T.costK > 0 ? upDn(T.pnlK) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : (T.noPrice || T.noFx ? '시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외' : '환율 효과 제외'));
+    tile(hs, '수익률', pct(T.pct), '취득원가 대비');
+  }
   if (!rows.length) mk('p', {class: 'sub'}, tcard, '조건에 맞는 보유 종목이 없습니다.');
   else if (ui.view === 'all') holdTable(tcard, mergeRows(rows), share);
   else {
@@ -588,7 +596,20 @@ function renderHoldings(C) {
   // 올해 실현손익과 배당
   const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.cls, ui.q));
   if (all.length) {
-    const d = mk('details', {class: 'card'}, out); if (ui.detOpen) d.open = true; d.addEventListener('toggle', () => { ui.detOpen = d.open; }); mk('summary', {style: 'cursor:pointer;font-weight:500'}, d, '올해 실현손익과 배당 (정리한 종목 포함)');
+    let rKRW = 0, dKRW = 0, taxKRW = 0, rMiss = 0, dMiss = 0;
+    all.forEach(h => {
+      const f = fxRate(h.ccy);
+      if (h.sellQty) { if (h.realized == null) rMiss++; else if (f == null) rMiss++; else rKRW += h.realized * f; }
+      if (h.div) { if (f == null) dMiss++; else dKRW += h.div * f; }
+      taxKRW += h.divTaxKRW || 0;
+    });
+    const rTotal = rKRW + dKRW - taxKRW;
+    const d = mk('details', {class: 'card'}, out); if (ui.detOpen) d.open = true; d.addEventListener('toggle', () => { ui.detOpen = d.open; }); mk('summary', {style: 'cursor:pointer;font-weight:500'}, d, '올해 실현손익과 배당 (정리한 종목 포함) · 합계 ' + (rTotal > 0 ? '+' : rTotal < 0 ? '−' : '') + money('KRW', Math.abs(rTotal)));
+    const rs = mk('div', {class: 'tiles', style: 'margin:10px 0 4px'}, d);
+    tile(rs, '실현손익 합계', (rKRW > 0 ? '+' : rKRW < 0 ? '−' : '') + money('KRW', Math.abs(rKRW)), rMiss ? '취득가·환율을 몰라 제외한 ' + rMiss + '건' : '원화 환산, 환율 효과 제외');
+    tile(rs, '배당 합계(세전)', money('KRW', dKRW), dMiss ? '환율 없는 ' + dMiss + '건 제외' : '원화 환산');
+    tile(rs, '배당 세금', taxKRW ? '−' + money('KRW', taxKRW) : '—', '원천징수 등');
+    tile(rs, '총 손익(실현+배당-세금)', (rTotal > 0 ? '▲ ' : rTotal < 0 ? '▼ ' : '') + money('KRW', Math.abs(rTotal)), '아직 팔지 않은 평가손익은 제외');
     mk('p', {class: 'sub', style: 'margin:8px 0'}, d, '이동평균법입니다. 연초부터 갖고 있던 종목은 취득가를 모르면 계산하지 않습니다. 연초 잔고 탭에서 취득단가를 입력하면 채워집니다.');
     const tw = mk('div', {class: 'tw'}, d), t = mk('table', {}, tw), hh = mk('tr', {}, mk('thead', {}, t));
     ['종목', '계좌', '구분', '매수금액', '매도금액', '실현손익', '배당(총액)'].forEach((x, i) => mk('th', i < 3 ? {class: 'l'} : {}, hh, x));

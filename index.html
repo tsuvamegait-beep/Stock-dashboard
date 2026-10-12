@@ -75,6 +75,12 @@ input::placeholder{color:var(--muted)}
 .bar{display:flex;gap:2px;height:14px}
 .seg-i{border-radius:3px;min-width:2px}
 .seg-i:hover,.seg-i:focus-visible{filter:brightness(1.12)}
+.donut-w{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.donut-lg{flex:1;min-width:220px;max-width:460px;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.donut-lg .r{display:flex;align-items:center;gap:8px;min-width:0}
+.donut-lg .r .nm{font-weight:500}
+.donut-lg .r .am{margin-left:auto;color:var(--ink2);white-space:nowrap}
+.donut-lg .r .st{display:block;font-size:11px;color:var(--muted);white-space:normal}
 .legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:12px;color:var(--ink2)}
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .sw{width:10px;height:10px;border-radius:2px;display:inline-block;flex:none}
@@ -367,6 +373,10 @@ function ago(iso) {
 }
 const stale = iso => { const t = Date.parse(iso); return !isFinite(t) || (Date.now() - t) > 4 * 86400000; };
 const CCY_ORDER = ['KRW', 'USD', 'JPY'];
+const SECT_LS = 'portfolio-sectors';
+function loadSectors() { try { state.sectors = JSON.parse(localStorage.getItem(SECT_LS) || '{}') || {}; } catch (e) { state.sectors = {}; } }
+function saveSectors() { try { localStorage.setItem(SECT_LS, JSON.stringify(state.sectors)); } catch (e) {} }
+const sectorOf = h => ((state.sectors || {})[keyOf(h.name)] || {}).v || '미분류';
 const catColor = i => 'var(--s' + ((i % 8) + 1) + ')';
 let toastT;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 3600); }
@@ -511,6 +521,33 @@ function hbars(parent, items, diverge) {
   });
 }
 const upDn = v => (v > 0 ? '▲ ' : v < 0 ? '▼ ' : '') + money('KRW', Math.abs(v));
+function donut(parent, items, centerLabel, centerValue) {
+  const NS = 'http://www.w3.org/2000/svg', tot = items.reduce((a, x) => a + x.value, 0), R = 96, r = 58, cx = 100, cy = 100;
+  const wrap = mk('div', {class: 'donut-w'}, parent);
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 200 200'); svg.setAttribute('width', '200'); svg.setAttribute('height', '200'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', '분류별 투자 비중 도넛 차트'); svg.style.flex = '0 0 auto'; wrap.appendChild(svg);
+  const pt = (rad, a) => (cx + rad * Math.cos(a)).toFixed(2) + ',' + (cy + rad * Math.sin(a)).toFixed(2);
+  let ang = -Math.PI / 2;
+  items.forEach(it => {
+    const frac = it.value / tot, a2 = ang + frac * Math.PI * 2; let el;
+    if (frac > 0.9999) { el = document.createElementNS(NS, 'circle'); el.setAttribute('cx', cx); el.setAttribute('cy', cy); el.setAttribute('r', (R + r) / 2); el.setAttribute('fill', 'none'); el.setAttribute('stroke-width', R - r); el.setAttribute('stroke', it.color); }
+    else {
+      const big = frac > 0.5 ? 1 : 0; el = document.createElementNS(NS, 'path');
+      el.setAttribute('d', 'M' + pt(R, ang) + ' A' + R + ',' + R + ' 0 ' + big + ' 1 ' + pt(R, a2) + ' L' + pt(r, a2) + ' A' + r + ',' + r + ' 0 ' + big + ' 0 ' + pt(r, ang) + ' Z');
+      el.setAttribute('fill', it.color); el.setAttribute('stroke', 'var(--surface)'); el.setAttribute('stroke-width', '2');
+    }
+    el.setAttribute('tabindex', '0'); el.setAttribute('role', 'img'); el.setAttribute('aria-label', it.label + ' ' + (frac * 100).toFixed(1) + '%');
+    svg.appendChild(el); hover(el, it.label, [{label: '평가금액', value: money('KRW', it.value), color: it.color}, {label: '비중', value: (frac * 100).toFixed(1) + '%'}].concat(it.sub ? [{label: '종목', value: it.sub}] : []));
+    ang = a2;
+  });
+  const t1 = document.createElementNS(NS, 'text'); t1.setAttribute('x', cx); t1.setAttribute('y', cy - 6); t1.setAttribute('text-anchor', 'middle'); t1.setAttribute('font-size', '11'); t1.setAttribute('fill', 'var(--muted)'); t1.textContent = centerLabel; svg.appendChild(t1);
+  const t2 = document.createElementNS(NS, 'text'); t2.setAttribute('x', cx); t2.setAttribute('y', cy + 14); t2.setAttribute('text-anchor', 'middle'); t2.setAttribute('font-size', '14'); t2.setAttribute('font-weight', '700'); t2.setAttribute('fill', 'var(--ink)'); t2.textContent = centerValue; svg.appendChild(t2);
+  const lg = mk('div', {class: 'donut-lg'}, wrap);
+  items.forEach(it => {
+    const rw = mk('div', {class: 'r'}, lg), sw = mk('i', {class: 'sw'}, rw); sw.style.background = it.color;
+    const nm = mk('span', {class: 'nm'}, rw, it.label + ' ' + (it.value / tot * 100).toFixed(1) + '%'); if (it.sub) mk('span', {class: 'st'}, nm, it.sub);
+    mk('span', {class: 'am'}, rw, money('KRW', it.value));
+  });
+}
 function tile(parent, l, v, n) { const t = mk('div', {class: 'tile'}, parent); mk('div', {class: 'l'}, t, l); mk('div', {class: 'v', title: v}, t, v); if (n) mk('div', {class: 'n'}, t, n); }
 
 function renderHoldings(C) {
@@ -546,6 +583,20 @@ function renderHoldings(C) {
     const names = C.accts.map(a => a.name);
     strip(comp, '계좌', Object.keys(byAcct).map(k => ({label: k, value: byAcct[k], color: catColor(Math.max(0, names.indexOf(k)))})));
   } else mk('p', {class: 'sub'}, comp, '시세와 환율이 있어야 비중을 계산할 수 있습니다.');
+
+  // 분류별 투자현황
+  const sc = mk('div', {class: 'card'}, out); mk('h2', {}, sc, '분류별 투자현황');
+  mk('p', {class: 'sub', style: 'margin:2px 0 12px'}, sc, '시세 시트의 "분류" 열(또는 시세·환율 탭에서 입력한 분류) 기준, 주식 평가액(원화 환산)입니다.');
+  const bySec = {};
+  rows.forEach(h => { if (h.valueKRW == null) return; const s = sectorOf(h); (bySec[s] = bySec[s] || {v: 0, n: []}); bySec[s].v += h.valueKRW; if (bySec[s].n.indexOf(h.name) < 0) bySec[s].n.push(h.name); });
+  const secKeys = Object.keys(bySec).sort((a, b) => bySec[b].v - bySec[a].v);
+  if (!secKeys.length) mk('p', {class: 'sub'}, sc, '시세와 환율이 있어야 분류별 현황을 계산할 수 있습니다.');
+  else {
+    const sitems = secKeys.slice(0, 8).map((k, i) => ({label: k, value: bySec[k].v, color: k === '미분류' ? 'var(--muted)' : catColor(i), sub: bySec[k].n.join(', ')}));
+    if (secKeys.length > 8) { let ov = 0, on = []; secKeys.slice(8).forEach(k => { ov += bySec[k].v; on = on.concat(bySec[k].n); }); sitems.push({label: '기타', value: ov, color: 'var(--axis)', sub: on.join(', ')}); }
+    donut(sc, sitems, '주식 평가액', money('KRW', T.val));
+    if (bySec['미분류']) mk('p', {class: 'sub', style: 'margin:10px 0 0'}, sc, '분류가 없는 종목은 "미분류"로 묶었습니다. 시세 시트에 분류를 적거나 시세·환율 탭에서 입력하세요.');
+  }
 
   // 종목 차트
   const merged = mergeRows(rows).filter(h => h.valueKRW != null);
@@ -699,10 +750,11 @@ async function syncSheet(silent) {
     const res = await fetch(url, {cache: 'no-store'}); if (!res.ok) throw new Error('http ' + res.status);
     const rows = parseCsv(await res.text());
     let hi = rows.findIndex(r => r.some(c => /^(현재가|price)$/i.test(String(c).trim())));
-    let pc = 1, lc = -1, codeCols = [0], nameCols = [];
+    let pc = 1, lc = -1, sc = -1, codeCols = [0], nameCols = [];
     if (hi >= 0) {
       const H = rows[hi].map(c => String(c).trim().toLowerCase());
       pc = H.findIndex(c => c === '현재가' || c === 'price');
+      sc = H.findIndex(c => ['분류', '섹터', 'sector', 'category'].includes(c));
       lc = H.findIndex(c => ['현지가', '현지통화가', '현지가격', 'local', 'localprice'].includes(c));
       codeCols = []; H.forEach((c, i2) => { if (['종목코드', '티커', '코드', 'ticker', 'symbol'].includes(c)) codeCols.push(i2); });
       H.forEach((c, i2) => { if (['종목명', '이름', 'name'].includes(c)) nameCols.push(i2); });
@@ -713,7 +765,7 @@ async function syncSheet(silent) {
     const held = {}; Object.keys(state.accounts).forEach(a => replay(state.accounts[a].data, {}).forEach(h => { held[keyOf(h.name)] = h; }));
     Object.keys(held).forEach(k => nameList.push([normName(held[k].name), k]));
     const findByName = nm => { const n = normName(nm); if (!n) return null; let hit = nameList.find(x => x[0] === n); if (!hit) hit = nameList.find(x => n.length >= 2 && (x[0].startsWith(n) || n.startsWith(x[0]))); return hit ? hit[1] : null; };
-    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0, nolocal = 0; const writes = [], done = {};
+    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0, nolocal = 0, secChanged = false; const writes = [], done = {};
     rows.slice(hi + 1).forEach(r => {
       let v = numOf(r[pc]); const lv = lc >= 0 ? numOf(r[lc]) : NaN; if (!(v > 0) && !(lv > 0)) return;
       const ids = codeCols.map(c => String(r[c] || '').trim()).filter(Boolean), names = nameCols.map(c => String(r[c] || '').trim()).filter(Boolean);
@@ -722,11 +774,13 @@ async function syncSheet(silent) {
       let k = null; for (const id of ids) { k = byTicker[id.toUpperCase()]; if (k) break; }
       if (!k) for (const nm of names.concat(ids)) { k = findByName(nm); if (k) break; }
       if (!k || done[k]) return; done[k] = 1;
+      if (sc >= 0) { const sv = String(r[sc] || '').trim(), cs = (state.sectors || {})[k]; if (sv && !(cs && cs.src === 'manual') && !(cs && cs.v === sv)) { state.sectors[k] = {v: sv, src: 'sheet'}; secChanged = true; } }
       const h = held[k], s = state.symbols[k] || {}, old = state.prices[k], ccy = (h && h.ccy) || s.ccy || 'KRW';
       if (ccy === 'KRW') { if (!(v > 0)) return; } else { if (lv > 0) v = lv; else { nolocal++; return; } }
       if (old && old.price > 0 && (v / old.price > 3 || v / old.price < 1 / 3)) { skipped++; return; }
       writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy, price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || ''}]); np++;
     });
+    if (secChanged) saveSectors();
     for (const w of writes) await store.set(w[0], w[1], w[2]);
     state.sheetMsg = '시트에서 시세 ' + np + '건, 환율 ' + nf + '건을 불러왔습니다.' + (nolocal ? ' 해외 종목 ' + nolocal + '건은 현지통화 가격 열("현지가")이 없어 건너뛰었습니다.' : '') + (skipped ? ' 이전 값과 3배 이상 차이 나는 ' + skipped + '건은 건너뛰었습니다(통화를 확인하세요).' : '');
     if (!silent) toast(state.sheetMsg);
@@ -767,13 +821,15 @@ function renderPrices(C) {
   const m = mergeRows(C.rows);
   if (!m.length) { mk('p', {class: 'sub'}, pc, '보유 종목이 없습니다.'); return; }
   const tw = mk('div', {class: 'tw'}, pc), t = mk('table', {}, tw), hh = mk('tr', {}, mk('thead', {}, t));
-  [['종목', 1], ['구분', 1], ['티커', 1], ['현재가'], ['기준 시각', 1], ['출처', 1]].forEach(([x, l]) => mk('th', l ? {class: 'l'} : {}, hh, x));
+  [['종목', 1], ['구분', 1], ['티커', 1], ['분류', 1], ['현재가'], ['기준 시각', 1], ['출처', 1]].forEach(([x, l]) => mk('th', l ? {class: 'l'} : {}, hh, x));
   const tb = mk('tbody', {}, t);
   m.sort((a, b) => a.name < b.name ? -1 : 1).forEach(h => {
     const k = keyOf(h.name), tr = mk('tr', {}, tb), sym = state.symbols[k], pi = state.prices[k];
     mk('td', {class: 'l'}, tr, h.name); mk('td', {class: 'l'}, tr, (h.mk === 'KR' ? '국내' : '해외') + ' · ' + h.ccy);
     const tk = mk('td', {class: 'l'}, tr), ti = mk('input', {type: 'text', class: 'tk', placeholder: h.mk === 'KR' ? '005930' : 'AAPL', value: sym ? sym.ticker || '' : '', 'aria-label': h.name + ' 티커'}, tk);
     ti.addEventListener('change', async () => { const v = ti.value.trim(); if (!v) { await store.del('symbols', k); return; } await store.set('symbols', k, {name: h.name, mk: h.mk, ccy: h.ccy, ticker: v}); });
+    const sd = mk('td', {class: 'l'}, tr), scur = (state.sectors || {})[k], si = mk('input', {type: 'text', class: 'tk', placeholder: '예: Tec', value: scur ? scur.v : '', 'aria-label': h.name + ' 분류'}, sd);
+    si.addEventListener('change', () => { const v = si.value.trim(); if (!v) delete state.sectors[k]; else state.sectors[k] = {v, src: 'manual'}; saveSectors(); render(); });
     const pt = mk('td', {}, tr), pi2 = mk('input', {type: 'text', inputmode: 'decimal', placeholder: h.ccy, value: pi && +pi.price > 0 ? String(pi.price) : '', 'aria-label': h.name + ' 현재가'}, pt);
     pi2.addEventListener('change', async () => { const v = parseFloat(pi2.value.replace(/,/g, '')); if (!(v > 0)) { await store.del('prices', k); return; } await store.set('prices', k, {name: h.name, ccy: h.ccy, price: v, asof: new Date().toISOString(), src: 'manual', ticker: sym ? sym.ticker || '' : ''}); });
     const ta = mk('td', {class: 'l'}, tr); if (pi) { ta.append(ago(pi.asof)); if (stale(pi.asof)) mk('span', {class: 'tag warn'}, ta, '오래됨'); } else ta.append('—');
@@ -1021,6 +1077,7 @@ function syncSegs() {
   $('file').addEventListener('change', e => handleFile(e.target.files[0]));
   $('file2').addEventListener('change', e => handleOpening(e.target.files[0]));
   syncTabs(); syncSegs(); render();
+  loadSectors();
   store.init().then(async () => { if (!store.db) { await syncPull(); setTimeout(() => syncSheet(true), 50); } });
   let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { if (state.ready) render(); }, 120); }).observe(document.body);
 })();

@@ -129,6 +129,7 @@ td input.tk{width:110px;text-align:left}
     <button type="button" role="tab" data-tab="holdings" aria-selected="true">보유 현황</button>
     <button type="button" role="tab" data-tab="trades" aria-selected="false">거래 내역</button>
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
+    <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
     <button type="button" role="tab" data-tab="accounts" aria-selected="false">계좌 관리</button>
   </nav>
 
@@ -151,9 +152,11 @@ td input.tk{width:110px;text-align:left}
   </section>
 
   <section id="tab-prices" class="col" hidden><div class="col" id="res-prices"></div></section>
+  <section id="tab-opening" class="col" hidden><div class="col" id="res-opening"></div></section>
   <section id="tab-accounts" class="col" hidden><div class="col" id="res-accounts"></div></section>
 </div>
 <input type="file" id="file" accept=".xlsx,.xls" hidden>
+<input type="file" id="file2" accept=".xlsx,.xls,.csv" hidden>
 <div id="toast" role="status" hidden></div>
 <div id="tip" hidden></div>
 
@@ -287,8 +290,8 @@ function round(x, d) { const m = Math.pow(10, d); return Math.round(x * m) / m; 
 
 /* 거래를 처음부터 재생해서 종목별 보유 현황을 계산합니다.
    basis: {종목명: 연초 취득단가} 연초부터 갖고 있던 종목의 취득가를 직접 입력한 값. */
-function replay(A, basis) {
-  basis = basis || {};
+function replay(A, basis, extra) {
+  basis = basis || {}; extra = extra || {};
   const ev = A.orders.map(o => ({d: o.d, s: o.s, side: o.side, q: o.q, n: o.n, net: o.net, g: o.g, fee: o.fee, tax: o.tax, mk: o.mk, ccy: o.ccy, ik: false}))
     .concat(A.inkinds.map(e => ({d: e.d, s: e.s, side: e.sign, q: e.q, n: -1, net: e.q * e.px, g: e.q * e.px, fee: 0, tax: 0, mk: 'KR', ccy: 'KRW', ik: true, px: e.px})));
   ev.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : a.n - b.n);
@@ -298,6 +301,12 @@ function replay(A, basis) {
   Object.keys(A.startQty).forEach(s => {
     const st = A.startQty[s], b = +basis[s], known = Math.abs(st) < 1e-9 || (isFinite(b) && b > 0);
     H[s] = {s, name: stockLabel(s), mk: mkOf[s] || 'KR', ccy: ccyOf[s] || 'KRW', start: st, qty: st, cost: (Math.abs(st) < 1e-9 ? 0 : (known ? st * b : 0)), known,
+      buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, fees: 0, taxes: 0, realized: 0, div: 0, divTaxKRW: 0, first: null, last: null};
+  });
+  Object.keys(extra).forEach(s => {
+    if (H[s]) return;
+    const e = extra[s], st = +e.q || 0, b = +basis[s], known = isFinite(b) && b > 0;
+    H[s] = {s, name: stockLabel(s), mk: e.mk || (e.ccy && e.ccy !== 'KRW' ? 'US' : 'KR'), ccy: e.ccy || 'KRW', start: st, qty: st, cost: known ? st * b : 0, known, extra: true,
       buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, fees: 0, taxes: 0, realized: 0, div: 0, divTaxKRW: 0, first: null, last: null};
   });
   ev.forEach(o => {
@@ -441,8 +450,8 @@ function compute() {
   const rows = [], closed = [], cash = [], accts = [];
   Object.keys(state.accounts).sort((a, b) => (state.accounts[a].createdAt || '') < (state.accounts[b].createdAt || '') ? -1 : 1).forEach(aid => {
     const acc = state.accounts[aid], A = acc && acc.data; if (!A) return;
-    const basis = {}; Object.keys(state.basis).forEach(k => { const b = state.basis[k]; if (b.acc === aid) basis[b.s] = b.price; });
-    let H = []; try { H = replay(A, basis); } catch (e) { toast('계좌 계산 오류: ' + acc.name); }
+    const basis = {}, extra = {}; Object.keys(state.basis).forEach(k => { const b = state.basis[k]; if (b.acc === aid) { basis[b.s] = b.price; if (b.extra) extra[b.s] = b.extra; } });
+    let H = []; try { H = replay(A, basis, extra); } catch (e) { toast('계좌 계산 오류: ' + acc.name); }
     accts.push({aid, name: acc.name, A, H});
     H.forEach(h => {
       h.aid = aid; h.acct = acc.name;
@@ -579,8 +588,8 @@ function renderHoldings(C) {
   // 올해 실현손익과 배당
   const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.cls, ui.q));
   if (all.length) {
-    const d = mk('details', {class: 'card'}, out); mk('summary', {style: 'cursor:pointer;font-weight:500'}, d, '올해 실현손익과 배당 (정리한 종목 포함)');
-    mk('p', {class: 'sub', style: 'margin:8px 0'}, d, '이동평균법입니다. 연초부터 갖고 있던 종목은 취득가를 모르면 계산하지 않습니다. 계좌 관리에서 취득단가를 입력하면 채워집니다.');
+    const d = mk('details', {class: 'card'}, out); if (ui.detOpen) d.open = true; d.addEventListener('toggle', () => { ui.detOpen = d.open; }); mk('summary', {style: 'cursor:pointer;font-weight:500'}, d, '올해 실현손익과 배당 (정리한 종목 포함)');
+    mk('p', {class: 'sub', style: 'margin:8px 0'}, d, '이동평균법입니다. 연초부터 갖고 있던 종목은 취득가를 모르면 계산하지 않습니다. 연초 잔고 탭에서 취득단가를 입력하면 채워집니다.');
     const tw = mk('div', {class: 'tw'}, d), t = mk('table', {}, tw), hh = mk('tr', {}, mk('thead', {}, t));
     ['종목', '계좌', '구분', '매수금액', '매도금액', '실현손익', '배당(총액)'].forEach((x, i) => mk('th', i < 3 ? {class: 'l'} : {}, hh, x));
     const tb = mk('tbody', {}, t);
@@ -763,6 +772,107 @@ async function handleFile(file) {
     ui.pending = {A, fileName: file.name}; ui.tab = 'accounts'; saveUi(); syncTabs(); render();
   } catch (e) { toast(e && e.message ? e.message : '파일을 읽지 못했습니다.'); }
 }
+
+function parseOpeningRows(rows) {
+  let hi = -1, c = {};
+  for (let i = 0; i < Math.min(15, rows.length); i++) {
+    const H = rows[i].map(x => String(x == null ? '' : x).trim());
+    const nm = H.findIndex(x => /종목명|종목|상품명|name/i.test(x)), q = H.findIndex(x => /잔고수량|보유수량|수량|qty|quantity/i.test(x));
+    if (nm >= 0 && q >= 0) {
+      let pr = H.findIndex(x => /평균.*(단가|가)|매입.*(단가|가)|취득.*(단가|가)|평단|avg|cost/i.test(x));
+      hi = i; c = {nm, q, pr, ccy: H.findIndex(x => /통화|currency|ccy/i.test(x))}; break;
+    }
+  }
+  if (hi < 0) throw new Error('종목명과 수량 열을 찾지 못했습니다. 첫 줄에 "종목명, 수량, 평균단가" 같은 제목이 필요합니다.');
+  const out = [];
+  rows.slice(hi + 1).forEach(r => {
+    const name = String(r[c.nm] || '').trim(), q = numOf(r[c.q]); if (!name || !(q > 0)) return;
+    const price = c.pr >= 0 ? numOf(r[c.pr]) : NaN, ccy = c.ccy >= 0 ? String(r[c.ccy] || '').trim().toUpperCase() : '';
+    const pre = (name.match(/^(USD|JPY)\s+/) || [])[1] || '';
+    out.push({name: stockLabel(name), q, price: price > 0 ? price : null, ccy: /^(KRW|USD|JPY)$/.test(ccy) ? ccy : pre});
+  });
+  if (!out.length) throw new Error('수량이 있는 종목 행을 찾지 못했습니다.');
+  return out;
+}
+async function handleOpening(file) {
+  if (!file) return;
+  const a = ui.openAcct && state.accounts[ui.openAcct] ? ui.openAcct : Object.keys(state.accounts)[0];
+  if (!a) { toast('먼저 거래내역을 올려 계좌를 만드세요.'); return; }
+  if (typeof XLSX === 'undefined') { toast('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; }
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'}), ws = wb.Sheets[wb.SheetNames[0]];
+    const items = parseOpeningRows(XLSX.utils.sheet_to_json(ws, {header: 1, raw: false, defval: ''}));
+    const A = state.accounts[a].data, byN = {};
+    Object.keys(A.startQty).forEach(s => { byN[normName(stockLabel(s))] = s; });
+    Object.keys(state.basis).forEach(k => { const b = state.basis[k]; if (b.acc === a && b.extra) byN[normName(stockLabel(b.s))] = b.s; });
+    let nm = 0, na = 0, nq = 0; const notes = [];
+    for (const it of items) {
+      const s = byN[normName(it.name)];
+      if (s !== undefined) {
+        const id = a + '_' + keyOf(s), cur = state.basis[id] || {};
+        const st = A.startQty[s] != null ? A.startQty[s] : (cur.extra ? cur.extra.q : null);
+        if (st != null && Math.abs(st - it.q) > 1e-6) { nq++; notes.push(it.name + ': 파일 ' + qtyF(it.q) + ' / 거래내역 기준 ' + qtyF(st)); }
+        if (it.price) { await store.set('basis', id, Object.assign({}, cur, {acc: a, s, price: it.price})); nm++; }
+        else if (cur.extra) { await store.set('basis', id, Object.assign({}, cur, {extra: Object.assign({}, cur.extra, {q: it.q})})); }
+      } else {
+        const ccy = it.ccy || 'KRW', s2 = ccy === 'KRW' ? it.name : ccy + ' ' + it.name, id = a + '_' + keyOf(s2);
+        await store.set('basis', id, {acc: a, s: s2, price: it.price || 0, extra: {q: it.q, ccy, mk: ccy === 'KRW' ? 'KR' : 'US'}}); na++;
+      }
+    }
+    state.openMsg = '단가 ' + nm + '건 반영, 연초에만 보유한 종목 ' + na + '건 추가' + (nq ? ', 수량이 다른 종목 ' + nq + '건(' + notes.slice(0, 4).join('; ') + (notes.length > 4 ? ' …' : '') + ')' : '') + '.';
+    toast('연초 잔고를 반영했습니다');
+  } catch (e) { state.openMsg = ''; toast(e && e.message ? e.message : '파일을 읽지 못했습니다.'); }
+  scheduleRender();
+}
+function renderOpening(C) {
+  const out = $('res-opening'); out.replaceChildren();
+  if (!C.accts.length) { const c0 = mk('div', {class: 'card'}, out); mk('p', {class: 'sub'}, c0, '먼저 거래내역을 올려 계좌를 만드세요.'); return; }
+  if (!ui.openAcct || !state.accounts[ui.openAcct]) ui.openAcct = C.accts[0].aid;
+  const a = C.accts.find(x => x.aid === ui.openAcct) || C.accts[0];
+  const top = mk('div', {class: 'card'}, out); mk('h2', {}, top, '연초 잔고 (전년도 말 기준)');
+  mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, top, '연초에 이미 갖고 있던 종목의 수량과 평균 매입단가를 넣는 곳입니다. 이 값이 있어야 올해 실현손익과 평가손익이 정확해집니다. 올해 거래가 없는 보유 종목도 여기서 추가할 수 있습니다.');
+  if (C.accts.length > 1) { const sel = mk('select', {'aria-label': '계좌'}, top); C.accts.forEach(x => { const o = mk('option', {value: x.aid}, sel, x.name); if (x.aid === a.aid) o.selected = true; }); sel.addEventListener('change', () => { ui.openAcct = sel.value; render(); }); }
+  const r = mk('div', {class: 'row', style: 'margin-top:8px'}, top);
+  const ub = mk('button', {type: 'button', class: 'primary'}, r, '연초 잔고 파일 올리기 (엑셀/CSV)'); ub.addEventListener('click', () => { ui.openAcct = a.aid; $('file2').value = ''; $('file2').click(); });
+  mk('span', {class: 'sub'}, r, '첫 줄에 제목(종목명, 수량, 평균단가, 통화)이 있는 표');
+  if (state.openMsg) mk('p', {class: 'sub', style: 'margin:8px 0 0'}, top, state.openMsg);
+
+  const card = mk('div', {class: 'card'}, out); mk('h3', {}, card, a.name + ' · 연초 보유 종목');
+  const rows = a.H.filter(h => Math.abs(h.start) > 1e-9);
+  if (!rows.length) mk('p', {class: 'sub'}, card, '연초 보유 종목이 없습니다. 위에서 파일을 올리거나 아래에서 직접 추가하세요.');
+  else {
+    const tw = mk('div', {class: 'tw'}, card), t = mk('table', {}, tw), hh = mk('tr', {}, mk('thead', {}, t));
+    [['종목', 1], ['구분', 1], ['연초 수량'], ['취득단가'], ['']].forEach(([x, l]) => mk('th', l ? {class: 'l'} : {}, hh, x));
+    const tb = mk('tbody', {}, t);
+    rows.forEach(h => {
+      const tr = mk('tr', {}, tb), id = a.aid + '_' + keyOf(h.s), cur = state.basis[id];
+      mk('td', {class: 'l'}, tr, h.name); mk('td', {class: 'l'}, tr, (h.mk === 'KR' ? '국내' : '해외') + ' · ' + h.ccy);
+      mk('td', {}, tr, qtyF(h.start) + (h.extra ? ' (직접 추가)' : ''));
+      const td = mk('td', {}, tr), inp = mk('input', {type: 'text', inputmode: 'decimal', placeholder: h.ccy, value: cur && cur.price > 0 ? String(cur.price) : '', 'aria-label': h.name + ' 취득단가'}, td);
+      inp.addEventListener('change', async () => {
+        const v = parseFloat(inp.value.replace(/,/g, ''));
+        if (!(v > 0)) { if (cur && cur.extra) await store.set('basis', id, Object.assign({}, cur, {price: 0})); else await store.del('basis', id); return; }
+        await store.set('basis', id, Object.assign({}, cur || {}, {acc: a.aid, s: h.s, price: v}));
+      });
+      const tdx = mk('td', {}, tr); if (h.extra) { const x = mk('button', {type: 'button'}, tdx, '삭제'); x.addEventListener('click', async () => { await store.del('basis', id); }); }
+    });
+  }
+  const add = mk('div', {class: 'card'}, out); mk('h3', {}, add, '종목 직접 추가');
+  mk('p', {class: 'sub', style: 'margin:2px 0 8px'}, add, '올해 거래가 없어 거래내역에 나오지 않는 연초 보유 종목을 추가합니다. 종목명은 시세 시트의 이름과 같게 적어 주세요.');
+  const ar = mk('div', {class: 'row'}, add);
+  const n1 = mk('input', {type: 'text', placeholder: '종목명', 'aria-label': '추가할 종목명'}, ar), q1 = mk('input', {type: 'text', inputmode: 'decimal', placeholder: '수량', 'aria-label': '수량', style: 'width:90px'}, ar);
+  const p1 = mk('input', {type: 'text', inputmode: 'decimal', placeholder: '평균단가', 'aria-label': '평균단가', style: 'width:110px'}, ar), c1 = mk('select', {'aria-label': '통화'}, ar);
+  ['KRW', 'USD', 'JPY'].forEach(x => mk('option', {value: x}, c1, x));
+  const ab = mk('button', {type: 'button'}, ar, '추가');
+  ab.addEventListener('click', async () => {
+    const name = n1.value.trim(), q = parseFloat(q1.value.replace(/,/g, '')), pr = parseFloat(p1.value.replace(/,/g, '')) || 0, ccy = c1.value;
+    if (!name || !(q > 0)) { toast('종목명과 수량을 입력하세요.'); return; }
+    const s = ccy === 'KRW' ? name : ccy + ' ' + name;
+    if (a.A.startQty[s] !== undefined) { toast('이미 거래내역에 있는 종목입니다. 위 표에서 단가를 입력하세요.'); return; }
+    const ok = await store.set('basis', a.aid + '_' + keyOf(s), {acc: a.aid, s, price: pr, extra: {q, ccy, mk: ccy === 'KRW' ? 'KR' : 'US'}});
+    if (ok) { n1.value = q1.value = p1.value = ''; toast('추가했습니다'); }
+  });
+}
 function renderAccounts(C) {
   const out = $('res-accounts'); out.replaceChildren();
   const up = mk('div', {class: 'card'}, out); mk('h2', {}, up, '거래내역 올리기');
@@ -797,16 +907,7 @@ function renderAccounts(C) {
     mk('p', {class: 'sub'}, card, '매매 ' + a.A.orders.length + '건 · 보유 ' + a.H.filter(h => h.end > 1e-9).length + '종목 · 예수금 ' + Object.keys(a.A.cash).map(c => money(c, a.A.cash[c])).join(' ') + ' · ' + (acc.fileName || ''));
     if (a.A.warn.length || a.A.unknown.length) { const w = mk('ul', {class: 'facts'}, card); a.A.warn.forEach(x => mk('li', {}, w, x)); a.A.unknown.forEach(u => mk('li', {}, w, '분류하지 못한 거래 유형: ' + u.name + ' ' + u.n + '건')); }
     const need = a.H.filter(h => !h.known && (h.end > 1e-9 || h.sellQty > 0));
-    if (need.length) {
-      const b = mk('div', {style: 'margin-top:12px'}, card); mk('h3', {}, b, '연초 취득단가 입력'); mk('p', {class: 'sub', style: 'margin:2px 0 8px'}, b, '연초부터 갖고 있던 종목은 취득가가 파일에 없습니다. 평균 매입단가를 넣으면 평가손익과 실현손익이 계산됩니다. 비우면 삭제됩니다.');
-      const tw = mk('div', {class: 'tw'}, b), t = mk('table', {}, tw), hh = mk('tr', {}, mk('thead', {}, t)); [['종목', 1], ['연초 수량'], ['현재 수량'], ['취득단가']].forEach(([x, l]) => mk('th', l ? {class: 'l'} : {}, hh, x));
-      const tb = mk('tbody', {}, t);
-      need.forEach(h => {
-        const tr = mk('tr', {}, tb); mk('td', {class: 'l'}, tr, h.name + ' (' + h.ccy + ')'); mk('td', {}, tr, qtyF(h.start)); mk('td', {}, tr, qtyF(h.end));
-        const td = mk('td', {}, tr), id = a.aid + '_' + keyOf(h.s), cur = state.basis[id], inp = mk('input', {type: 'text', inputmode: 'decimal', placeholder: h.ccy, value: cur ? String(cur.price) : '', 'aria-label': h.name + ' 취득단가'}, td);
-        inp.addEventListener('change', async () => { const v = parseFloat(inp.value.replace(/,/g, '')); if (!(v > 0)) { await store.del('basis', id); return; } await store.set('basis', id, {acc: a.aid, s: h.s, price: v}); });
-      });
-    }
+    if (need.length) { const nb = mk('div', {class: 'row', style: 'margin-top:12px'}, card); mk('span', {class: 'sub'}, nb, '연초부터 보유한 종목 ' + need.length + '건의 취득단가가 비어 있습니다.'); const go = mk('button', {type: 'button'}, nb, '연초 잔고 탭에서 입력'); go.addEventListener('click', () => { ui.tab = 'opening'; saveUi(); syncTabs(); render(); }); }
     const dz = mk('div', {class: 'row', style: 'margin-top:12px'}, card);
     if (ui.confirmDel === a.aid) {
       mk('span', {class: 'sub'}, dz, '이 계좌의 거래 데이터와 취득단가가 삭제됩니다. 계속할까요?');
@@ -822,19 +923,19 @@ let rq = 0, pendingAfterBlur = false;
 function scheduleRender() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function render() {
   const ae = document.activeElement;
-  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts') && ae.type === 'text') { pendingAfterBlur = true; return; }
+  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening') && ae.type === 'text') { pendingAfterBlur = true; return; }
   const C = compute();
   $('banner').hidden = !(state.ready && !state.persist) && state.writable;
   if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { renderHoldings(C); renderTrades(C); renderPrices(C); renderAccounts(C); }
+  if (state.ready) { renderHoldings(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  ['holdings', 'trades', 'prices', 'accounts'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'trades', 'prices', 'opening', 'accounts'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));
@@ -849,6 +950,7 @@ function syncSegs() {
   $('sel-acct').addEventListener('change', e => { ui.acct = e.target.value; render(); });
   $('btnUpload').addEventListener('click', openUpload);
   $('file').addEventListener('change', e => handleFile(e.target.files[0]));
+  $('file2').addEventListener('change', e => handleOpening(e.target.files[0]));
   syncTabs(); syncSegs(); render();
   store.init().then(() => { if (!store.db) setTimeout(() => syncSheet(true), 50); });
   let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { if (state.ready) render(); }, 120); }).observe(document.body);

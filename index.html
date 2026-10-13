@@ -550,6 +550,56 @@ function donut(parent, items, centerLabel, centerValue) {
 }
 function tile(parent, l, v, n) { const t = mk('div', {class: 'tile'}, parent); mk('div', {class: 'l'}, t, l); mk('div', {class: 'v', title: v}, t, v); if (n) mk('div', {class: 'n'}, t, n); }
 
+
+/* ===== 일별 총자산 기록 (이 브라우저에 저장) ===== */
+const HIST_LS = 'portfolio-history';
+function loadHist() { try { return JSON.parse(localStorage.getItem(HIST_LS) || '{}') || {}; } catch (e) { return {}; } }
+function ymd(d) { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+function recordHistory(C) {
+  if (!state.ready || !C.accts.length || !C.rows.length) return;
+  const today = ymd(Date.now()), priced = C.rows.filter(h => h.price != null);
+  if (!priced.length) return;
+  // 시세와 환율이 모두 오늘 값일 때만 기록 (어제 시세가 오늘 날짜로 남는 것을 막음)
+  if (priced.some(h => !h.priceInfo || !h.priceInfo.asof || ymd(h.priceInfo.asof) !== today)) return;
+  const ccys = {}; priced.forEach(h => { if (h.ccy !== 'KRW') ccys[h.ccy] = 1; }); C.cash.forEach(c => { if (c.ccy !== 'KRW') ccys[c.ccy] = 1; });
+  for (const c of Object.keys(ccys)) { const f = state.fx[c + 'KRW']; if (!f || !f.asof || ymd(f.asof) !== today) return; }
+  const T = totals(C.rows), cash = C.cash.reduce((a, c) => a + (c.krw || 0), 0);
+  const rec = {t: Math.round(T.val + cash), s: Math.round(T.val), c: Math.round(cash), p: Math.round(T.pnlK), k: Math.round(T.costK), m: T.noPrice + T.noFx};
+  const H = loadHist(), old = H[today];
+  if (old && old.t === rec.t && old.p === rec.p && old.m === rec.m) return;
+  H[today] = rec; try { localStorage.setItem(HIST_LS, JSON.stringify(H)); } catch (e) {}
+}
+const shortKRW = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; return a >= 1e8 ? s + (a / 1e8).toFixed(a >= 1e9 ? 1 : 2).replace(/\.?0+$/, '') + '억' : a >= 1e4 ? s + Math.round(a / 1e4).toLocaleString('ko-KR') + '만' : s + Math.round(a).toLocaleString('ko-KR'); };
+function renderHistory(parent) {
+  const H = loadHist(), days = Object.keys(H).sort();
+  const card = mk('div', {class: 'card'}, parent), hh = mk('div', {class: 'sec-h'}, card); mk('h2', {}, hh, '기간별 추이');
+  const seg = mk('span', {class: 'seg'}, hh);
+  [['t', '총자산'], ['p', '평가손익']].forEach(([k, l]) => { const b = mk('button', {type: 'button', 'aria-pressed': String((ui.histMode || 't') === k)}, seg, l); b.addEventListener('click', () => { ui.histMode = k; saveUi(); render(); }); });
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, '페이지를 연 날의 시세·환율로 하루 한 번 기록한 값입니다(이 브라우저에 저장). 입출금과 매매도 총자산에 그대로 반영되므로, 수익 흐름은 "평가손익"으로 보세요.');
+  if (!days.length) { mk('p', {class: 'sub'}, card, '아직 기록이 없습니다. 시세가 오늘 값으로 불러와지면 자동으로 첫 기록이 쌓입니다.'); return; }
+  const mode = ui.histMode || 't', vals = days.map(d => H[d][mode]);
+  if (days.length === 1) {
+    mk('p', {class: 'sub'}, card, days[0] + ' 첫 기록: ' + money('KRW', vals[0]) + '. 내일부터 선이 이어져 그래프로 나타납니다.'); return;
+  }
+  const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 240, L = 58, R = 12, Tp = 12, B = 28;
+  let mn = Math.min(...vals), mx = Math.max(...vals); if (mode === 'p') { mn = Math.min(mn, 0); mx = Math.max(mx, 0); }
+  if (mx === mn) { mx += 1; mn -= 1; } const pad = (mx - mn) * 0.08; mn -= pad; mx += pad;
+  const t0 = new Date(days[0]).getTime(), t1 = new Date(days[days.length - 1]).getTime(), tsp = (t1 - t0) || 1;
+  const X = d => L + (new Date(d).getTime() - t0) / tsp * (W - L - R), Y = v => Tp + (1 - (v - mn) / (mx - mn)) * (Ht - Tp - B);
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Ht); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', (mode === 't' ? '총자산' : '평가손익') + ' 추이'); svg.style.display = 'block'; svg.style.maxWidth = '100%';
+  const el = (n, a, tx) => { const e = document.createElementNS(NS, n); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; svg.appendChild(e); return e; };
+  for (let i = 0; i <= 3; i++) { const v = mn + (mx - mn) * i / 3, y = Y(v); el('line', {x1: L, x2: W - R, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'}); el('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '13', fill: 'var(--muted)'}, shortKRW(v)); }
+  if (mode === 'p' && mn < 0 && mx > 0) el('line', {x1: L, x2: W - R, y1: Y(0), y2: Y(0), stroke: 'var(--muted)', 'stroke-width': '1.2'});
+  el('text', {x: L, y: Ht - 8, 'text-anchor': 'start', 'font-size': '13', fill: 'var(--muted)'}, days[0].slice(5)); el('text', {x: W - R, y: Ht - 8, 'text-anchor': 'end', 'font-size': '13', fill: 'var(--muted)'}, days[days.length - 1].slice(5));
+  el('polyline', {points: days.map(d => X(d).toFixed(1) + ',' + Y(H[d][mode]).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': '2.2', 'stroke-linejoin': 'round'});
+  days.forEach(d => {
+    const c = el('circle', {cx: X(d).toFixed(1), cy: Y(H[d][mode]).toFixed(1), r: days.length > 60 ? 2 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': '1.5', tabindex: '0'});
+    const r = H[d]; hover(c, d, [{label: '총자산', value: money('KRW', r.t)}, {label: '평가손익', value: money('KRW', r.p)}, {label: '현금', value: money('KRW', r.c)}].concat(r.m ? [{label: '제외 종목', value: r.m + '개(시세·환율 없음)'}] : []));
+  });
+  card.appendChild(svg);
+  const last = days[days.length - 1], first = days[0], dv = vals[vals.length - 1] - vals[0];
+  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, first + ' → ' + last + ' · ' + days.length + '일 기록 · ' + (mode === 't' ? '총자산' : '평가손익') + ' 변화 ' + (dv > 0 ? '▲ ' : dv < 0 ? '▼ ' : '') + money('KRW', Math.abs(dv)));
+}
 function renderHoldings(C) {
   const out = $('res-holdings'); out.replaceChildren();
   if (!C.accts.length) { emptyState(out); return; }
@@ -583,6 +633,8 @@ function renderHoldings(C) {
     const names = C.accts.map(a => a.name);
     strip(comp, '계좌', Object.keys(byAcct).map(k => ({label: k, value: byAcct[k], color: catColor(Math.max(0, names.indexOf(k)))})));
   } else mk('p', {class: 'sub'}, comp, '시세와 환율이 있어야 비중을 계산할 수 있습니다.');
+
+  renderHistory(out);
 
   // 분류별 투자현황
   const sc = mk('div', {class: 'card'}, out); mk('h2', {}, sc, '분류별 투자현황');
@@ -1067,7 +1119,7 @@ function render() {
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { renderHoldings(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {

@@ -556,6 +556,7 @@ const HIST_LS = 'portfolio-history';
 function loadHist() { try { return JSON.parse(localStorage.getItem(HIST_LS) || '{}') || {}; } catch (e) { return {}; } }
 function ymd(d) { const x = new Date(d); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
 function recordHistory(C) {
+  if (getSync()) return; // 시트 연동 중에는 시트가 매일 기록합니다
   if (!state.ready || !C.accts.length || !C.rows.length) return;
   const today = ymd(Date.now()), priced = C.rows.filter(h => h.price != null);
   if (!priced.length) return;
@@ -575,7 +576,8 @@ function renderHistory(parent) {
   const card = mk('div', {class: 'card'}, parent), hh = mk('div', {class: 'sec-h'}, card); mk('h2', {}, hh, '기간별 추이');
   const seg = mk('span', {class: 'seg'}, hh);
   [['t', '총자산'], ['p', '평가손익']].forEach(([k, l]) => { const b = mk('button', {type: 'button', 'aria-pressed': String((ui.histMode || 't') === k)}, seg, l); b.addEventListener('click', () => { ui.histMode = k; saveUi(); render(); }); });
-  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, '페이지를 연 날의 시세·환율로 하루 한 번 기록한 값입니다(이 브라우저에 저장). 입출금과 매매도 총자산에 그대로 반영되므로, 수익 흐름은 "평가손익"으로 보세요.');
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, (getSync() ? '구글 시트가 평일 정해진 시각(한국시간)에 시세 시트 값으로 기록한 값입니다. ' : '페이지를 연 날의 시세·환율로 하루 한 번 기록한 값입니다(이 브라우저에 저장). 매일 정해진 시각에 기록하려면 기기 간 동기화를 설정하고 Apps Script를 최신으로 배포하세요. ') + '입출금과 매매도 총자산에 그대로 반영되므로, 수익 흐름은 "평가손익"으로 보세요.');
+  if (state.histMsg && getSync()) mk('p', {class: 'sub', style: 'margin:0 0 10px;font-size:12px'}, card, state.histMsg);
   if (!days.length) { mk('p', {class: 'sub'}, card, '아직 기록이 없습니다. 시세가 오늘 값으로 불러와지면 자동으로 첫 기록이 쌓입니다.'); return; }
   const mode = ui.histMode || 't', vals = days.map(d => H[d][mode]);
   if (days.length === 1) {
@@ -922,10 +924,29 @@ function touchLocal() { try { localStorage.setItem(TS_LS, String(Date.now())); }
 let pushT = null;
 function schedulePush() { if (!getSync() || store.db) return; clearTimeout(pushT); pushT = setTimeout(syncPush, 1500); }
 const hasLocal = () => Object.keys(state.accounts).length > 0 || Object.keys(state.basis).length > 0;
+function buildSnapshot() {
+  try {
+    const C = compute();
+    return {at: new Date().toISOString(),
+      holdings: C.rows.map(h => { const sy = state.symbols[keyOf(h.name)]; return {n: h.name, t: sy && sy.ticker ? String(sy.ticker) : '', c: h.ccy, q: h.end, k: h.costRemain == null ? null : h.costRemain}; }),
+      cash: C.cash.map(c => ({c: c.ccy, a: c.amt}))};
+  } catch (e) { return null; }
+}
+async function pullHistory() {
+  const cfg = getSync(); if (!cfg) return;
+  try {
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&history=1', {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok || !j.history) throw new Error(j.error || '기록 없음');
+    const H = loadHist(); let n = 0; Object.keys(j.history).forEach(d => { H[d] = j.history[d]; n++; });
+    try { localStorage.setItem(HIST_LS, JSON.stringify(H)); } catch (e) {}
+    state.histMsg = '시트 기록 ' + n + '일치를 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { state.histMsg = '시트 기록을 불러오지 못했습니다(스크립트를 새 버전으로 다시 배포했는지 확인하세요).'; }
+  scheduleRender();
+}
 async function syncPush() {
   const cfg = getSync(); if (!cfg) return;
   try {
-    const data = {}; SYNC_COLS.forEach(c => { data[c] = state[c]; });
+    const data = {}; SYNC_COLS.forEach(c => { data[c] = state[c]; }); data.snapshot = buildSnapshot();
     let ts = localTs(); if (!ts) { ts = Date.now(); try { localStorage.setItem(TS_LS, String(ts)); } catch (e) {} }
     const res = await fetch(cfg.url, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: cfg.key, updatedAt: ts, data})});
     const j = await res.json(); if (!j.ok) throw new Error(j.error || '저장 실패');
@@ -942,10 +963,10 @@ async function syncPull() {
       SYNC_COLS.forEach(c => { state[c] = j.data[c] || {}; });
       try { localStorage.setItem(TS_LS, String(j.updatedAt)); } catch (e) {}
       store.saveLocal(); state.syncMsg = '서버에서 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
-    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); return; }
+    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); pullHistory(); return; }
     else state.syncMsg = '최신 상태입니다 · ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) { state.syncMsg = '동기화 실패: ' + (e && e.message ? e.message : e); }
-  scheduleRender();
+  scheduleRender(); pullHistory();
 }
 function renderSyncCard(out) {
   if (store.db) return;

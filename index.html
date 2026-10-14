@@ -853,7 +853,8 @@ function holdPicker(parent, C, selIds) {
   const seg = mk('span', {class: 'seg', style: 'flex-wrap:wrap'}, r);
   const set = ids => { ui.hacc = ids.length === allIds.length ? null : ids; saveUi(); render(); };
   const all = mk('button', {type: 'button', 'aria-pressed': String(selIds.length === allIds.length)}, seg, '전체'); all.addEventListener('click', () => set(allIds));
-  C.accts.forEach(a => {
+  const rank = a => { const n = (a.name || '') + ' ' + (a.broker || ''); return /삼성/.test(n) ? 0 : /나무|NH|농협/.test(n) ? (/연금/.test(n) ? 2 : 1) : 3; };
+  C.accts.map((a, i) => ({a, i})).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(o => o.a).forEach(a => {
     const on = sel.has(a.aid) && selIds.length !== allIds.length;
     const b = mk('button', {type: 'button', 'aria-pressed': String(on)}, seg, a.name);
     b.addEventListener('click', () => { if (selIds.length === allIds.length) set([a.aid]); else { const cur = new Set(selIds); if (cur.has(a.aid)) cur.delete(a.aid); else cur.add(a.aid); set(cur.size ? allIds.filter(id => cur.has(id)) : allIds); } });

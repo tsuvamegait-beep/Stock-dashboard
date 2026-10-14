@@ -97,11 +97,16 @@ input::placeholder{color:var(--muted)}
 .tile .l{font-size:12px;color:var(--ink2)}
 .tile .v{font-size:clamp(17px,4.6vw,22px);font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .n{font-size:12px;color:var(--muted)}
-.tiles.one{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.tiles.one{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.7fr) minmax(0,.9fr);gap:6px}
+.tiles.one .pair{align-items:stretch;text-align:left;padding:8px 6px;justify-content:center}
+.tiles.one .pr{white-space:nowrap;font-size:clamp(10px,2.9vw,13px);line-height:1.6;overflow:hidden}
+.tiles.one .pr .k{color:var(--ink2)}
+.tiles.one .pr .pv{font-weight:700;letter-spacing:-.03em}
 .tiles.one .tile{padding:8px 2px;align-items:center;text-align:center;gap:3px}
 .tiles.one .l{font-size:clamp(10px,2.9vw,12px);white-space:nowrap}
 .tiles.one .v{font-size:clamp(10px,2.85vw,19px);max-width:100%;text-overflow:clip;letter-spacing:-.04em}
 .tiles.one .c{display:none}
+@media (max-width:640px){.tiles.one{grid-template-columns:minmax(0,.95fr) minmax(0,.95fr) minmax(0,1.75fr) minmax(0,.85fr)}.tiles.one .pr{font-size:clamp(9.5px,2.75vw,13px)}}
 @media (max-width:340px){.tiles.one .v{font-size:9px}.tiles.one .l{font-size:9px}}
 @media (max-width:640px){.tiles.one .f{display:none}.tiles.one .c{display:inline}}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
@@ -734,6 +739,7 @@ function donut(parent, items, centerLabel, centerValue) {
   });
 }
 function tile1(parent, l, full, compact, ls) { const t = mk('div', {class: 'tile'}, parent); const lb = mk('div', {class: 'l'}, t); mk('span', {class: 'f'}, lb, l); mk('span', {class: 'c'}, lb, ls || l); const v = mk('div', {class: 'v', title: full}, t); mk('span', {class: 'f'}, v, full); mk('span', {class: 'c'}, v, compact == null ? full : compact); }
+function tilePair(parent, items) { const t = mk('div', {class: 'tile pair'}, parent); items.forEach(it => { const r = mk('div', {class: 'pr', title: it.full}, t); const k = mk('span', {class: 'k'}, r); mk('span', {class: 'f'}, k, it.l + ' : '); mk('span', {class: 'c'}, k, (it.ls || it.l) + ' : '); const v = mk('span', {class: 'pv'}, r); mk('span', {class: 'f'}, v, it.full); mk('span', {class: 'c'}, v, it.compact); }); }
 function tile(parent, l, v, n) { const t = mk('div', {class: 'tile'}, parent); mk('div', {class: 'l'}, t, l); mk('div', {class: 'v', title: v}, t, v); if (n) mk('div', {class: 'n'}, t, n); }
 
 
@@ -943,12 +949,12 @@ function renderDetail(C) {
     const sh = v => (v > 0 ? '▲' : v < 0 ? '▼' : '') + shortKRW(Math.abs(v));
     tile1(hs, '총 평가금액', money('KRW', T.val), shortKRW(T.val), '평가금액');
     tile1(hs, '투자원금', hasP ? money('KRW', T.costK) : '—', hasP ? shortKRW(T.costK) : '—');
-    tile1(hs, 'Score', hasP || hasR || hasD ? upDn(score) : '—', hasP || hasR || hasD ? sh(score) : '—');
-    tile1(hs, '총 평가손익', hasP ? upDn(T.pnlK) : '—', hasP ? sh(T.pnlK) : '—', '평가손익');
+    const anyS = hasP || hasR || hasD;
+    tilePair(hs, [{l: 'Score', full: anyS ? upDn(score) : '—', compact: anyS ? sh(score) : '—'}, {l: '총 평가손익', ls: '평가손익', full: hasP ? upDn(T.pnlK) : '—', compact: hasP ? sh(T.pnlK) : '—'}]);
     tile1(hs, '수익률', pct(T.pct));
-    const notes = ['Score = 평가 ' + (hasP ? upDn(T.pnlK) : '—') + ' + 실현 ' + (hasR ? upDn(rKRW) : '—') + ' + 배당(세후) ' + (hasD ? upDn(divNet) : '—')];
+    const notes = [];
     if (T.noCost) notes.push('취득가를 모르는 ' + T.noCost + '종목은 평가손익에서 제외'); if (rMiss) notes.push('계산 못 한 실현손익 ' + rMiss + '건 제외'); if (T.noPrice || T.noFx) notes.push('시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외');
-    mk('p', {class: 'sub', style: 'margin:0 0 12px;font-size:11.5px'}, tcard, notes.join(' · '));
+    if (notes.length) mk('p', {class: 'sub', style: 'margin:0 0 12px;font-size:11.5px'}, tcard, notes.join(' · ')); else hs.style.marginBottom = '14px';
   }
   if (!rows.length) mk('p', {class: 'sub'}, tcard, '조건에 맞는 보유 종목이 없습니다.');
   else if (ui.view === 'all') holdTable(tcard, mergeRows(rows), share);

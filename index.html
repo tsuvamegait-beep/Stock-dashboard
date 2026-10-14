@@ -881,8 +881,6 @@ function renderHoldings(C) {
     strip(comp, '계좌', Object.keys(byAcct).map(k => ({label: k, value: byAcct[k], color: catColor(Math.max(0, names.indexOf(k)))})));
   } else mk('p', {class: 'sub'}, comp, '시세와 환율이 있어야 비중을 계산할 수 있습니다.');
 
-  renderHistory(out);
-
   // 분류별 투자현황
   const sc = mk('div', {class: 'card'}, out); mk('h2', {}, sc, '분류별 투자현황');
   mk('p', {class: 'sub', style: 'margin:2px 0 12px'}, sc, '시세 시트의 "분류" 열(또는 시세·환율 탭에서 입력한 분류) 기준, 주식 평가액(원화 환산)입니다.');
@@ -914,6 +912,8 @@ function renderHoldings(C) {
     const items = merged.filter(h => h.pnlPct != null).sort((a, b) => b.pnlPct - a.pnlPct).map(h => ({label: h.name, value: h.pnlPct, color: h.pnlPct >= 0 ? 'var(--s1)' : 'var(--s2)', text: pct(h.pnlPct), tip: [{label: '수익률', value: pct(h.pnlPct), color: h.pnlPct >= 0 ? 'var(--s1)' : 'var(--s2)'}, {label: '평가손익', value: sgn(h.ccy, h.pnl), color: 'var(--axis)'}]}));
     if (items.length) hbars(ch, items, true); else mk('p', {class: 'sub'}, ch, '취득가를 아는 종목이 없습니다. 계좌 관리에서 연초 취득단가를 입력할 수 있습니다.');
   }
+
+  renderHistory(out);
 
   const go = mk('div', {class: 'card'}, out); const gb = mk('button', {type: 'button'}, go, '보유 종목·올해 실현손익과 배당 상세 보기 →'); gb.addEventListener('click', () => { ui.tab = 'detail'; saveUi(); syncTabs(); });
 }

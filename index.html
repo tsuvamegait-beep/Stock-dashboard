@@ -385,6 +385,50 @@ function parseNamooRows(rows) {
   ['USD', 'JPY'].forEach(c => { if (Math.abs(ledger[c]) >= 1) cash[c] = Math.round(ledger[c]); });
   return {v: 1, year: +first.slice(0, 4), asof: lastD, firstRow: first, lastTrade: lastD, orders, inkinds, ext, divs, startQty, cash, warn, unknown: Object.keys(unknown).map(k => ({name: k, n: unknown[k]})), src: 'namoo'};
 }
+
+/* ===== 대시보드 거래내역 표 형식 <-> 계좌 데이터 =====
+   구글 시트의 "거래내역" 탭에 이 표를 그대로 저장하고, 다시 읽어서 계좌 데이터로 되돌립니다.
+   한 줄 = 거래 1건. 구분: 연초수량, 예수금, 매수, 매도, 배당, 입금, 출금, 분할입고, 분할출고 */
+const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
+function accountToRows(name, broker, A) {
+  const R = []; const row = o => TRADE_HEAD.map(h => o[h] == null ? '' : o[h]);
+  const base = {계좌: name, 증권사: broker};
+  Object.keys(A.startQty).forEach(s => { if (Math.abs(A.startQty[s]) > 1e-9) R.push(row(Object.assign({}, base, {구분: '연초수량', 종목: s, 수량: A.startQty[s]}))); });
+  Object.keys(A.cash || {}).forEach(c => R.push(row(Object.assign({}, base, {구분: '예수금', 통화: c, 정산금액: A.cash[c]}))));
+  A.orders.forEach(o => R.push(row(Object.assign({}, base, {날짜: o.d, 순번: o.n, 구분: o.side === 1 ? '매수' : '매도', 종목: o.s, 통화: o.ccy, 시장: o.mk, 수량: o.q, 단가: o.q ? round(o.g / o.q, 4) : '', 거래금액: o.g, 정산금액: o.net, 수수료: o.fee, 세금: o.tax, 잔고: o.bal}))));
+  A.inkinds.forEach(e => R.push(row(Object.assign({}, base, {날짜: e.d, 순번: -1, 구분: e.sign > 0 ? '분할입고' : '분할출고', 종목: e.s, 수량: e.q, 단가: e.px}))));
+  A.divs.forEach(d => R.push(row(Object.assign({}, base, {날짜: d.d, 구분: '배당', 종목: d.s, 통화: d.ccy, 거래금액: d.gross, 세금: d.taxKRW}))));
+  A.ext.forEach(e => R.push(row(Object.assign({}, base, {날짜: e.d, 구분: e.kind === 'in' ? '입금' : '출금', 통화: 'KRW', 거래금액: e.amt}))));
+  R.sort((a, b) => String(a[2]) < String(b[2]) ? -1 : String(a[2]) > String(b[2]) ? 1 : (+a[3] || 0) - (+b[3] || 0));
+  return R;
+}
+function rowsToAccounts(rows) {
+  const ix = {}; TRADE_HEAD.forEach((h, i) => { ix[h] = i; });
+  let start = 0; if (rows.length && String(rows[0][0]).trim() === '계좌') start = 1;
+  const by = new Map();
+  rows.slice(start).forEach(r => {
+    const g = k => r[ix[k]] == null ? '' : r[ix[k]], s = k => String(g(k)).trim(), n = k => toNum(g(k));
+    const name = s('계좌'); if (!name || !s('구분')) return;
+    let e = by.get(name); if (!e) { e = {name, broker: s('증권사') || '삼성증권', A: {v: 1, orders: [], inkinds: [], ext: [], divs: [], startQty: {}, cash: {}, warn: [], unknown: []}}; by.set(name, e); }
+    const A = e.A, d = s('날짜').slice(0, 10), kind = s('구분'), stock = s('종목');
+    if (kind === '연초수량') A.startQty[stock] = n('수량');
+    else if (kind === '예수금') A.cash[s('통화') || 'KRW'] = n('정산금액');
+    else if (kind === '매수' || kind === '매도') A.orders.push({d, s: stock, side: kind === '매수' ? 1 : -1, mk: s('시장') || 'KR', ccy: s('통화') || 'KRW', q: n('수량'), g: n('거래금액'), n: Math.round(n('순번')), net: n('정산금액'), fee: n('수수료'), tax: n('세금'), bal: n('잔고')});
+    else if (kind === '분할입고' || kind === '분할출고') A.inkinds.push({d, s: stock, sign: kind === '분할입고' ? 1 : -1, q: n('수량'), px: n('단가')});
+    else if (kind === '배당') A.divs.push({d, s: stock, ccy: s('통화') || 'KRW', gross: n('거래금액'), taxKRW: n('세금')});
+    else if (kind === '입금' || kind === '출금') A.ext.push({d, kind: kind === '입금' ? 'in' : 'out', amt: n('거래금액')});
+    else A.unknown.push({name: '시트 구분 "' + kind + '"', n: 1});
+  });
+  const out = [];
+  by.forEach(e => {
+    const A = e.A, dates = A.orders.map(o => o.d).concat(A.inkinds.map(o => o.d), A.divs.map(o => o.d), A.ext.map(o => o.d)).filter(Boolean).sort();
+    A.orders.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : a.n - b.n);
+    A.orders.concat(A.inkinds).forEach(o => { if (!(o.s in A.startQty)) A.startQty[o.s] = 0; });
+    A.firstRow = dates[0] || ''; A.lastTrade = dates[dates.length - 1] || ''; A.asof = A.lastTrade; A.year = A.firstRow ? +A.firstRow.slice(0, 4) : new Date().getFullYear();
+    out.push(e);
+  });
+  return out;
+}
 function round(x, d) { const m = Math.pow(10, d); return Math.round(x * m) / m; }
 
 /* 거래를 처음부터 재생해서 종목별 보유 현황을 계산합니다.
@@ -434,7 +478,7 @@ function replay(A, basis, extra) {
   });
 }
 
-if (typeof module !== 'undefined') module.exports = {parseSamsungRows, parseNamooRows, replay, stockLabel, keyOf};
+if (typeof module !== 'undefined') module.exports = {parseSamsungRows, parseNamooRows, accountToRows, rowsToAccounts, TRADE_HEAD, replay, stockLabel, keyOf};
 
 
 /* ================= 도우미 ================= */
@@ -1067,10 +1111,68 @@ async function syncPull() {
       SYNC_COLS.forEach(c => { state[c] = j.data[c] || {}; });
       try { localStorage.setItem(TS_LS, String(j.updatedAt)); } catch (e) {}
       store.saveLocal(); state.syncMsg = '서버에서 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
-    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); pullHistory(); return; }
+    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); pullHistory(); await pullTrades(false); return; }
     else state.syncMsg = '최신 상태입니다 · ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) { state.syncMsg = '동기화 실패: ' + (e && e.message ? e.message : e); }
-  scheduleRender(); pullHistory();
+  scheduleRender(); pullHistory(); await pullTrades(false);
+}
+
+/* ===== 거래내역 구글 시트 저장소 (Apps Script가 "거래내역" 탭에 저장) ===== */
+function csvText(rows) { return rows.map(r => r.map(c => { const s = String(c == null ? '' : c); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n'); }
+function downloadTradesCsv() {
+  let rows = []; Object.keys(state.accounts).forEach(id => { const a = state.accounts[id]; if (a && a.data) rows = rows.concat(accountToRows(a.name, a.broker || '삼성증권', a.data)); });
+  if (!rows.length) { toast('내려받을 거래내역이 없습니다.'); return; }
+  const blob = new Blob(['﻿' + csvText([TRADE_HEAD].concat(rows))], {type: 'text/csv;charset=utf-8'}), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = '거래내역_' + ymd(Date.now()) + '.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function sheetPost(body) {
+  const cfg = getSync(); if (!cfg) throw new Error('기기 간 동기화(Apps Script 주소·비밀번호)를 먼저 설정하세요.');
+  const res = await fetch(cfg.url, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify(Object.assign({key: cfg.key}, body))});
+  const j = await res.json(); if (!j.ok) throw new Error(j.error || '저장 실패'); return j;
+}
+async function pushTrades(ids) {
+  if (!getSync()) return false;
+  try {
+    let n = 0;
+    for (const id of ids) { const a = state.accounts[id]; if (!a || !a.data) continue; const rows = accountToRows(a.name, a.broker || '삼성증권', a.data); await sheetPost({action: 'saveTrades', account: a.name, rows}); n += rows.length; }
+    state.tradeMsg = '시트 "거래내역" 탭에 ' + ids.length + '개 계좌, ' + n + '줄을 저장했습니다 · ' + new Date().toLocaleTimeString('ko-KR');
+    return true;
+  } catch (e) { state.tradeMsg = '시트 저장 실패: ' + (e && e.message ? e.message : e); return false; }
+  finally { scheduleRender(); }
+}
+async function deleteTradesOnSheet(name) { if (!getSync()) return; try { await sheetPost({action: 'deleteTrades', account: name}); } catch (e) { state.tradeMsg = '시트에서 계좌를 지우지 못했습니다: ' + (e && e.message ? e.message : e); } }
+async function pullTrades(manual) {
+  const cfg = getSync(); if (!cfg || store.db) return;
+  try {
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&trades=1', {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    if (!Array.isArray(j.rows)) throw new Error('스크립트를 새 버전으로 다시 배포하세요(거래내역 기능이 없는 버전입니다).');
+    const incoming = rowsToAccounts(j.rows); let changed = 0, added = 0;
+    for (const inc of incoming) {
+      const ex = Object.keys(state.accounts).find(id => state.accounts[id] && state.accounts[id].name === inc.name);
+      if (ex) {
+        const old = state.accounts[ex];
+        if (JSON.stringify(accountToRows(old.name, old.broker || '삼성증권', old.data)) === JSON.stringify(accountToRows(inc.name, inc.broker, inc.A))) continue;
+        await store.set('accounts', ex, Object.assign({}, old, {broker: inc.broker, data: inc.A, uploadedAt: new Date().toISOString(), fileName: '구글 시트'})); changed++;
+      } else {
+        await store.set('accounts', 's' + keyOf(inc.name).slice(1, 10), {name: inc.name, broker: inc.broker, fileName: '구글 시트', uploadedAt: new Date().toISOString(), createdAt: new Date().toISOString(), data: inc.A}); added++;
+      }
+    }
+    state.tradeMsg = '시트에서 ' + incoming.length + '개 계좌를 읽었습니다' + (changed || added ? ' (갱신 ' + changed + ', 추가 ' + added + ')' : ' (변경 없음)') + ' · ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { if (manual || !/다시 배포/.test(String(e && e.message))) state.tradeMsg = '시트에서 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  scheduleRender();
+}
+function renderTradesCard(out, C) {
+  if (store.db) return;
+  const cfg = getSync(), c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '거래내역 구글 시트 저장소');
+  mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, c, '올린 거래내역을 대시보드 형식의 표로 바꿔 내 구글 시트의 "' + '거래내역' + '" 탭에 저장해 두고, 페이지를 열 때마다 그 탭에서 다시 읽습니다. 시트에서 직접 고치면 대시보드에 반영됩니다. 이 탭은 인터넷에 공개하지 않으며, 위의 기기 간 동기화 주소·비밀번호로만 읽고 씁니다.');
+  const r = mk('div', {class: 'row'}, c);
+  if (cfg) {
+    const b1 = mk('button', {type: 'button', class: 'primary'}, r, '모든 계좌를 시트에 저장'); b1.addEventListener('click', async () => { b1.disabled = true; await pushTrades(Object.keys(state.accounts)); b1.disabled = false; });
+    const b2 = mk('button', {type: 'button'}, r, '시트에서 불러오기'); b2.addEventListener('click', () => pullTrades(true));
+  }
+  const b3 = mk('button', {type: 'button'}, r, '표(CSV)로 내려받기'); b3.addEventListener('click', downloadTradesCsv);
+  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, c, state.tradeMsg || (cfg ? '연결됨 · 새 거래내역을 저장하면 자동으로 시트에도 저장됩니다.' : '기기 간 동기화를 설정하면 시트에 저장·불러오기를 쓸 수 있습니다. 설정 전에도 CSV로 내려받아 시트에 붙여 넣을 수 있습니다.'));
 }
 function renderSyncCard(out) {
   if (store.db) return;
@@ -1189,6 +1291,7 @@ function renderOpening(C) {
 function renderAccounts(C) {
   const out = $('res-accounts'); out.replaceChildren();
   renderSyncCard(out);
+  renderTradesCard(out, C);
   const up = mk('div', {class: 'card'}, out); mk('h2', {}, up, '거래내역 올리기');
   mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, up, '삼성증권 종합 거래내역 엑셀 또는 나무증권(NH투자증권) 거래내역 엑셀을 선택합니다(나무증권은 입출금이 거래내역에 포함돼 있어 거래내역 파일만 올리면 됩니다). 같은 계좌의 새 파일은 기존 계좌를 갱신하면 됩니다. 파일은 이 브라우저에서만 읽고, 계산 결과만 저장됩니다.');
   const ub = mk('button', {type: 'button', class: 'primary'}, up, '엑셀 파일 선택'); ub.addEventListener('click', openUpload);
@@ -1213,7 +1316,7 @@ function renderAccounts(C) {
       const doc = {name, broker: PB, fileName: P.fileName, uploadedAt: new Date().toISOString(), createdAt: old ? old.createdAt : new Date().toISOString(), data: A};
       if (JSON.stringify(doc).length > 250000) { toast('거래가 너무 많아 한 계좌에 담을 수 없습니다.'); return; }
       sv.disabled = true; const ok = await store.set('accounts', id, doc); sv.disabled = false;
-      if (ok) { ui.pending = null; toast('저장했습니다'); render(); }
+      if (ok) { ui.pending = null; toast('저장했습니다'); render(); if (getSync()) { await pushTrades([id]); } }
     });
   }
   C.accts.forEach(a => {
@@ -1230,7 +1333,7 @@ function renderAccounts(C) {
       mk('span', {class: 'sub'}, dz, '이 계좌의 거래 데이터와 취득단가가 삭제됩니다. 계속할까요?');
       const y = mk('button', {type: 'button', class: 'danger'}, dz, '삭제'), n = mk('button', {type: 'button'}, dz, '취소');
       n.addEventListener('click', () => { ui.confirmDel = null; render(); });
-      y.addEventListener('click', async () => { const ids = Object.keys(state.basis).filter(k => state.basis[k].acc === a.aid); for (const k of ids) await store.del('basis', k); const ok = await store.del('accounts', a.aid); ui.confirmDel = null; if (ok) toast('삭제했습니다'); render(); });
+      y.addEventListener('click', async () => { const ids = Object.keys(state.basis).filter(k => state.basis[k].acc === a.aid); for (const k of ids) await store.del('basis', k); const nm0 = a.name, ok = await store.del('accounts', a.aid); ui.confirmDel = null; if (ok) { toast('삭제했습니다'); deleteTradesOnSheet(nm0); } render(); });
     } else { const d = mk('button', {type: 'button'}, dz, '계좌 삭제'); d.addEventListener('click', () => { ui.confirmDel = a.aid; render(); }); }
   });
 }

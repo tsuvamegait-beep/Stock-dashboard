@@ -7,6 +7,8 @@ const SECRET_KEY = '여기에-나만-아는-긴-비밀번호를-적으세요';
 const SHEET_ID = '1mfBp8VMC9O5UGGBqICfmFYpt9mIbkRO1lQK82OdY9Bs'; // 시세 시트(StockCode)의 ID
 const HOUR = 16;            // 매일 기록할 시각(한국시간, 0~23). 바꾼 뒤 setupTrigger를 다시 실행하세요
 const HIST_NAME = '기록';    // 기록이 쌓일 탭 이름(없으면 자동 생성)
+const TRADES_NAME = '거래내역'; // 거래내역이 저장될 탭 이름(없으면 자동 생성)
+const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
 const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
 
 function out_(obj) {
@@ -32,6 +34,7 @@ function save_(obj) {
 function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
+  if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
   const d = load_();
   return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
 }
@@ -39,6 +42,8 @@ function doPost(e) {
   let body;
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ok: false, error: '요청 형식 오류'}); }
   if (body.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
+  if (body.action === 'saveTrades') return out_(saveTrades_(body.account, body.rows));
+  if (body.action === 'deleteTrades') return out_(saveTrades_(body.account, []));
   const cur = load_();
   if (body.updatedAt < cur.updatedAt) return out_({ok: false, error: '서버에 더 최신 데이터가 있습니다. 새로고침 후 다시 시도하세요'});
   save_({updatedAt: body.updatedAt, data: body.data});
@@ -110,4 +115,36 @@ function readHistory_() {
 function setupTrigger() {
   ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'recordDaily') ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('recordDaily').timeBased().everyDays(1).atHour(HOUR).inTimezone('Asia/Seoul').create();
+}
+
+/* ===== 거래내역 탭: 계좌별로 통째로 저장/삭제, 전체 읽기 ===== */
+function tradesSheet_(ss) {
+  let sh = ss.getSheetByName(TRADES_NAME);
+  if (!sh) { sh = ss.insertSheet(TRADES_NAME); sh.appendRow(TRADE_HEAD); sh.setFrozenRows(1); sh.getRange('C:C').setNumberFormat('@'); }
+  return sh;
+}
+function saveTrades_(account, rows) {
+  if (!account) return {ok: false, error: '계좌 이름이 없습니다'};
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID), sh = tradesSheet_(ss), W = TRADE_HEAD.length;
+    const last = sh.getLastRow();
+    const keep = last >= 2 ? sh.getRange(2, 1, last - 1, W).getValues().filter(r => String(r[0]) !== String(account)) : [];
+    const fresh = (rows || []).map(r => { const x = r.slice(0, W); while (x.length < W) x.push(''); return x; });
+    const all = keep.concat(fresh);
+    if (last >= 2) sh.getRange(2, 1, last - 1, W).clearContent();
+    if (all.length) {
+      sh.getRange(2, 3, all.length, 1).setNumberFormat('@');
+      sh.getRange(2, 1, all.length, W).setValues(all);
+    }
+    return {ok: true, saved: fresh.length, total: all.length};
+  } finally { lock.releaseLock(); }
+}
+function readTrades_() {
+  const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TRADES_NAME);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const tz = 'Asia/Seoul';
+  return sh.getRange(2, 1, sh.getLastRow() - 1, TRADE_HEAD.length).getValues()
+    .filter(r => String(r[0]).trim() && String(r[4]).trim())
+    .map(r => r.map((c, i) => (c instanceof Date) ? Utilities.formatDate(c, tz, 'yyyy-MM-dd') : c));
 }

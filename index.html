@@ -64,6 +64,12 @@
 :root[data-theme="ivory"] header.top .meta{color:#e6d6c0}
 :root[data-theme="ivory"] header.top button.primary{background:#fff9f2;border-color:#fff9f2;color:#5c402a}
 :root[data-theme="ivory"] .tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent)}
+.rs-badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--axis);color:var(--ink2);white-space:nowrap}
+.rs-badge.up{color:#127a3d;border-color:#127a3d}
+.rs-badge.down{color:#b3261e;border-color:#b3261e}
+:root[data-theme="dark"] .rs-badge.up,:root[data-theme="amber"] .rs-badge.up{color:#5fd08a;border-color:#5fd08a}
+:root[data-theme="dark"] .rs-badge.down,:root[data-theme="amber"] .rs-badge.down{color:#ff8a80;border-color:#ff8a80}
+@media (prefers-color-scheme: dark){:root:not([data-theme]) .rs-badge.up{color:#5fd08a;border-color:#5fd08a}:root:not([data-theme]) .rs-badge.down{color:#ff8a80;border-color:#ff8a80}}
 /* 테마 선택 카드 */
 .thm{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
 .thm button{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:left;padding:12px;border-radius:8px;border:1px solid var(--axis);background:var(--surface);width:100%}
@@ -101,7 +107,8 @@ input::placeholder{color:var(--muted)}
 .col{display:flex;flex-direction:column;gap:14px;min-width:0}
 .toolbar{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center}
 .seg{display:inline-flex;border:1px solid var(--axis);border-radius:6px;overflow:hidden}
-.seg button{border:0;border-radius:0;padding:5px 12px;color:var(--ink2)}
+.seg button{border:0;border-radius:0;padding:5px 12px;color:var(--ink2);white-space:nowrap}
+@media (max-width:420px){.seg button{padding:5px 9px}}
 .seg button+button{border-left:1px solid var(--axis)}
 .seg button[aria-pressed=true]{background:var(--wash);color:var(--ink);font-weight:500}
 .tlabel{font-size:12px;color:var(--muted);margin-right:6px}
@@ -191,6 +198,7 @@ td input.tk{width:110px;text-align:left}
   <nav class="tabs" id="tabs" role="tablist" aria-label="화면">
     <button type="button" role="tab" data-tab="holdings" aria-selected="true">보유 현황</button>
     <button type="button" role="tab" data-tab="detail" aria-selected="false">상세 현황</button>
+    <button type="button" role="tab" data-tab="rs" aria-selected="false">RS</button>
     <button type="button" role="tab" data-tab="trades" aria-selected="false">거래 내역</button>
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
@@ -227,6 +235,7 @@ td input.tk{width:110px;text-align:left}
   <section id="tab-prices" class="col" hidden><div class="col" id="res-prices"></div></section>
   <section id="tab-opening" class="col" hidden><div class="col" id="res-opening"></div></section>
   <section id="tab-accounts" class="col" hidden><div class="col" id="res-accounts"></div></section>
+  <section id="tab-rs" class="col" hidden><div class="col" id="res-rs"></div></section>
   <section id="tab-theme" class="col" hidden><div class="col" id="res-theme"></div></section>
 </div>
 <input type="file" id="file" accept=".xlsx,.xls" hidden>
@@ -910,6 +919,245 @@ function renderHoldings(C) {
 }
 
 
+/* ================= 화면: RS(상대강도) ================= */
+// 과거 시세는 Apps Script가 구글 시트의 GOOGLEFINANCE로 계산해 돌려준다(?series=1). 하루 한 번 이 브라우저에 보관.
+const RS_LS = 'portfolio-rs', RSC_LS = 'portfolio-rs-cache';
+const RS_IDX = [
+  {id: 'kospi', name: '코스피', t: 'KRX:KOSPI'},
+  {id: 'spx', name: 'S&P 500', t: 'INDEXSP:.INX'},
+  {id: 'ixic', name: '나스닥 종합', t: 'INDEXNASDAQ:.IXIC'},
+  {id: 'ndx', name: '나스닥 100', t: 'INDEXNASDAQ:NDX'},
+  {id: 'dji', name: '다우존스', t: 'INDEXDJX:.DJI'},
+  {id: 'sox', name: '필라델피아 반도체', t: 'INDEXNASDAQ:SOX'},
+  {id: 'n225', name: '닛케이 225', t: 'INDEXNIKKEI:NI225'},
+  {id: 'k200', name: 'KODEX 200 (코스피200 ETF)', t: 'KRX:069500'},
+  {id: 'spy', name: 'SPY (S&P 500 ETF)', t: 'SPY'},
+  {id: 'qqq', name: 'QQQ (나스닥 100 ETF)', t: 'QQQ'},
+  {id: 'custom', name: '직접 입력', t: ''}
+];
+const RS_PER = [{id: '1w', l: '1주', d: 7}, {id: '1m', l: '1개월', m: 1}, {id: '3m', l: '3개월', m: 3}, {id: '6m', l: '6개월', m: 6}, {id: 'ytd', l: 'YTD'}, {id: '1y', l: '1년', m: 12}];
+const rs = (() => { const d = {sel: '', idx: '', per: '3m', tk: {}, cidx: ''}; try { return Object.assign(d, JSON.parse(localStorage.getItem(RS_LS) || '{}')); } catch (e) { return d; } })();
+rs.busy = false; rs.msg = ''; rs.tried = {};
+const rsSave = () => { try { localStorage.setItem(RS_LS, JSON.stringify({sel: rs.sel, idx: rs.idx, per: rs.per, tk: rs.tk, cidx: rs.cidx})); } catch (e) {} };
+let rsCache = {}; try { rsCache = JSON.parse(localStorage.getItem(RSC_LS) || '{}') || {}; } catch (e) { rsCache = {}; }
+function rsCacheSave() {
+  Object.keys(rsCache).sort((a, b) => (rsCache[b].ts || 0) - (rsCache[a].ts || 0)).slice(24).forEach(k => { delete rsCache[k]; });
+  try { localStorage.setItem(RSC_LS, JSON.stringify(rsCache)); } catch (e) {}
+}
+const rsDay = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+function rsAutoTicker(h) {
+  const k = keyOf(h.name), sy = state.symbols[k], pr = state.prices[k], c = String((sy && sy.ticker) || (pr && pr.code) || '').trim().toUpperCase();
+  if (!c) return '';
+  if (c.indexOf(':') > 0) return c;
+  let m;
+  if ((m = c.match(/^(\d{4})\.T$/))) return 'TYO:' + m[1];
+  if (/^[0-9][0-9A-Z]{5}$/.test(c)) return 'KRX:' + c;
+  return c;
+}
+const rsTicker = h => (rs.tk[keyOf(h.name)] || rsAutoTicker(h));
+const rsDefaultIdx = h => h.ccy === 'JPY' ? 'n225' : h.mk === 'KR' ? 'kospi' : 'spx';
+function rsIndex(h) {
+  const id = rs.idx || (h ? rsDefaultIdx(h) : 'kospi'), x = RS_IDX.find(i => i.id === id) || RS_IDX[0];
+  return x.id === 'custom' ? {id: 'custom', name: rs.cidx || '직접 입력', t: (rs.cidx || '').trim().toUpperCase()} : x;
+}
+async function rsFetch(tickers, force) {
+  const cfg = getSync();
+  if (!cfg) { rs.msg = '과거 시세는 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화(Apps Script 주소·비밀번호)를 먼저 설정하세요.'; scheduleRender(); return; }
+  const today = rsDay(Date.now()), need = tickers.filter(t => t && (force || !rsCache[t] || rsCache[t].day !== today));
+  if (!need.length || rs.busy) return;
+  rs.busy = true; rs.msg = ''; scheduleRender();
+  try {
+    const from = rsDay(Date.now() - 400 * 864e5);
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&series=1&from=' + from + '&t=' + encodeURIComponent(need.join(',')), {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    if (!j.series) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(RS 기능이 없는 버전입니다).');
+    need.forEach(t => { const s = j.series[t]; rsCache[t] = s && s.ok ? {day: today, ts: Date.now(), rows: s.rows} : {day: today, ts: Date.now(), err: (s && s.error) || '데이터 없음', rows: []}; });
+    rsCacheSave();
+  } catch (e) { rs.msg = '과거 시세를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  rs.busy = false; scheduleRender();
+}
+function rsAt(rows, d) { let lo = 0, hi = rows.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (rows[m][0] <= d) { k = m; lo = m + 1; } else hi = m - 1; } return k < 0 ? null : k; }
+function rsStart(per, end) {
+  if (per.id === 'ytd') return (+end.slice(0, 4) - 1) + '-12-31';
+  const d = new Date(end + 'T00:00:00'); if (per.d) d.setDate(d.getDate() - per.d); else d.setMonth(d.getMonth() - per.m);
+  return rsDay(d.getTime());
+}
+const rsDaysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+// 종목(S)과 지수(I)의 [날짜, 종가] 배열로 한 기간의 상대강도를 계산한다.
+function rsCalc(S, I, per) {
+  if (!S || !I || S.length < 2 || !I.length) return null;
+  const end = S[S.length - 1][0], ie = rsAt(I, end); if (ie == null) return null;
+  const start = rsStart(per, end);
+  let s0 = rsAt(S, start), late = false; if (s0 == null) { s0 = 0; late = true; }
+  const i0 = rsAt(I, S[s0][0]); if (i0 == null) return null;
+  const sB = S[s0][1], iB = I[i0][1], pts = [];
+  for (let k = s0; k < S.length; k++) { const d = S[k][0], ik = rsAt(I, d); if (ik == null) continue; const sv = S[k][1] / sB * 100, iv = I[ik][1] / iB * 100; pts.push({d, s: sv, i: iv, r: sv / iv * 100, both: I[ik][0] === d}); }
+  if (pts.length < 2) return null;
+  const L = pts[pts.length - 1], rS = L.s / 100 - 1, rI = L.i / 100 - 1;
+  const R = {per, start: S[s0][0], end, late, pts, rS, rI, ex: rS - rI, ratio: (1 + rS) / (1 + rI), idxLag: rsDaysBetween(I[ie][0], end)};
+  const rMax = Math.max(...pts.map(p => p.r)), rMin = Math.min(...pts.map(p => p.r));
+  R.fromHigh = L.r / rMax - 1; R.fromLow = L.r / rMin - 1;
+  const K = Math.max(1, Math.min(20, Math.floor(pts.length / 3))); R.trendN = K; R.trend = L.r / pts[pts.length - 1 - K].r - 1;
+  const mdd = arr => { let pk = arr[0], m = 0; arr.forEach(v => { pk = Math.max(pk, v); m = Math.min(m, v / pk - 1); }); return m; };
+  R.mddS = mdd(pts.map(p => p.s)); R.mddI = mdd(pts.map(p => p.i));
+  const both = pts.filter(p => p.both), a = [], b = [];
+  for (let k = 1; k < both.length; k++) { a.push(both[k].s / both[k - 1].s - 1); b.push(both[k].i / both[k - 1].i - 1); }
+  R.n = a.length;
+  if (a.length >= 5) {
+    const mean = x => x.reduce((p, q) => p + q, 0) / x.length, ma = mean(a), mb = mean(b);
+    let cov = 0, va = 0, vb = 0; for (let k = 0; k < a.length; k++) { cov += (a[k] - ma) * (b[k] - mb); va += (a[k] - ma) ** 2; vb += (b[k] - mb) ** 2; }
+    R.beta = vb > 0 ? cov / vb : null; R.corr = va > 0 && vb > 0 ? cov / Math.sqrt(va * vb) : null;
+    R.volS = Math.sqrt(va / (a.length - 1) * 252); R.volI = Math.sqrt(vb / (b.length - 1) * 252);
+    const up = [], upI = [], dn = [], dnI = []; for (let k = 0; k < a.length; k++) { if (b[k] > 0) { up.push(a[k]); upI.push(b[k]); } else if (b[k] < 0) { dn.push(a[k]); dnI.push(b[k]); } }
+    R.upCap = up.length >= 3 ? mean(up) / mean(upI) : null; R.dnCap = dn.length >= 3 ? mean(dn) / mean(dnI) : null;
+    R.win = a.filter((v, k) => v > b[k]).length / a.length;
+  }
+  return R;
+}
+const rsVerdict = ex => ex > 0.01 ? 'up' : ex < -0.01 ? 'down' : 'even';
+const RSV = {up: '강세', down: '약세', even: '비슷'};
+const pp = x => (x > 0 ? '+' : x < 0 ? '−' : '') + Math.abs(x * 100).toFixed(1) + '%p';
+// 서술형 리포트(규칙 기반). 투자 권유가 아니라 숫자를 읽어 주는 문장.
+function rsReport(name, idxName, R, all) {
+  const P = [];
+  P.push(R.per.l + '(' + R.start + ' 종가 기준 → ' + R.end + ') 동안 ' + name + ' ' + pct(R.rS) + ', ' + idxName + ' ' + pct(R.rI) + '. 지수보다 ' + pp(Math.abs(R.ex)).replace(/^[+−]/, '') + ' ' + (R.ex > 0.001 ? '앞섰습니다' : R.ex < -0.001 ? '뒤처졌습니다' : '차이가 거의 없습니다') + ' (RS 비율 ' + R.ratio.toFixed(2) + ', 1보다 크면 지수보다 강함).' + (R.late ? ' 이 종목은 데이터가 ' + R.start + '부터라 기간 전체를 다 채우지 못했습니다.' : ''));
+  const ok = all.filter(x => x.R), cnt = {up: 0, down: 0, even: 0}; ok.forEach(x => { cnt[rsVerdict(x.R.ex)]++; });
+  if (ok.length >= 3) {
+    const g = id => { const x = all.find(y => y.p.id === id); return x && x.R ? rsVerdict(x.R.ex) : null; };
+    const shortS = [g('1w'), g('1m')].filter(Boolean), longS = [g('6m'), g('1y')].filter(Boolean);
+    const sUp = shortS.filter(v => v === 'up').length, sDn = shortS.filter(v => v === 'down').length, lUp = longS.filter(v => v === 'up').length, lDn = longS.filter(v => v === 'down').length;
+    let pat = '';
+    if (cnt.up >= ok.length - 1 && cnt.up >= 4) pat = '거의 모든 기간에서 지수보다 강해, 상대강도가 일관되게 좋았습니다.';
+    else if (cnt.down >= ok.length - 1 && cnt.down >= 4) pat = '거의 모든 기간에서 지수보다 약해, 상대강도가 일관되게 나빴습니다.';
+    else if (sUp && lDn && !sDn) pat = '길게 보면 지수보다 약했지만 최근(1주·1개월)에는 앞서고 있어, 상대강도가 회복되는 초기 모습일 수 있습니다.';
+    else if (sDn && lUp && !sUp) pat = '길게 보면 지수보다 강했지만 최근(1주·1개월)에는 뒤처져, 상대강도가 둔화되고 있습니다.';
+    else pat = '기간에 따라 강약이 엇갈려 뚜렷한 방향은 없습니다.';
+    P.push(ok.length + '개 기간 중 강세 ' + cnt.up + ', 약세 ' + cnt.down + ', 비슷 ' + cnt.even + '. ' + pat);
+  }
+  let t = 'RS선(종목÷지수)은 ' + R.per.l + ' 중 고점 대비 ' + pct(R.fromHigh) + ' 위치';
+  t += R.fromHigh > -0.03 ? '로 고점 부근입니다. 상대 강세가 이어지는 중입니다.' : R.fromLow < 0.03 ? '로 저점 부근입니다. 상대 약세가 이어지는 중입니다.' : '입니다.';
+  t += ' 최근 ' + R.trendN + '거래일 RS 변화는 ' + pct(R.trend) + '(' + (R.trend > 0.01 ? '개선' : R.trend < -0.01 ? '악화' : '보합') + ').';
+  P.push(t);
+  if (R.beta != null) {
+    let r = '베타 ' + R.beta.toFixed(2) + '(지수가 1% 움직일 때 평균 ' + R.beta.toFixed(2) + '%), 상관계수 ' + R.corr.toFixed(2) + ', 연환산 변동성 ' + pct(R.volS, 0).replace('+', '') + '(지수 ' + pct(R.volI, 0).replace('+', '') + '), 최대낙폭 ' + pct(R.mddS) + '(지수 ' + pct(R.mddI) + ').';
+    if (R.upCap != null && R.dnCap != null && R.corr >= 0.3 && R.upCap > 0 && R.dnCap > 0) {
+      r += ' 지수가 오른 날 평균 상승폭은 지수의 ' + Math.round(R.upCap * 100) + '%, 내린 날 하락폭은 ' + Math.round(R.dnCap * 100) + '%';
+      r += R.upCap > R.dnCap + 0.1 ? '로, 오를 때 더 오르고 내릴 때 덜 빠진 유리한 비대칭입니다.' : R.dnCap > R.upCap + 0.1 ? '로, 내릴 때 더 크게 빠지는 불리한 비대칭입니다.' : '로 대칭에 가깝습니다.';
+    }
+    if (R.corr < 0.3) r += ' 지수와 상관이 낮아 지수 대비 비교의 의미가 약할 수 있습니다(다른 기초 지수를 골라 보세요).';
+    P.push(r);
+  }
+  const score = (R.ex > 0.01 ? 1 : R.ex < -0.01 ? -1 : 0) + (cnt.up - cnt.down) / Math.max(1, ok.length) * 2 + (R.trend > 0.01 ? 0.5 : R.trend < -0.01 ? -0.5 : 0);
+  const label = score >= 1.5 ? '상대 강세' : score <= -1.5 ? '상대 약세' : '혼조';
+  return {P, label, cls: score >= 1.5 ? 'up' : score <= -1.5 ? 'down' : 'even'};
+}
+function rsChart(parent, pts, lines, opt) {
+  const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 220, L = 46, Rm = 10, Tp = 10, B = 26, n = pts.length;
+  const vals = []; lines.forEach(ln => pts.forEach(p => vals.push(p[ln.k])));
+  let mn = Math.min(100, ...vals), mx = Math.max(100, ...vals); const pad = (mx - mn) * 0.08 || 1; mn -= pad; mx += pad;
+  const X = i => L + i / Math.max(1, n - 1) * (W - L - Rm), Y = v => Tp + (1 - (v - mn) / (mx - mn)) * (Ht - Tp - B);
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Ht); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', opt.label); svg.style.display = 'block';
+  const el = (nm, a, tx) => { const e = document.createElementNS(NS, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; svg.appendChild(e); return e; };
+  for (let i = 0; i <= 3; i++) { const v = mn + (mx - mn) * i / 3, y = Y(v); el('line', {x1: L, x2: W - Rm, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'}); el('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, opt.fmt(v)); }
+  el('line', {x1: L, x2: W - Rm, y1: Y(100), y2: Y(100), stroke: 'var(--muted)', 'stroke-width': '1.2', 'stroke-dasharray': '4 3'});
+  el('text', {x: L, y: Ht - 7, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts[0].d.slice(2)); el('text', {x: W - Rm, y: Ht - 7, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts[n - 1].d.slice(2));
+  if (n > 8) el('text', {x: X(Math.floor((n - 1) / 2)), y: Ht - 7, 'text-anchor': 'middle', 'font-size': '12', fill: 'var(--muted)'}, pts[Math.floor((n - 1) / 2)].d.slice(2));
+  lines.forEach(ln => el('polyline', {points: pts.map((p, i) => X(i).toFixed(1) + ',' + Y(p[ln.k]).toFixed(1)).join(' '), fill: 'none', stroke: ln.color, 'stroke-width': ln.w || '2', 'stroke-linejoin': 'round'}));
+  lines.forEach(ln => { const p = pts[n - 1]; el('circle', {cx: X(n - 1).toFixed(1), cy: Y(p[ln.k]).toFixed(1), r: 3.5, fill: ln.color, stroke: 'var(--surface)', 'stroke-width': '1.5'}); });
+  const cw = (W - L - Rm) / Math.max(1, n - 1);
+  pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, lines.map(ln => ({label: ln.name, value: opt.tip(p[ln.k]), color: ln.color}))); });
+  parent.appendChild(svg);
+}
+function renderRS(C) {
+  const out = $('res-rs'); out.replaceChildren();
+  const list = mergeRows(C.rows).sort((a, b) => (b.valueKRW || 0) - (a.valueKRW || 0));
+  if (!list.length) { emptyState(out); return; }
+  let h = list.find(x => keyOf(x.name) === rs.sel); if (!h) { h = list[0]; rs.sel = keyOf(h.name); }
+  const ix = rsIndex(h), st = rsTicker(h), per = RS_PER.find(p => p.id === rs.per) || RS_PER[2];
+  const c = mk('div', {class: 'card'}, out); mk('h2', {}, c, 'RS (상대강도) 분석');
+  mk('p', {class: 'sub', style: 'margin:4px 0 12px'}, c, '보유 종목이 기초 지수보다 강했는지(RS, 상대강도) 기간별로 비교합니다. 두 가격을 기간 시작일 = 100으로 맞춰 그리고, 종목÷지수 비율(RS선)이 오르면 지수보다 강했다는 뜻입니다.');
+  const r1 = mk('div', {class: 'row'}, c);
+  const lb1 = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lb1, '종목');
+  const s1 = mk('select', {'aria-label': '종목'}, lb1); list.forEach(x => { const o = mk('option', {value: keyOf(x.name)}, s1, x.name); if (keyOf(x.name) === rs.sel) o.selected = true; });
+  s1.addEventListener('change', () => { rs.sel = s1.value; rs.idx = ''; rsSave(); render(); });
+  const lb2 = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lb2, '기초 지수');
+  const s2 = mk('select', {'aria-label': '기초 지수'}, lb2); RS_IDX.forEach(x => { const o = mk('option', {value: x.id}, s2, x.name + (x.id === rsDefaultIdx(h) ? ' (기본)' : '')); if (x.id === ix.id) o.selected = true; });
+  s2.addEventListener('change', () => { rs.idx = s2.value; rsSave(); render(); });
+  if (ix.id === 'custom') { const ci = mk('input', {type: 'text', placeholder: '예: KRX:KOSPI, SPY, KRX:069500', 'aria-label': '지수 티커', value: rs.cidx || '', style: 'width:200px'}, r1); ci.addEventListener('change', () => { rs.cidx = ci.value.trim().toUpperCase(); rsSave(); render(); }); }
+  const r2 = mk('div', {class: 'row', style: 'margin-top:10px'}, c);
+  const seg = mk('span', {class: 'seg', style: 'overflow-x:auto;max-width:100%'}, r2);
+  RS_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { rs.per = p.id; rsSave(); render(); }); });
+  const r3 = mk('div', {class: 'row', style: 'margin-top:10px'}, c);
+  mk('span', {class: 'sub'}, r3, '구글 티커');
+  const ti = mk('input', {type: 'text', 'aria-label': '종목 구글 티커', value: st, placeholder: '예: KRX:005930, NVDA', style: 'width:150px'}, r3);
+  ti.addEventListener('change', () => { const v = ti.value.trim().toUpperCase(); if (v && v !== rsAutoTicker(h)) rs.tk[keyOf(h.name)] = v; else delete rs.tk[keyOf(h.name)]; rsSave(); render(); });
+  mk('span', {class: 'sub'}, r3, 'vs ' + (ix.t || '—'));
+  const fb = mk('button', {type: 'button'}, r3, rs.busy ? '불러오는 중…' : '새로 불러오기'); fb.disabled = rs.busy || !st || !ix.t;
+  fb.addEventListener('click', () => rsFetch([st, ix.t], true));
+  const S = st && rsCache[st], I = ix.t && rsCache[ix.t];
+  const msgs = [];
+  if (rs.msg) msgs.push(rs.msg);
+  if (!st) msgs.push('이 종목의 티커를 시세 시트에서 찾지 못했습니다. 구글 티커 칸에 직접 넣어 주세요(국내: KRX:종목코드, 미국: 티커, 일본: TYO:코드).');
+  if (S && S.err) msgs.push(st + ': ' + S.err + '. 구글 티커가 맞는지 확인하세요.');
+  if (I && I.err) msgs.push(ix.t + ': ' + I.err + '. 지수 대신 ETF(예: KODEX 200, SPY, QQQ)를 골라 보세요.');
+  msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 0 0;color:var(--warn-ink)'}, c, m));
+  const today = rsDay(Date.now());
+  if (st && ix.t && (!S || !I || S.day !== today || I.day !== today) && !rs.busy && getSync()) {
+    const key = st + '|' + ix.t + '|' + today; if (!rs.tried[key]) { rs.tried[key] = 1; setTimeout(() => rsFetch([st, ix.t], false), 0); }
+  }
+  if (!S || !I || S.err || I.err || !S.rows.length || !I.rows.length) {
+    if (!rs.busy && !msgs.length) mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, getSync() ? '과거 시세를 불러오면 분석이 나타납니다.' : '과거 시세는 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하고, Apps Script를 새 버전으로 배포하세요.');
+    return;
+  }
+  const R = rsCalc(S.rows, I.rows, per);
+  if (!R) { mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, '이 기간을 비교할 데이터가 부족합니다.'); return; }
+  const all = RS_PER.map(p => ({p, R: rsCalc(S.rows, I.rows, p)}));
+  const rep = rsReport(h.name, ix.name, R, all);
+  // 판정 카드
+  const vc = mk('div', {class: 'card'}, out), vh = mk('div', {class: 'sec-h'}, vc);
+  mk('h2', {}, vh, h.name + ' vs ' + ix.name + ' · ' + per.l);
+  const badge = mk('span', {class: 'rs-badge ' + rep.cls}, vh, '종합: ' + rep.label);
+  badge.title = '선택 기간 초과수익, 6개 기간 강약, 최근 RS 추세를 합쳐 기계적으로 판정';
+  const tl = mk('div', {class: 'tiles', style: 'margin:10px 0 12px'}, vc);
+  tile(tl, '종목 수익률', pct(R.rS), R.start + ' → ' + R.end);
+  tile(tl, '지수 수익률', pct(R.rI), ix.name);
+  tile(tl, '초과수익', pp(R.ex), RSV[rsVerdict(R.ex)] + ' (±1%p 기준)');
+  tile(tl, 'RS 비율', R.ratio.toFixed(2), '1보다 크면 지수보다 강함');
+  mk('h3', {style: 'margin:4px 0 2px;font-size:14px'}, vc, '가격 비교 (시작일 = 100)');
+  const lg = mk('div', {class: 'legend', style: 'margin:2px 0 4px'}, vc);
+  [[h.name, 'var(--s1)'], [ix.name, 'var(--s2)']].forEach(([n, col]) => { const l = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, l); sw.style.background = col; l.append(n); });
+  rsChart(vc, R.pts, [{k: 's', name: h.name, color: 'var(--s1)'}, {k: 'i', name: ix.name, color: 'var(--s2)'}], {label: '종목과 지수 가격 비교', fmt: v => (v >= 100 ? '+' : '') + (v - 100).toFixed(0) + '%', tip: v => pct(v / 100 - 1)});
+  mk('h3', {style: 'margin:14px 0 2px;font-size:14px'}, vc, 'RS선 (종목 ÷ 지수, 시작일 = 100)');
+  mk('p', {class: 'sub', style: 'margin:0 0 4px;font-size:12px'}, vc, '점선(100) 위면 기간 시작 이후 지수보다 강했던 것이고, 선이 오르는 구간은 지수보다 잘 오른 구간입니다.');
+  rsChart(vc, R.pts, [{k: 'r', name: 'RS', color: 'var(--accent)', w: '2.4'}], {label: 'RS선', fmt: v => v.toFixed(0), tip: v => v.toFixed(1)});
+  if (R.idxLag > 5) mk('p', {class: 'sub', style: 'margin:6px 0 0;color:var(--warn-ink)'}, vc, '지수 데이터의 마지막 날짜가 종목보다 ' + R.idxLag + '일 이릅니다. 최근 구간은 비교가 정확하지 않을 수 있습니다.');
+  // 리포트
+  const rc = mk('div', {class: 'card'}, out); mk('h2', {}, rc, '분석 리포트');
+  rep.P.forEach(t => mk('p', {style: 'margin:8px 0 0;line-height:1.75'}, rc, t));
+  // 기간별 표
+  const tc = mk('div', {class: 'card'}, out); mk('h2', {}, tc, '기간별 비교');
+  const tw = mk('div', {class: 'tw', style: 'margin-top:8px'}, tc), t = mk('table', {}, tw), hr = mk('tr', {}, mk('thead', {}, t));
+  ['기간', '종목', '지수', '초과', '판정'].forEach((x, i) => mk('th', i === 0 || i === 4 ? {class: 'l'} : {}, hr, x));
+  const tb = mk('tbody', {}, t);
+  all.forEach(x => { const tr = mk('tr', {}, tb); if (x.p.id === per.id) tr.style.background = 'var(--wash)'; mk('td', {class: 'l'}, tr, x.p.l);
+    if (!x.R) { mk('td', {}, tr, '—'); mk('td', {}, tr, '—'); mk('td', {}, tr, '—'); mk('td', {class: 'l'}, tr, '데이터 부족'); return; }
+    mk('td', {}, tr, pct(x.R.rS)); mk('td', {}, tr, pct(x.R.rI)); mk('td', {}, tr, pp(x.R.ex)); mk('td', {class: 'l'}, tr, RSV[rsVerdict(x.R.ex)] + (x.R.late ? ' (상장 후)' : '')); });
+  // 위험 지표
+  if (R.beta != null) {
+    const kc = mk('div', {class: 'card'}, out); mk('h2', {}, kc, '움직임 특성 (' + per.l + ', 일간 ' + R.n + '개)');
+    const kt = mk('div', {class: 'tiles', style: 'margin-top:10px'}, kc);
+    tile(kt, '베타', R.beta.toFixed(2), '지수 1% 움직일 때 평균');
+    tile(kt, '상관계수', R.corr.toFixed(2), '1에 가까울수록 지수와 같이 움직임');
+    tile(kt, '변동성(연환산)', pct(R.volS, 0).replace('+', ''), '지수 ' + pct(R.volI, 0).replace('+', ''));
+    tile(kt, '최대낙폭', pct(R.mddS), '지수 ' + pct(R.mddI));
+    if (R.upCap != null) tile(kt, '상승일 포착률', Math.round(R.upCap * 100) + '%', '지수가 오른 날, 지수 대비');
+    if (R.dnCap != null) tile(kt, '하락일 포착률', Math.round(R.dnCap * 100) + '%', '지수가 내린 날, 낮을수록 좋음');
+    tile(kt, '지수보다 강한 날', Math.round(R.win * 100) + '%', '일간 수익률 기준');
+    tile(kt, 'RS 고점 대비', pct(R.fromHigh), '0%면 기간 최고 상대강도');
+  }
+  mk('p', {class: 'sub', style: 'margin:0 4px'}, out, '종가 기준 가격 수익률입니다(배당 제외). 종목과 지수는 각자의 통화로 비교하며 환율 효과는 넣지 않았습니다. 구글 시세(GOOGLEFINANCE)는 지연되거나 일부 종목·지수가 빠질 수 있습니다. 판정은 숫자를 기계적으로 읽은 것이며 투자 권유가 아닙니다. 마지막 불러오기: ' + new Date(Math.min(S.ts, I.ts)).toLocaleString('ko-KR'));
+}
+
 /* ================= 화면: 테마 ================= */
 const THEMES = [
   {id: 'auto', name: '자동', desc: '기기의 라이트/다크 설정을 그대로 따릅니다.', sw: null},
@@ -1158,7 +1406,7 @@ async function syncSheet(silent) {
       const h = held[k], s = state.symbols[k] || {}, old = state.prices[k], ccy = (h && h.ccy) || s.ccy || 'KRW';
       if (ccy === 'KRW') { if (!(v > 0)) return; } else { if (lv > 0) v = lv; else { nolocal++; return; } }
       if (old && old.price > 0 && (v / old.price > 3 || v / old.price < 1 / 3)) { skipped++; return; }
-      writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy, price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || ''}]); np++;
+      writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy, price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || '', code: ids[0] || ''}]); np++;
     });
     if (secChanged) saveSectors();
     for (const w of writes) await store.set(w[0], w[1], w[2]);
@@ -1546,19 +1794,19 @@ let rq = 0, pendingAfterBlur = false;
 function scheduleRender() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function render() {
   const ae = document.activeElement;
-  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening') && ae.type === 'text') { pendingAfterBlur = true; return; }
+  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening,#res-rs') && ae.type === 'text') { pendingAfterBlur = true; return; }
   const C = compute();
   $('banner').hidden = !(state.ready && !state.persist) && state.writable;
   if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  ['holdings', 'detail', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'detail', 'rs', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));

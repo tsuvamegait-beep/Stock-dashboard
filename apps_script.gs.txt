@@ -10,6 +10,7 @@ const HIST_NAME = '기록';    // 기록이 쌓일 탭 이름(없으면 자동 �
 const TRADES_NAME = '거래내역'; // 거래내역이 저장될 탭 이름(없으면 자동 생성)
 const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
 const FX_NAME = '환율';    // 일별 환율 탭(setupFx를 한 번 실행하면 만들어집니다)
+const RS_NAME = '_RS계산';  // RS 탭용 임시 계산 탭(자동 생성, 숨김)
 const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
 
 function out_(obj) {
@@ -36,6 +37,7 @@ function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
   if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
+  if (e.parameter.series) return out_(readSeries_(String(e.parameter.t || ''), String(e.parameter.from || '')));
   if (e.parameter.fx) { const f = readFx_(); return f ? out_({ok: true, fx: f}) : out_({ok: false, error: '환율 탭이 없습니다. Apps Script에서 setupFx를 한 번 실행하세요'}); }
   const d = load_();
   return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
@@ -171,4 +173,35 @@ function readFx_() {
   const pick = ci => v.filter(r => r[ci] instanceof Date && typeof r[ci + 1] === 'number' && r[ci + 1] > 0)
     .map(r => [Utilities.formatDate(r[ci], tz, 'yyyy-MM-dd'), Math.round(r[ci + 1] * 10000) / 10000]);
   return {USD: pick(0), JPY: pick(3)};
+}
+
+/* ===== RS 탭: 종목·지수의 일별 종가(GOOGLEFINANCE)를 임시 탭에 계산해서 돌려줌 ===== */
+function readSeries_(tickers, from) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) return {ok: false, error: '시작일 형식 오류'};
+  const list = tickers.split(',').map(t => t.trim()).filter(Boolean).slice(0, 4);
+  if (!list.length) return {ok: false, error: '티커가 없습니다'};
+  const lock = LockService.getScriptLock(); lock.waitLock(25000);
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID), tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+    let sh = ss.getSheetByName(RS_NAME);
+    if (!sh) { sh = ss.insertSheet(RS_NAME); try { sh.hideSheet(); } catch (e) {} }
+    const p = from.split('-').map(Number), out = {};
+    list.forEach(t => {
+      if (!/^[A-Za-z0-9.:\-_^]{1,30}$/.test(t)) { out[t] = {ok: false, error: '티커 형식 오류'}; return; }
+      sh.clear();
+      sh.getRange('A1').setFormula('=GOOGLEFINANCE("' + t + '","close",DATE(' + p[0] + ',' + p[1] + ',' + p[2] + '),TODAY(),"DAILY")');
+      SpreadsheetApp.flush();
+      let v = [];
+      for (let i = 0; i < 12; i++) {
+        v = sh.getRange(1, 1, Math.max(sh.getLastRow(), 1), 2).getValues();
+        if (v.length > 1 || /^#/.test(String(v[0][0]))) break;
+        Utilities.sleep(700); SpreadsheetApp.flush();
+      }
+      const rows = v.filter(r => r[0] instanceof Date && typeof r[1] === 'number' && r[1] > 0)
+        .map(r => [Utilities.formatDate(r[0], tz, 'yyyy-MM-dd'), r[1]]);
+      out[t] = rows.length ? {ok: true, rows} : {ok: false, error: '구글 시세에서 ' + t + '의 과거 데이터를 찾지 못했습니다'};
+    });
+    sh.clear();
+    return {ok: true, series: out};
+  } finally { lock.releaseLock(); }
 }

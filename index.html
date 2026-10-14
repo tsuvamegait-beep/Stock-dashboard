@@ -1046,7 +1046,8 @@ function openUpload() { $('file').value = ''; $('file').click(); }
 function htmlRows(buf) {
   const u8 = new Uint8Array(buf), head = new TextDecoder('latin1').decode(u8.slice(0, 400)).trim().toLowerCase();
   if (!(head.startsWith('<') && /<(html|table|meta|!doctype)/.test(head))) return null;
-  let txt; try { txt = new TextDecoder('euc-kr').decode(u8); } catch (e) { txt = new TextDecoder('utf-8').decode(u8); }
+  // 한글 인코딩이 cp949(EUC-KR)일 수도, UTF-8일 수도 있어서 제목이 제대로 읽히는 쪽을 고릅니다.
+  let txt = ''; for (const enc of ['euc-kr', 'utf-8']) { try { const s = new TextDecoder(enc).decode(u8); if (!txt) txt = s; if (/거래일자|거래유형|종목명/.test(s)) { txt = s; break; } } catch (e) {} }
   const doc = new DOMParser().parseFromString(txt, 'text/html'), tb = Array.from(doc.querySelectorAll('table')).sort((a, b) => b.rows.length - a.rows.length)[0];
   if (!tb) return null;
   return Array.from(tb.rows).map(tr => Array.from(tr.cells).map(c => c.textContent.replace(/\u00a0/g, ' ').trim()));

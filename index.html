@@ -50,10 +50,10 @@
 }
 /* 아이보리 브라운: 실적 리포트 화면처럼 진한 갈색 머리띠 + 크림 바탕 + 구운 주황 포인트 (밝음) */
 :root[data-theme="ivory"]{
-  --plane:#eee7d7; --surface:#faf7ee; --ink:#2f2216; --ink2:#5b4a38; --muted:#6f5f4a;
-  --grid:#e2d9c3; --axis:#c7b99d; --hair:rgba(60,42,26,.14); --wash:rgba(60,42,26,.06);
+  --plane:#eee7d7; --surface:#fffcf2; --ink:#2f2216; --ink2:#5b4a38; --muted:#6f5f4a;
+  --grid:#e8dfca; --axis:#c7b99d; --hair:rgba(60,42,26,.14); --wash:rgba(60,42,26,.06);
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#a84e0f; --field:#fffdf6; --warn-bg:#f8ebc8; --warn-ink:#6b4a00; color-scheme:light;
+  --accent:#a84e0f; --field:#fffef9; --warn-bg:#f8ebc8; --warn-ink:#6b4a00; color-scheme:light;
 }
 :root[data-theme="ivory"] body{background:linear-gradient(180deg,#eee7d7,#f3e6d3) fixed}
 :root[data-theme="ivory"] header.top{background:#5c402a;color:#fff9f2;padding:16px 18px;border-radius:10px;align-items:center}
@@ -914,7 +914,7 @@ const THEMES = [
   {id: 'dark', name: '다크', desc: '기본 어두운 화면. 검은 바탕에 하늘색 포인트.', sw: ['#0d0d0d', '#1a1a19', '#f0efec', '#6da7ec']},
   {id: 'sepia', name: '세피아 크림', tag: '따뜻함 · 밝음', desc: '종이처럼 편안한 크림색 바탕, 테라코타 포인트. 낮에 오래 볼 때 눈이 편합니다.', sw: ['#f4ecdc', '#fbf6ea', '#2e2418', '#a3441c']},
   {id: 'amber', name: '앰버 황혼', tag: '따뜻함 · 어두움', desc: '짙은 갈색 바탕에 호박색 포인트. 밤에 은은하게 보기 좋고 파란빛이 적습니다.', sw: ['#1c1611', '#272018', '#f4e8d6', '#e8a04a']},
-  {id: 'ivory', name: '아이보리 브라운', tag: '따뜻함 · 밝음 · 리포트풍', desc: '실적 리포트 화면처럼 진한 갈색 머리띠, 크림 바탕, 구운 주황 포인트입니다. 카드가 또렷하게 구분됩니다.', sw: ['#5c402a', '#eee7d7', '#faf7ee', '#a84e0f']},
+  {id: 'ivory', name: '아이보리 브라운', tag: '따뜻함 · 밝음 · 리포트풍', desc: '실적 리포트 화면처럼 진한 갈색 머리띠, 크림 바탕, 구운 주황 포인트입니다. 카드가 또렷하게 구분됩니다.', sw: ['#5c402a', '#eee7d7', '#fffcf2', '#a84e0f']},
   {id: 'rose', name: '로즈 샌드', tag: '따뜻함 · 밝음', desc: '살구빛 분홍 바탕에 먼지장미 포인트. 부드럽고 화사한 분위기입니다.', sw: ['#f7ebe6', '#fdf5f1', '#3a2824', '#9c3f63']}
 ];
 function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); return THEMES.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } }

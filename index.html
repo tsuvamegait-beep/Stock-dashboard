@@ -97,6 +97,13 @@ input::placeholder{color:var(--muted)}
 .tile .l{font-size:12px;color:var(--ink2)}
 .tile .v{font-size:clamp(17px,4.6vw,22px);font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .n{font-size:12px;color:var(--muted)}
+.tiles.one{grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.tiles.one .tile{padding:8px 2px;align-items:center;text-align:center;gap:3px}
+.tiles.one .l{font-size:clamp(10px,2.9vw,12px);white-space:nowrap}
+.tiles.one .v{font-size:clamp(10px,2.85vw,19px);max-width:100%;text-overflow:clip;letter-spacing:-.04em}
+.tiles.one .c{display:none}
+@media (max-width:340px){.tiles.one .v{font-size:9px}.tiles.one .l{font-size:9px}}
+@media (max-width:640px){.tiles.one .f{display:none}.tiles.one .c{display:inline}}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
 @media (max-width:860px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:minmax(0,1fr)}}
 /* strips */
@@ -726,6 +733,7 @@ function donut(parent, items, centerLabel, centerValue) {
     mk('span', {class: 'am'}, rw, money('KRW', it.value));
   });
 }
+function tile1(parent, l, full, compact, ls) { const t = mk('div', {class: 'tile'}, parent); const lb = mk('div', {class: 'l'}, t); mk('span', {class: 'f'}, lb, l); mk('span', {class: 'c'}, lb, ls || l); const v = mk('div', {class: 'v', title: full}, t); mk('span', {class: 'f'}, v, full); mk('span', {class: 'c'}, v, compact == null ? full : compact); }
 function tile(parent, l, v, n) { const t = mk('div', {class: 'tile'}, parent); mk('div', {class: 'l'}, t, l); mk('div', {class: 'v', title: v}, t, v); if (n) mk('div', {class: 'n'}, t, n); }
 
 
@@ -930,13 +938,17 @@ function renderDetail(C) {
   const tcard = mk('div', {class: 'card'}, out); const th = mk('div', {class: 'sec-h'}, tcard); mk('h2', {}, th, '보유 종목');
   const share = T.val;
   if (rows.length) {
-    const hs = mk('div', {class: 'tiles', style: 'margin:10px 0 14px'}, tcard);
-    tile(hs, '총 평가금액', money('KRW', T.val), '시세·환율이 있는 종목 기준');
-    tile(hs, '투자원금', T.costK > 0 ? money('KRW', T.costK) : '—', '평가손익을 계산한 종목의 취득원가');
+    const hs = mk('div', {class: 'tiles one', style: 'margin:10px 0 6px'}, tcard);
     const hasP = T.costK > 0, hasR = all.some(h => h.sellQty && h.realized != null), hasD = dKRW > 0, divNet = dKRW - taxKRW, score = (hasP ? T.pnlK : 0) + rKRW + divNet;
-    tile(hs, 'Score', hasP || hasR || hasD ? upDn(score) : '—', '평가 ' + (hasP ? upDn(T.pnlK) : '—') + ' + 실현 ' + (hasR ? upDn(rKRW) : '—') + ' + 배당(세후) ' + (hasD ? upDn(divNet) : '—') + (rMiss ? ' · 계산 못 한 실현 ' + rMiss + '건 제외' : ''));
-    tile(hs, '총 평가손익', T.costK > 0 ? upDn(T.pnlK) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : (T.noPrice || T.noFx ? '시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외' : '환율 효과 제외'));
-    tile(hs, '수익률', pct(T.pct), '취득원가 대비');
+    const sh = v => (v > 0 ? '▲' : v < 0 ? '▼' : '') + shortKRW(Math.abs(v));
+    tile1(hs, '총 평가금액', money('KRW', T.val), shortKRW(T.val), '평가금액');
+    tile1(hs, '투자원금', hasP ? money('KRW', T.costK) : '—', hasP ? shortKRW(T.costK) : '—');
+    tile1(hs, 'Score', hasP || hasR || hasD ? upDn(score) : '—', hasP || hasR || hasD ? sh(score) : '—');
+    tile1(hs, '총 평가손익', hasP ? upDn(T.pnlK) : '—', hasP ? sh(T.pnlK) : '—', '평가손익');
+    tile1(hs, '수익률', pct(T.pct));
+    const notes = ['Score = 평가 ' + (hasP ? upDn(T.pnlK) : '—') + ' + 실현 ' + (hasR ? upDn(rKRW) : '—') + ' + 배당(세후) ' + (hasD ? upDn(divNet) : '—')];
+    if (T.noCost) notes.push('취득가를 모르는 ' + T.noCost + '종목은 평가손익에서 제외'); if (rMiss) notes.push('계산 못 한 실현손익 ' + rMiss + '건 제외'); if (T.noPrice || T.noFx) notes.push('시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외');
+    mk('p', {class: 'sub', style: 'margin:0 0 12px;font-size:11.5px'}, tcard, notes.join(' · '));
   }
   if (!rows.length) mk('p', {class: 'sub'}, tcard, '조건에 맞는 보유 종목이 없습니다.');
   else if (ui.view === 'all') holdTable(tcard, mergeRows(rows), share);

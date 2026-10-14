@@ -1,5 +1,6 @@
 <title>주식 투자 대시보드</title>
-<script>try{var __t=localStorage.getItem("portfolio-theme");if(__t&&__t!=="auto")document.documentElement.setAttribute("data-theme",__t)}catch(e){}</script>
+<meta name="color-scheme" content="light dark">
+<script>try{var __t=localStorage.getItem("portfolio-theme");if(__t&&__t!=="auto"){document.documentElement.setAttribute("data-theme",__t);document.querySelector('meta[name="color-scheme"]').setAttribute("content",__t==="dark"||__t==="amber"?"dark":"only light")}}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -13,7 +14,9 @@
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
   --accent:#256abf; --field:#ffffff; --warn-bg:#fff6df; --warn-ink:#6b4a00;
   --font:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  color-scheme:light dark;
 }
+:root[data-theme="light"]{color-scheme:only light}
 @media (prefers-color-scheme: dark){
   :root:not([data-theme]){
     --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a9890;
@@ -34,7 +37,7 @@
   --plane:#f4ecdc; --surface:#fbf6ea; --ink:#2e2418; --ink2:#5c4d3a; --muted:#76664f;
   --grid:#e3d7c1; --axis:#c9b99c; --hair:rgba(46,36,24,.12); --wash:rgba(46,36,24,.055);
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#a3441c; --field:#fffdf7; --warn-bg:#fbefcf; --warn-ink:#6b4a00; color-scheme:light;
+  --accent:#a3441c; --field:#fffdf7; --warn-bg:#fbefcf; --warn-ink:#6b4a00; color-scheme:only light;
 }
 :root[data-theme="amber"]{
   --plane:#1c1611; --surface:#272018; --ink:#f4e8d6; --ink2:#cdbda6; --muted:#a39379;
@@ -46,14 +49,14 @@
   --plane:#f7ebe6; --surface:#fdf5f1; --ink:#3a2824; --ink2:#6a4f48; --muted:#7f625a;
   --grid:#ead7cf; --axis:#d2b9ae; --hair:rgba(58,40,36,.12); --wash:rgba(58,40,36,.055);
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#9c3f63; --field:#fffaf7; --warn-bg:#fbeacb; --warn-ink:#6b4a00; color-scheme:light;
+  --accent:#9c3f63; --field:#fffaf7; --warn-bg:#fbeacb; --warn-ink:#6b4a00; color-scheme:only light;
 }
 /* 아이보리 브라운: 실적 리포트 화면처럼 진한 갈색 머리띠 + 크림 바탕 + 구운 주황 포인트 (밝음) */
 :root[data-theme="ivory"]{
   --plane:#eee7d7; --surface:#fffcf2; --ink:#2f2216; --ink2:#5b4a38; --muted:#6f5f4a;
   --grid:#e8dfca; --axis:#c7b99d; --hair:rgba(60,42,26,.14); --wash:rgba(60,42,26,.06);
   --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#a84e0f; --field:#fffef9; --warn-bg:#f8ebc8; --warn-ink:#6b4a00; color-scheme:light;
+  --accent:#a84e0f; --field:#fffef9; --warn-bg:#f8ebc8; --warn-ink:#6b4a00; color-scheme:only light;
 }
 :root[data-theme="ivory"] body{background:linear-gradient(180deg,#eee7d7,#f3e6d3) fixed}
 :root[data-theme="ivory"] header.top{background:#5c402a;color:#fff9f2;padding:16px 18px;border-radius:10px;align-items:center}
@@ -921,6 +924,7 @@ function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); r
 function setTheme(id) {
   try { localStorage.setItem('portfolio-theme', id); } catch (e) {}
   if (id === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', id);
+  try { document.querySelector('meta[name="color-scheme"]').setAttribute('content', id === 'auto' ? 'light dark' : (id === 'dark' || id === 'amber') ? 'dark' : 'only light'); } catch (e) {}
   render();
 }
 function renderTheme() {

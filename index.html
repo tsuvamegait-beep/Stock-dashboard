@@ -133,6 +133,7 @@ td input.tk{width:110px;text-align:left}
   <div class="banner" id="banner" hidden></div>
   <nav class="tabs" id="tabs" role="tablist" aria-label="화면">
     <button type="button" role="tab" data-tab="holdings" aria-selected="true">보유 현황</button>
+    <button type="button" role="tab" data-tab="detail" aria-selected="false">상세 현황</button>
     <button type="button" role="tab" data-tab="trades" aria-selected="false">거래 내역</button>
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
@@ -141,11 +142,19 @@ td input.tk{width:110px;text-align:left}
 
   <section id="tab-holdings" class="col">
     <div class="toolbar" id="tb-holdings">
-      <span><span class="tlabel">보기</span><span class="seg" id="seg-view"><button type="button" data-v="all" aria-pressed="true">전체</button><button type="button" data-v="acct" aria-pressed="false">계좌별</button><button type="button" data-v="ccy" aria-pressed="false">통화별</button></span></span>
       <span><span class="tlabel">자산군</span><span class="seg" id="seg-cls"><button type="button" data-c="all" aria-pressed="true">전체</button><button type="button" data-c="국내주식" aria-pressed="false">국내주식</button><button type="button" data-c="해외주식" aria-pressed="false">해외주식</button></span></span>
       <span><input type="text" id="q" placeholder="종목 검색" aria-label="종목 검색" autocomplete="off"></span>
     </div>
     <div class="col" id="res-holdings"></div>
+  </section>
+
+  <section id="tab-detail" class="col" hidden>
+    <div class="toolbar" id="tb-detail">
+      <span><span class="tlabel">보기</span><span class="seg" id="seg-view"><button type="button" data-v="all" aria-pressed="true">전체</button><button type="button" data-v="acct" aria-pressed="false">계좌별</button><button type="button" data-v="ccy" aria-pressed="false">통화별</button></span></span>
+      <span><span class="tlabel">자산군</span><span class="seg" id="seg-cls3"><button type="button" data-c="all" aria-pressed="true">전체</button><button type="button" data-c="국내주식" aria-pressed="false">국내주식</button><button type="button" data-c="해외주식" aria-pressed="false">해외주식</button></span></span>
+      <span><input type="text" id="q3" placeholder="종목 검색" aria-label="종목 검색" autocomplete="off"></span>
+    </div>
+    <div class="col" id="res-detail"></div>
   </section>
 
   <section id="tab-trades" class="col" hidden>
@@ -538,9 +547,9 @@ function hover(node, title, rows) {
 /* ================= 저장소 ================= */
 const COLS = ['accounts', 'basis', 'symbols', 'prices', 'fx'];
 const state = {accounts: {}, basis: {}, symbols: {}, prices: {}, fx: {}, ready: false, persist: false, writable: true};
-const ui = {tab: 'holdings', view: 'all', cls: 'all', q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
-try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); } catch (e) {}
-function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, chartMode: ui.chartMode})); } catch (e) {} }
+const ui = {tab: 'holdings', view: 'all', cls: 'all', dcls: 'all', dq: '', q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
+try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'dcls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); } catch (e) {}
+function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, dcls: ui.dcls, chartMode: ui.chartMode})); } catch (e) {} }
 
 const store = {
   db: null,
@@ -807,6 +816,14 @@ function renderHoldings(C) {
     if (items.length) hbars(ch, items, true); else mk('p', {class: 'sub'}, ch, '취득가를 아는 종목이 없습니다. 계좌 관리에서 연초 취득단가를 입력할 수 있습니다.');
   }
 
+  const go = mk('div', {class: 'card'}, out); const gb = mk('button', {type: 'button'}, go, '보유 종목·올해 실현손익과 배당 상세 보기 →'); gb.addEventListener('click', () => { ui.tab = 'detail'; saveUi(); syncTabs(); });
+}
+function renderDetail(C) {
+  const out = $('res-detail'); out.replaceChildren();
+  if (!C.accts.length) { emptyState(out); return; }
+  const rows = C.rows.filter(h => passFilter(h, ui.dcls, ui.dq));
+  const cashOn = ui.dcls === 'all' && !ui.dq;
+  const T = totals(rows);
   // 표
   const tcard = mk('div', {class: 'card'}, out); const th = mk('div', {class: 'sec-h'}, tcard); mk('h2', {}, th, '보유 종목');
   const share = T.val;
@@ -836,7 +853,7 @@ function renderHoldings(C) {
   }
 
   // 올해 실현손익과 배당
-  const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.cls, ui.q));
+  const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.dcls, ui.dq));
   if (all.length) {
     let rKRW = 0, dKRW = 0, taxKRW = 0, rMiss = 0, dMiss = 0;
     all.forEach(h => {
@@ -1351,22 +1368,24 @@ function render() {
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { recordHistory(C); renderHoldings(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  ['holdings', 'trades', 'prices', 'opening', 'accounts'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'detail', 'trades', 'prices', 'opening', 'accounts'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));
-  [['seg-cls', 'cls'], ['seg-cls2', 'cls']].forEach(([id]) => document.querySelectorAll('#' + id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === ui.cls))));
+  [['seg-cls', 'cls'], ['seg-cls2', 'cls'], ['seg-cls3', 'dcls']].forEach(([id, k]) => document.querySelectorAll('#' + id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === ui[k]))));
 }
 (function init() {
   document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { ui.tab = b.dataset.tab; saveUi(); syncTabs(); }));
   document.querySelectorAll('#seg-view button').forEach(b => b.addEventListener('click', () => { ui.view = b.dataset.v; saveUi(); syncSegs(); render(); }));
+  document.querySelectorAll('#seg-cls3 button').forEach(b => b.addEventListener('click', () => { ui.dcls = b.dataset.c; saveUi(); syncSegs(); render(); }));
   ['seg-cls', 'seg-cls2'].forEach(id => document.querySelectorAll('#' + id + ' button').forEach(b => b.addEventListener('click', () => { ui.cls = b.dataset.c; saveUi(); syncSegs(); render(); })));
   let qt; $('q').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { ui.q = e.target.value.trim(); render(); }, 150); });
+  $('q3').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { ui.dq = e.target.value.trim(); render(); }, 150); });
   $('q2').addEventListener('input', e => { clearTimeout(qt); qt = setTimeout(() => { ui.q2 = e.target.value.trim(); render(); }, 150); });
   $('sel-acct').addEventListener('change', e => { ui.acct = e.target.value; render(); });
   $('btnUpload').addEventListener('click', openUpload);

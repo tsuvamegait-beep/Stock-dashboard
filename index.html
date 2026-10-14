@@ -547,9 +547,9 @@ function hover(node, title, rows) {
 /* ================= 저장소 ================= */
 const COLS = ['accounts', 'basis', 'symbols', 'prices', 'fx'];
 const state = {accounts: {}, basis: {}, symbols: {}, prices: {}, fx: {}, ready: false, persist: false, writable: true};
-const ui = {tab: 'holdings', view: 'all', cls: 'all', dcls: 'all', dq: '', q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
-try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'dcls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); } catch (e) {}
-function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, dcls: ui.dcls, chartMode: ui.chartMode})); } catch (e) {} }
+const ui = {tab: 'holdings', view: 'all', cls: 'all', dcls: 'all', dq: '', dacc: null, q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
+try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'dcls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); if (Array.isArray(s.dacc)) ui.dacc = s.dacc; } catch (e) {}
+function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, dcls: ui.dcls, dacc: ui.dacc, chartMode: ui.chartMode})); } catch (e) {} }
 
 const store = {
   db: null,
@@ -818,10 +818,38 @@ function renderHoldings(C) {
 
   const go = mk('div', {class: 'card'}, out); const gb = mk('button', {type: 'button'}, go, '보유 종목·올해 실현손익과 배당 상세 보기 →'); gb.addEventListener('click', () => { ui.tab = 'detail'; saveUi(); syncTabs(); });
 }
+
+/* 상세 현황 > 계좌별: 증권사 버튼 + 계좌 체크박스 */
+function setAcctSel(ids, allIds) { ui.dacc = ids.length === allIds.length ? null : ids; saveUi(); render(); }
+function acctPicker(parent, C, selIds) {
+  const allIds = C.accts.map(a => a.aid), card = mk('div', {class: 'card', style: 'padding:12px 16px'}, parent), sel = new Set(selIds);
+  const brokers = []; C.accts.forEach(a => { if (brokers.indexOf(a.broker) < 0) brokers.push(a.broker); });
+  const r1 = mk('div', {class: 'row', style: 'align-items:center;gap:8px;flex-wrap:wrap'}, card); mk('span', {class: 'tlabel'}, r1, '증권사');
+  const seg = mk('span', {class: 'seg'}, r1);
+  const mkBtn = (label, ids, pressed) => { const b = mk('button', {type: 'button', 'aria-pressed': String(pressed)}, seg, label); b.addEventListener('click', () => setAcctSel(ids, allIds)); };
+  mkBtn('전체', allIds, selIds.length === allIds.length);
+  brokers.forEach(bk => { const ids = C.accts.filter(a => a.broker === bk).map(a => a.aid); mkBtn(bk, ids, ids.length === selIds.length && ids.every(id => sel.has(id))); });
+  const r2 = mk('div', {class: 'row', style: 'align-items:center;gap:6px 14px;flex-wrap:wrap;margin-top:10px'}, card); mk('span', {class: 'tlabel'}, r2, '계좌');
+  C.accts.forEach(a => {
+    const lb = mk('label', {style: 'display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border:1px solid var(--axis);border-radius:6px;font-size:14px'}, r2);
+    const cb = mk('input', {type: 'checkbox', 'data-aid': a.aid, 'aria-label': a.name + ' 선택'}, lb); cb.checked = sel.has(a.aid);
+    lb.append(a.name); if (a.name.indexOf(a.broker) < 0) mk('span', {class: 's2'}, lb, a.broker);
+    cb.addEventListener('change', () => {
+      const cur = new Set(selIds); if (cb.checked) cur.add(a.aid); else cur.delete(a.aid);
+      setAcctSel(allIds.filter(id => cur.has(id)), allIds);
+      const el = document.querySelector('#res-detail input[data-aid="' + a.aid + '"]'); if (el) el.focus();
+    });
+  });
+  if (!selIds.length) mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, '선택된 계좌가 없습니다. 계좌를 하나 이상 선택하세요.');
+}
 function renderDetail(C) {
   const out = $('res-detail'); out.replaceChildren();
   if (!C.accts.length) { emptyState(out); return; }
-  const rows = C.rows.filter(h => passFilter(h, ui.dcls, ui.dq));
+  const byAcct = ui.view === 'acct', allIds = C.accts.map(a => a.aid);
+  const selIds = byAcct && Array.isArray(ui.dacc) ? allIds.filter(id => ui.dacc.indexOf(id) >= 0) : allIds, selSet = new Set(selIds);
+  if (byAcct) acctPicker(out, C, selIds);
+  const inSel = h => selSet.has(h.aid);
+  const rows = C.rows.filter(h => passFilter(h, ui.dcls, ui.dq) && inSel(h));
   const cashOn = ui.dcls === 'all' && !ui.dq;
   const T = totals(rows);
   // 표
@@ -844,7 +872,7 @@ function renderDetail(C) {
     keys.forEach(k => {
       const g = groups.get(k), gt = totals(g), box = mk('div', {style: 'margin-top:14px'}, tcard);
       const hd = mk('div', {class: 'sec-h'}, box); mk('h3', {}, hd, (ui.view === 'ccy' ? '통화 ' : '계좌 ') + k);
-      let line = '주식 ' + money('KRW', gt.val);
+      let line = '주식 ' + money('KRW', gt.val) + ' · 평가손익 ' + (gt.costK > 0 ? upDn(gt.pnlK) + ' (' + pct(gt.pct) + ')' : '—');
       if (ui.view === 'ccy') { const cc = C.cash.filter(c => c.ccy === k && cashOn); if (cc.length) line += ' · 예수금 ' + money(k, cc.reduce((a, c) => a + c.amt, 0)); if (k !== 'KRW') line += ' · 환율 ' + (fxRate(k) != null ? fmtN(fxRate(k) * (k === 'JPY' ? 100 : 1), 2) + (k === 'JPY' ? '원/100엔' : '원') : '없음'); }
       else { const cc = C.cash.filter(c => c.aid && c.acct === k && cashOn); if (cc.length) line += ' · 예수금 ' + cc.map(c => money(c.ccy, c.amt)).join(' ') ; }
       mk('span', {class: 'sub'}, hd, line);
@@ -853,7 +881,7 @@ function renderDetail(C) {
   }
 
   // 올해 실현손익과 배당
-  const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.dcls, ui.dq));
+  const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.dcls, ui.dq) && inSel(h));
   if (all.length) {
     let rKRW = 0, dKRW = 0, taxKRW = 0, rMiss = 0, dMiss = 0;
     all.forEach(h => {

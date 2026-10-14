@@ -625,9 +625,9 @@ function hover(node, title, rows) {
 /* ================= 저장소 ================= */
 const COLS = ['accounts', 'basis', 'symbols', 'prices', 'fx'];
 const state = {accounts: {}, basis: {}, symbols: {}, prices: {}, fx: {}, ready: false, persist: false, writable: true};
-const ui = {tab: 'holdings', view: 'all', cls: 'all', dcls: 'all', dq: '', dacc: null, q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
-try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'dcls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); if (Array.isArray(s.dacc)) ui.dacc = s.dacc; } catch (e) {}
-function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, dcls: ui.dcls, dacc: ui.dacc, chartMode: ui.chartMode})); } catch (e) {} }
+const ui = {tab: 'holdings', view: 'all', cls: 'all', dcls: 'all', dq: '', dacc: null, hacc: null, q: '', q2: '', acct: '', chartMode: 'value', pending: null, confirmDel: null};
+try { const s = JSON.parse(localStorage.getItem('portfolio-ui') || '{}'); ['tab', 'view', 'cls', 'dcls', 'chartMode'].forEach(k => { if (s[k]) ui[k] = s[k]; }); if (Array.isArray(s.dacc)) ui.dacc = s.dacc; if (Array.isArray(s.hacc)) ui.hacc = s.hacc; } catch (e) {}
+function saveUi() { try { localStorage.setItem('portfolio-ui', JSON.stringify({tab: ui.tab, view: ui.view, cls: ui.cls, dcls: ui.dcls, dacc: ui.dacc, hacc: ui.hacc, chartMode: ui.chartMode})); } catch (e) {} }
 
 const store = {
   db: null,
@@ -847,26 +847,42 @@ function renderHistory(parent) {
   const last = days[days.length - 1], first = days[0], dv = vals[vals.length - 1] - vals[0];
   mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, first + ' → ' + last + ' · ' + days.length + '일 기록 · ' + (mode === 't' ? '총자산' : '평가손익') + ' 변화 ' + (dv > 0 ? '▲ ' : dv < 0 ? '▼ ' : '') + money('KRW', Math.abs(dv)));
 }
+function holdPicker(parent, C, selIds) {
+  const allIds = C.accts.map(a => a.aid), sel = new Set(selIds), card = mk('div', {class: 'card', style: 'padding:12px 16px'}, parent);
+  const r = mk('div', {class: 'row', style: 'align-items:center;gap:8px;flex-wrap:wrap'}, card); mk('span', {class: 'tlabel'}, r, '계좌');
+  const seg = mk('span', {class: 'seg', style: 'flex-wrap:wrap'}, r);
+  const set = ids => { ui.hacc = ids.length === allIds.length ? null : ids; saveUi(); render(); };
+  const all = mk('button', {type: 'button', 'aria-pressed': String(selIds.length === allIds.length)}, seg, '전체'); all.addEventListener('click', () => set(allIds));
+  C.accts.forEach(a => {
+    const on = sel.has(a.aid) && selIds.length !== allIds.length;
+    const b = mk('button', {type: 'button', 'aria-pressed': String(on)}, seg, a.name);
+    b.addEventListener('click', () => { if (selIds.length === allIds.length) set([a.aid]); else { const cur = new Set(selIds); if (cur.has(a.aid)) cur.delete(a.aid); else cur.add(a.aid); set(cur.size ? allIds.filter(id => cur.has(id)) : allIds); } });
+  });
+  if (selIds.length !== allIds.length) mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, '여러 계좌를 눌러 함께 볼 수 있습니다. 모두 해제하면 전체로 돌아갑니다.');
+}
 function renderHoldings(C) {
   const out = $('res-holdings'); out.replaceChildren();
   if (!C.accts.length) { emptyState(out); return; }
-  const rows = C.rows.filter(h => passFilter(h, ui.cls, ui.q));
+  const allIds = C.accts.map(a => a.aid), selIds = Array.isArray(ui.hacc) ? allIds.filter(id => ui.hacc.indexOf(id) >= 0) : allIds;
+  const accSub = selIds.length !== allIds.length, selSet = new Set(selIds);
+  if (allIds.length > 1) holdPicker(out, C, selIds.length ? selIds : allIds);
+  const rows = C.rows.filter(h => passFilter(h, ui.cls, ui.q) && selSet.has(h.aid));
   const cashOn = ui.cls === 'all' && !ui.q;
-  const T = totals(rows), cashRows = cashOn ? C.cash : [];
+  const T = totals(rows), cashAll = C.cash.filter(c => selSet.has(c.aid)), cashRows = cashOn ? cashAll : [];
   const cashKRW = cashRows.reduce((a, c) => a + (c.krw || 0), 0), cashMissing = cashRows.filter(c => c.krw == null).length;
-  const pricesAll = C.rows.length ? C.rows.filter(h => h.price != null).length : 0;
+  const baseRows = C.rows.filter(h => selSet.has(h.aid)), pricesAll = baseRows.filter(h => h.price != null).length;
 
   const top = mk('div', {class: 'card'}, out);
-  mk('div', {class: 'hero-k'}, top, cashOn ? '총자산 (원화 환산)' : '선택한 종목 평가액 (원화 환산)');
+  mk('div', {class: 'hero-k'}, top, (accSub ? '선택 계좌 ' : '') + (cashOn ? '총자산 (원화 환산)' : '선택한 종목 평가액 (원화 환산)'));
   mk('div', {class: 'hero-fig'}, top, money('KRW', T.val + (cashOn ? cashKRW : 0)));
   const notes = [];
   if (T.noPrice) notes.push('시세가 없는 ' + T.noPrice + '종목은 합계에서 빠졌습니다');
   if (T.noFx) notes.push('환율이 없는 ' + T.noFx + '종목은 합계에서 빠졌습니다');
   if (cashMissing) notes.push('환율이 없는 외화 예수금은 빠졌습니다');
-  mk('div', {class: 'hero-n'}, top, notes.length ? notes.join(', ') + '. 시세·환율 탭에서 채울 수 있습니다.' : '보유 ' + rows.length + '종목, 시세 ' + pricesAll + '/' + C.rows.length + '종목 반영');
+  mk('div', {class: 'hero-n'}, top, notes.length ? notes.join(', ') + '. 시세·환율 탭에서 채울 수 있습니다.' : '보유 ' + rows.length + '종목, 시세 ' + pricesAll + '/' + baseRows.length + '종목 반영');
   const tl = mk('div', {class: 'tiles', style: 'margin-top:14px'}, top);
   tile(tl, '주식 평가액', money('KRW', T.val), rows.length + '종목');
-  tile(tl, '현금(예수금)', cashOn ? money('KRW', cashKRW) : '—', cashOn ? C.cash.map(c => money(c.ccy, c.amt)).join(' · ') : '필터 중에는 표시하지 않습니다');
+  tile(tl, '현금(예수금)', cashOn ? money('KRW', cashKRW) : '—', cashOn ? cashAll.map(c => money(c.ccy, c.amt)).join(' · ') : '필터 중에는 표시하지 않습니다');
   tile(tl, '평가손익', T.costK > 0 ? (T.pnlK > 0 ? '▲ ' : T.pnlK < 0 ? '▼ ' : '') + money('KRW', Math.abs(T.pnlK)) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : (T.nHist ? '주가 ' + upDn(T.stockK) + ' · 환차 ' + upDn(T.fxK) : '현지통화 손익을 현재 환율로 환산'));
   tile(tl, '수익률', pct(T.pct), T.nHist ? '원화 원가 대비, 환차 포함' : '취득원가 대비, 환차손익 제외');
 
@@ -913,7 +929,7 @@ function renderHoldings(C) {
     if (items.length) hbars(ch, items, true); else mk('p', {class: 'sub'}, ch, '취득가를 아는 종목이 없습니다. 계좌 관리에서 연초 취득단가를 입력할 수 있습니다.');
   }
 
-  renderHistory(out);
+  if (!accSub) renderHistory(out); else { const hc = mk('div', {class: 'card'}, out); mk('h2', {}, hc, '기간별 추이'); mk('p', {class: 'sub'}, hc, '추이 기록은 전체 계좌 합계로만 저장됩니다. 계좌를 전체로 되돌리면 그래프가 표시됩니다.'); }
 
   const go = mk('div', {class: 'card'}, out); const gb = mk('button', {type: 'button'}, go, '보유 종목·올해 실현손익과 배당 상세 보기 →'); gb.addEventListener('click', () => { ui.tab = 'detail'; saveUi(); syncTabs(); });
 }

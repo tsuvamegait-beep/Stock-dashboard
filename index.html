@@ -933,8 +933,8 @@ function renderDetail(C) {
     const hs = mk('div', {class: 'tiles', style: 'margin:10px 0 14px'}, tcard);
     tile(hs, '총 평가금액', money('KRW', T.val), '시세·환율이 있는 종목 기준');
     tile(hs, '투자원금', T.costK > 0 ? money('KRW', T.costK) : '—', '평가손익을 계산한 종목의 취득원가');
-    const hasP = T.costK > 0, hasR = all.some(h => h.sellQty && h.realized != null), score = (hasP ? T.pnlK : 0) + rKRW;
-    tile(hs, 'Score', hasP || hasR ? upDn(score) : '—', '평가손익 ' + (hasP ? upDn(T.pnlK) : '—') + ' + 실현손익 ' + (hasR ? upDn(rKRW) : '—') + (rMiss ? ' (계산 못 한 ' + rMiss + '건 제외)' : ''));
+    const hasP = T.costK > 0, hasR = all.some(h => h.sellQty && h.realized != null), hasD = dKRW > 0, divNet = dKRW - taxKRW, score = (hasP ? T.pnlK : 0) + rKRW + divNet;
+    tile(hs, 'Score', hasP || hasR || hasD ? upDn(score) : '—', '평가 ' + (hasP ? upDn(T.pnlK) : '—') + ' + 실현 ' + (hasR ? upDn(rKRW) : '—') + ' + 배당(세후) ' + (hasD ? upDn(divNet) : '—') + (rMiss ? ' · 계산 못 한 실현 ' + rMiss + '건 제외' : ''));
     tile(hs, '총 평가손익', T.costK > 0 ? upDn(T.pnlK) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : (T.noPrice || T.noFx ? '시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외' : '환율 효과 제외'));
     tile(hs, '수익률', pct(T.pct), '취득원가 대비');
   }

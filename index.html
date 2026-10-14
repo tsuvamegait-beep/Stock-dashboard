@@ -1,4 +1,5 @@
 <title>주식 투자 대시보드</title>
+<script>try{var __t=localStorage.getItem("portfolio-theme");if(__t&&__t!=="auto")document.documentElement.setAttribute("data-theme",__t)}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -14,7 +15,7 @@
   --font:"Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
 }
 @media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
+  :root:not([data-theme]){
     --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a9890;
     --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10); --wash:rgba(255,255,255,.06);
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
@@ -27,6 +28,35 @@
   --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
   --accent:#6da7ec; --field:#121211; --warn-bg:#2b2412; --warn-ink:#e8c777; color-scheme:dark;
 }
+
+/* 따뜻한 테마 3종: 세피아 크림(밝음), 앰버 황혼(어두움), 로즈 샌드(밝음) */
+:root[data-theme="sepia"]{
+  --plane:#f4ecdc; --surface:#fbf6ea; --ink:#2e2418; --ink2:#5c4d3a; --muted:#76664f;
+  --grid:#e3d7c1; --axis:#c9b99c; --hair:rgba(46,36,24,.12); --wash:rgba(46,36,24,.055);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+  --accent:#a3441c; --field:#fffdf7; --warn-bg:#fbefcf; --warn-ink:#6b4a00; color-scheme:light;
+}
+:root[data-theme="amber"]{
+  --plane:#1c1611; --surface:#272018; --ink:#f4e8d6; --ink2:#cdbda6; --muted:#a39379;
+  --grid:#342b20; --axis:#4a3c2c; --hair:rgba(255,235,205,.12); --wash:rgba(255,235,205,.06);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+  --accent:#e8a04a; --field:#16110d; --warn-bg:#33270f; --warn-ink:#f0cf85; color-scheme:dark;
+}
+:root[data-theme="rose"]{
+  --plane:#f7ebe6; --surface:#fdf5f1; --ink:#3a2824; --ink2:#6a4f48; --muted:#7f625a;
+  --grid:#ead7cf; --axis:#d2b9ae; --hair:rgba(58,40,36,.12); --wash:rgba(58,40,36,.055);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
+  --accent:#9c3f63; --field:#fffaf7; --warn-bg:#fbeacb; --warn-ink:#6b4a00; color-scheme:light;
+}
+/* 테마 선택 카드 */
+.thm{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.thm button{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:left;padding:12px;border-radius:8px;border:1px solid var(--axis);background:var(--surface);width:100%}
+.thm button[aria-checked=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.thm .sw4{display:flex;border-radius:6px;overflow:hidden;border:1px solid var(--hair);height:34px;width:100%}
+.thm .sw4 i{flex:1}
+.thm .nm{font-weight:700;font-size:14px;color:var(--ink)}
+.thm .ds{font-size:12px;color:var(--ink2);line-height:1.5}
+.thm .tg{font-size:11px;color:var(--accent);font-weight:500}
 *{box-sizing:border-box}
 body{background:var(--plane);color:var(--ink);font:14px/1.6 var(--font);padding-inline:16px;-webkit-text-size-adjust:100%}
 .wrap{max-width:1120px;margin:0 auto;padding-block:24px 64px;display:flex;flex-direction:column;gap:18px}
@@ -138,6 +168,7 @@ td input.tk{width:110px;text-align:left}
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
     <button type="button" role="tab" data-tab="accounts" aria-selected="false">계좌 관리</button>
+    <button type="button" role="tab" data-tab="theme" aria-selected="false">테마</button>
   </nav>
 
   <section id="tab-holdings" class="col">
@@ -169,6 +200,7 @@ td input.tk{width:110px;text-align:left}
   <section id="tab-prices" class="col" hidden><div class="col" id="res-prices"></div></section>
   <section id="tab-opening" class="col" hidden><div class="col" id="res-opening"></div></section>
   <section id="tab-accounts" class="col" hidden><div class="col" id="res-accounts"></div></section>
+  <section id="tab-theme" class="col" hidden><div class="col" id="res-theme"></div></section>
 </div>
 <input type="file" id="file" accept=".xlsx,.xls" hidden>
 <input type="file" id="file2" accept=".xlsx,.xls,.csv" hidden>
@@ -819,6 +851,40 @@ function renderHoldings(C) {
   const go = mk('div', {class: 'card'}, out); const gb = mk('button', {type: 'button'}, go, '보유 종목·올해 실현손익과 배당 상세 보기 →'); gb.addEventListener('click', () => { ui.tab = 'detail'; saveUi(); syncTabs(); });
 }
 
+
+/* ================= 화면: 테마 ================= */
+const THEMES = [
+  {id: 'auto', name: '자동', desc: '기기의 라이트/다크 설정을 그대로 따릅니다.', sw: null},
+  {id: 'light', name: '라이트', desc: '기본 밝은 화면. 흰 바탕에 파란 포인트.', sw: ['#f9f9f7', '#fcfcfb', '#0b0b0b', '#256abf']},
+  {id: 'dark', name: '다크', desc: '기본 어두운 화면. 검은 바탕에 하늘색 포인트.', sw: ['#0d0d0d', '#1a1a19', '#f0efec', '#6da7ec']},
+  {id: 'sepia', name: '세피아 크림', tag: '따뜻함 · 밝음', desc: '종이처럼 편안한 크림색 바탕, 테라코타 포인트. 낮에 오래 볼 때 눈이 편합니다.', sw: ['#f4ecdc', '#fbf6ea', '#2e2418', '#a3441c']},
+  {id: 'amber', name: '앰버 황혼', tag: '따뜻함 · 어두움', desc: '짙은 갈색 바탕에 호박색 포인트. 밤에 은은하게 보기 좋고 파란빛이 적습니다.', sw: ['#1c1611', '#272018', '#f4e8d6', '#e8a04a']},
+  {id: 'rose', name: '로즈 샌드', tag: '따뜻함 · 밝음', desc: '살구빛 분홍 바탕에 먼지장미 포인트. 부드럽고 화사한 분위기입니다.', sw: ['#f7ebe6', '#fdf5f1', '#3a2824', '#9c3f63']}
+];
+function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); return THEMES.some(x => x.id === t) ? t : 'auto'; } catch (e) { return 'auto'; } }
+function setTheme(id) {
+  try { localStorage.setItem('portfolio-theme', id); } catch (e) {}
+  if (id === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', id);
+  render();
+}
+function renderTheme() {
+  const out = $('res-theme'); out.replaceChildren();
+  const cur = getTheme(), c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '화면 테마');
+  mk('p', {class: 'sub', style: 'margin:4px 0 12px'}, c, '색감과 밝기를 고릅니다. 선택은 이 브라우저에 저장되고, 폰과 PC에서 각각 따로 정할 수 있습니다.');
+  const g = mk('div', {class: 'thm', role: 'radiogroup', 'aria-label': '화면 테마'}, c);
+  THEMES.forEach(th => {
+    const b = mk('button', {type: 'button', role: 'radio', 'aria-checked': String(cur === th.id)}, g);
+    const sw = mk('span', {class: 'sw4'}, b);
+    if (th.sw) th.sw.forEach(col => { const i = mk('i', {}, sw); i.style.background = col; });
+    else { ['#f9f9f7', '#fcfcfb', '#1a1a19', '#0d0d0d'].forEach(col => { const i = mk('i', {}, sw); i.style.background = col; }); }
+    mk('span', {class: 'nm'}, b, th.name + (cur === th.id ? ' ✓' : ''));
+    if (th.tag) mk('span', {class: 'tg'}, b, th.tag);
+    mk('span', {class: 'ds'}, b, th.desc);
+    b.addEventListener('click', () => { setTheme(th.id); const el = document.querySelector('#res-theme button[aria-checked="true"]'); if (el) el.focus(); });
+  });
+  mk('p', {class: 'sub', style: 'margin:12px 0 0'}, c, '차트 색은 테마가 바뀌어도 같은 구분 색을 유지하고, 바탕과 글자색, 포인트 색만 바뀝니다.');
+}
+
 /* 상세 현황 > 계좌별: 증권사 버튼 + 계좌 체크박스 */
 function setAcctSel(ids, allIds) { ui.dacc = ids.length === allIds.length ? null : ids; saveUi(); render(); }
 function acctPicker(parent, C, selIds) {
@@ -1396,12 +1462,12 @@ function render() {
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  ['holdings', 'detail', 'trades', 'prices', 'opening', 'accounts'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'detail', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));

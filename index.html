@@ -485,7 +485,7 @@ function round(x, d) { const m = Math.pow(10, d); return Math.round(x * m) / m; 
 
 /* 거래를 처음부터 재생해서 종목별 보유 현황을 계산합니다.
    basis: {종목명: 연초 취득단가} 연초부터 갖고 있던 종목의 취득가를 직접 입력한 값. */
-function replay(A, basis, extra) {
+function replay(A, basis, extra, fxAt) {
   basis = basis || {}; extra = extra || {};
   const ev = A.orders.map(o => ({d: o.d, s: o.s, side: o.side, q: o.q, n: o.n, net: o.net, g: o.g, fee: o.fee, tax: o.tax, mk: o.mk, ccy: o.ccy, ik: false}))
     .concat(A.inkinds.map(e => ({d: e.d, s: e.s, side: e.sign, q: e.q, n: -1, net: e.q * e.px, g: e.q * e.px, fee: 0, tax: 0, mk: 'KR', ccy: 'KRW', ik: true, px: e.px})));
@@ -493,39 +493,49 @@ function replay(A, basis, extra) {
   const H = {};
   const mkOf = {}, ccyOf = {};
   A.orders.forEach(o => { mkOf[o.s] = o.mk; ccyOf[o.s] = o.ccy; });
+  // 거래일 환율(fxAt(통화, 'YYYY-MM-DD'))로 원화 원가·실현손익을 병행 계산. 연초 보유분은 전년 12/31 환율을 매입환율로 본다.
+  const yr = A.year || (A.orders[0] && +String(A.orders[0].d).slice(0, 4)) || new Date().getFullYear(), sd = (yr - 1) + '-12-31';
+  const fxOf = (ccy, d) => { if (ccy === 'KRW') return 1; if (typeof fxAt !== 'function') return null; const r = fxAt(ccy, d); return r > 0 ? +r : null; };
   Object.keys(A.startQty).forEach(s => {
-    const st = A.startQty[s], b = +basis[s], known = Math.abs(st) < 1e-9 || (isFinite(b) && b > 0);
-    H[s] = {s, name: stockLabel(s), mk: mkOf[s] || 'KR', ccy: ccyOf[s] || 'KRW', start: st, qty: st, cost: (Math.abs(st) < 1e-9 ? 0 : (known ? st * b : 0)), known,
+    const st = A.startQty[s], b = +basis[s], known = Math.abs(st) < 1e-9 || (isFinite(b) && b > 0), ccy = ccyOf[s] || 'KRW';
+    const f0 = fxOf(ccy, sd);
+    H[s] = {s, name: stockLabel(s), mk: mkOf[s] || 'KR', ccy, start: st, qty: st, cost: (Math.abs(st) < 1e-9 ? 0 : (known ? st * b : 0)), known,
+      costK: (Math.abs(st) < 1e-9 ? 0 : (known && f0 ? st * b * f0 : 0)), fk: Math.abs(st) < 1e-9 || !known || !!f0, realK: 0, divK: 0, dk: true,
       buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, fees: 0, taxes: 0, realized: 0, div: 0, divTaxKRW: 0, first: null, last: null};
   });
   Object.keys(extra).forEach(s => {
     if (H[s]) return;
-    const e = extra[s], st = +e.q || 0, b = +basis[s], known = isFinite(b) && b > 0;
-    H[s] = {s, name: stockLabel(s), mk: e.mk || (e.ccy && e.ccy !== 'KRW' ? 'US' : 'KR'), ccy: e.ccy || 'KRW', start: st, qty: st, cost: known ? st * b : 0, known, extra: true,
+    const e = extra[s], st = +e.q || 0, b = +basis[s], known = isFinite(b) && b > 0, ccy = e.ccy || 'KRW', f0 = fxOf(ccy, sd);
+    H[s] = {s, name: stockLabel(s), mk: e.mk || (e.ccy && e.ccy !== 'KRW' ? 'US' : 'KR'), ccy, start: st, qty: st, cost: known ? st * b : 0, known, extra: true,
+      costK: known && f0 ? st * b * f0 : 0, fk: !known || !!f0, realK: 0, divK: 0, dk: true,
       buyQty: 0, sellQty: 0, buyAmt: 0, sellAmt: 0, fees: 0, taxes: 0, realized: 0, div: 0, divTaxKRW: 0, first: null, last: null};
   });
   ev.forEach(o => {
     const h = H[o.s];
     if (o.ik) {
-      if (o.side > 0) { h.qty += o.q; h.cost += o.net; h.inkindPx = o.px; }
-      else { if (h.known && h.qty > 0) h.cost -= h.cost / h.qty * o.q; h.qty -= o.q; }
+      if (o.side > 0) { h.qty += o.q; h.cost += o.net; h.costK += o.net; h.inkindPx = o.px; }
+      else { if (h.known && h.qty > 0) { h.costK -= h.costK / h.qty * o.q; h.cost -= h.cost / h.qty * o.q; } h.qty -= o.q; }
       return;
     }
     h.first = h.first || o.d; h.last = o.d; h.fees += o.fee; h.taxes += o.tax;
-    if (o.side === 1) { h.buyQty += o.q; h.buyAmt += o.net; h.qty += o.q; h.cost += o.net; }
+    const f = fxOf(h.ccy, o.d); if (!f) h.fk = false;
+    if (o.side === 1) { h.buyQty += o.q; h.buyAmt += o.net; h.qty += o.q; h.cost += o.net; h.costK += o.net * (f || 0); }
     else {
       h.sellQty += o.q; h.sellAmt += o.net;
-      if (h.known && h.qty > 0) { const avg = h.cost / h.qty; h.realized += o.net - avg * o.q; h.cost -= avg * o.q; }
+      if (h.known && h.qty > 0) { const avg = h.cost / h.qty, avgK = h.costK / h.qty; h.realized += o.net - avg * o.q; h.realK += o.net * (f || 0) - avgK * o.q; h.cost -= avg * o.q; h.costK -= avgK * o.q; }
       h.qty -= o.q;
     }
   });
-  A.divs.forEach(d => { if (H[d.s]) { H[d.s].div += d.gross; H[d.s].divTaxKRW += d.taxKRW; } });
+  A.divs.forEach(d => { const h = H[d.s]; if (h) { h.div += d.gross; h.divTaxKRW += d.taxKRW; const f = fxOf(h.ccy, d.d); if (f) h.divK += d.gross * f; else h.dk = false; } });
   return Object.keys(H).map(s => {
     const h = H[s]; h.end = h.qty;
     h.avg = (h.known && h.end > 1e-9) ? h.cost / h.end : null;
     h.costRemain = h.known ? h.cost : null;
+    h.costRemainK = (h.known && h.fk) ? h.costK : null;
+    h.realizedK = (h.known && h.fk) ? h.realK : null;
+    h.divKRW = h.dk ? h.divK : null;
     if (!h.known) h.realized = null;
-    delete h.qty; delete h.cost;
+    delete h.qty; delete h.cost; delete h.costK; delete h.realK; delete h.divK; delete h.fk; delete h.dk;
     return h;
   });
 }
@@ -634,6 +644,20 @@ const store = {
 
 /* ================= 계산 ================= */
 const fxRate = c => { if (c === 'KRW') return 1; const f = state.fx[c + 'KRW']; return f && +f.rate > 0 ? +f.rate : null; };
+/* ===== 일별 환율(구글 시트 "환율" 탭) ===== */
+const FX_LS = 'portfolio-fxhist', fxH = {map: {}, at: 0};
+function fxBuild(o) {
+  fxH.map = {}; fxH.at = (o && o.at) || 0;
+  ['USD', 'JPY'].forEach(c => { const a = ((o && o[c]) || []).filter(x => x && x[0] && +x[1] > 0).sort((p, q) => p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : 0); fxH.map[c] = {d: a.map(x => String(x[0])), r: a.map(x => +x[1])}; });
+}
+try { fxBuild(JSON.parse(localStorage.getItem(FX_LS) || 'null')); } catch (e) { fxBuild(null); }
+function fxAt(ccy, date) { // 그 날짜(또는 직전 거래일)의 환율. 10일 넘게 비어 있으면 없는 것으로 본다
+  const m = fxH.map[ccy]; if (!m || !m.d.length) return null;
+  let lo = 0, hi = m.d.length - 1, k = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (m.d[mid] <= date) { k = mid; lo = mid + 1; } else hi = mid - 1; }
+  const gap = (a, b) => Math.abs(new Date(a) - new Date(b)) / 864e5;
+  if (k < 0) return gap(m.d[0], date) <= 10 ? m.r[0] : null;
+  return gap(m.d[k], date) <= 10 ? m.r[k] : null;
+}
 function derive(h) {
   h.cls = h.mk === 'KR' ? '국내주식' : '해외주식';
   h.fxr = fxRate(h.ccy);
@@ -643,6 +667,11 @@ function derive(h) {
   h.pnlPct = (h.pnl != null && h.costRemain > 0) ? h.pnl / h.costRemain : null;
   h.costKRW = (h.costRemain != null && h.fxr != null) ? h.costRemain * h.fxr : null;
   h.pnlKRW = (h.pnl != null && h.fxr != null) ? h.pnl * h.fxr : null;
+  h.fxMode = 'now'; h.pnlStockKRW = null; h.pnlFxKRW = null;
+  if (h.costRemainK != null && h.pnl != null && h.fxr != null && h.valueKRW != null) { // 거래일 환율로 쌓은 원화 원가 기준
+    h.costKRW = h.costRemainK; h.pnlKRW = h.valueKRW - h.costRemainK; h.fxMode = 'hist';
+    h.pnlStockKRW = h.costRemain > 0 ? h.pnl * (h.costRemainK / h.costRemain) : h.pnlKRW; h.pnlFxKRW = h.pnlKRW - h.pnlStockKRW;
+  }
   return h;
 }
 function compute() {
@@ -650,7 +679,7 @@ function compute() {
   Object.keys(state.accounts).sort((a, b) => (state.accounts[a].createdAt || '') < (state.accounts[b].createdAt || '') ? -1 : 1).forEach(aid => {
     const acc = state.accounts[aid], A = acc && acc.data; if (!A) return;
     const basis = {}, extra = {}; Object.keys(state.basis).forEach(k => { const b = state.basis[k]; if (b.acc === aid) { basis[b.s] = b.price; if (b.extra) extra[b.s] = b.extra; } });
-    let H = []; try { H = replay(A, basis, extra); } catch (e) { toast('계좌 계산 오류: ' + acc.name); }
+    let H = []; try { H = replay(A, basis, extra, fxAt); } catch (e) { toast('계좌 계산 오류: ' + acc.name); }
     accts.push({aid, name: acc.name, broker: acc.broker || '삼성증권', A, H});
     H.forEach(h => {
       h.aid = aid; h.acct = acc.name;
@@ -666,19 +695,19 @@ function mergeRows(rows) {
   const m = new Map();
   rows.forEach(h => {
     const k = keyOf(h.name) + '|' + h.ccy; let g = m.get(k);
-    if (!g) { g = {name: h.name, mk: h.mk, ccy: h.ccy, end: 0, costRemain: 0, unknown: false, accts: [], price: h.price, priceInfo: h.priceInfo, realized: 0, realizedNull: false, div: 0}; m.set(k, g); }
-    g.end += h.end; if (h.costRemain == null) g.unknown = true; else g.costRemain += h.costRemain;
+    if (!g) { g = {name: h.name, mk: h.mk, ccy: h.ccy, end: 0, costRemain: 0, costRemainK: 0, unknown: false, unknownK: false, accts: [], price: h.price, priceInfo: h.priceInfo, realized: 0, realizedNull: false, div: 0}; m.set(k, g); }
+    g.end += h.end; if (h.costRemain == null) g.unknown = true; else g.costRemain += h.costRemain; if (h.costRemainK == null) g.unknownK = true; else g.costRemainK += h.costRemainK;
     if (h.realized == null) g.realizedNull = true; else g.realized += h.realized; g.div += h.div;
     if (g.accts.indexOf(h.acct) < 0) g.accts.push(h.acct);
   });
-  return Array.from(m.values()).map(g => { if (g.unknown) g.costRemain = null; g.avg = (g.costRemain != null && g.end > 0) ? g.costRemain / g.end : null; return derive(g); });
+  return Array.from(m.values()).map(g => { if (g.unknown) g.costRemain = null; if (g.unknown || g.unknownK) g.costRemainK = null; g.avg = (g.costRemain != null && g.end > 0) ? g.costRemain / g.end : null; return derive(g); });
 }
 function totals(rows) {
-  const t = {val: 0, costK: 0, pnlK: 0, noPrice: 0, noFx: 0, noCost: 0};
+  const t = {val: 0, costK: 0, pnlK: 0, noPrice: 0, noFx: 0, noCost: 0, stockK: 0, fxK: 0, nHist: 0, nNow: 0};
   rows.forEach(h => {
     if (h.price == null) t.noPrice++; else if (h.fxr == null) t.noFx++;
     if (h.valueKRW != null) t.val += h.valueKRW;
-    if (h.pnlKRW != null) { t.pnlK += h.pnlKRW; t.costK += h.costKRW; } else if (h.costRemain == null) t.noCost++;
+    if (h.pnlKRW != null) { t.pnlK += h.pnlKRW; t.costK += h.costKRW; if (h.fxMode === 'hist') { t.stockK += h.pnlStockKRW; t.fxK += h.pnlFxKRW; if (h.ccy !== 'KRW') t.nHist++; } else { t.stockK += h.pnlKRW; if (h.ccy !== 'KRW') t.nNow++; } } else if (h.costRemain == null) t.noCost++;
   });
   t.pct = t.costK > 0 ? t.pnlK / t.costK : null; return t;
 }
@@ -813,8 +842,8 @@ function renderHoldings(C) {
   const tl = mk('div', {class: 'tiles', style: 'margin-top:14px'}, top);
   tile(tl, '주식 평가액', money('KRW', T.val), rows.length + '종목');
   tile(tl, '현금(예수금)', cashOn ? money('KRW', cashKRW) : '—', cashOn ? C.cash.map(c => money(c.ccy, c.amt)).join(' · ') : '필터 중에는 표시하지 않습니다');
-  tile(tl, '평가손익', T.costK > 0 ? (T.pnlK > 0 ? '▲ ' : T.pnlK < 0 ? '▼ ' : '') + money('KRW', Math.abs(T.pnlK)) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : '현지통화 손익을 현재 환율로 환산');
-  tile(tl, '수익률', pct(T.pct), '취득원가 대비, 환차손익 제외');
+  tile(tl, '평가손익', T.costK > 0 ? (T.pnlK > 0 ? '▲ ' : T.pnlK < 0 ? '▼ ' : '') + money('KRW', Math.abs(T.pnlK)) : '—', T.noCost ? '취득가를 모르는 ' + T.noCost + '종목 제외' : (T.nHist ? '주가 ' + upDn(T.stockK) + ' · 환차 ' + upDn(T.fxK) : '현지통화 손익을 현재 환율로 환산'));
+  tile(tl, '수익률', pct(T.pct), T.nHist ? '원화 원가 대비, 환차 포함' : '취득원가 대비, 환차손익 제외');
 
   // 비중
   const byCls = {}, byCcy = {}, byAcct = {};
@@ -932,11 +961,11 @@ function renderDetail(C) {
   const cashOn = ui.dcls === 'all' && !ui.dq;
   const T = totals(rows);
   const all = C.rows.concat(C.closed).filter(h => passFilter(h, ui.dcls, ui.dq) && inSel(h));
-  let rKRW = 0, dKRW = 0, taxKRW = 0, rMiss = 0, dMiss = 0;
+  let rKRW = 0, dKRW = 0, taxKRW = 0, rMiss = 0, dMiss = 0, rHist = 0, rNow = 0;
   all.forEach(h => {
     const f = fxRate(h.ccy);
-    if (h.sellQty) { if (h.realized == null) rMiss++; else if (f == null) rMiss++; else rKRW += h.realized * f; }
-    if (h.div) { if (f == null) dMiss++; else dKRW += h.div * f; }
+    if (h.sellQty) { if (h.realized == null) rMiss++; else if (h.realizedK != null) { rKRW += h.realizedK; if (h.ccy !== 'KRW') rHist++; } else if (f == null) rMiss++; else { rKRW += h.realized * f; rNow++; } }
+    if (h.div) { if (h.divKRW != null) dKRW += h.divKRW; else if (f == null) dMiss++; else dKRW += h.div * f; }
     taxKRW += h.divTaxKRW || 0;
   });
   const hasP = T.costK > 0, hasR = all.some(h => h.sellQty && h.realized != null), hasD = dKRW > 0, divNet = dKRW - taxKRW, score = (hasP ? T.pnlK : 0) + rKRW + divNet;
@@ -951,6 +980,7 @@ function renderDetail(C) {
     tile1(hs, '총 평가손익', hasP ? upDn(T.pnlK) : '—', hasP ? sh(T.pnlK) : '—', '평가손익');
     tile1(hs, '수익률', pct(T.pct));
     const notes = [];
+    if (T.nHist) notes.push('평가손익 = 주가 ' + upDn(T.stockK) + ' + 환차 ' + upDn(T.fxK) + ' (거래일 환율 기준 원화 원가)'); if (T.nNow) notes.push('환율 기록이 없는 해외 ' + T.nNow + '종목은 현재 환율로 환산(환차 제외)');
     if (T.noCost) notes.push('취득가를 모르는 ' + T.noCost + '종목은 평가손익에서 제외'); if (T.noPrice || T.noFx) notes.push('시세·환율 없는 ' + (T.noPrice + T.noFx) + '종목 제외');
     if (notes.length) mk('p', {class: 'sub', style: 'margin:0 0 12px;font-size:11.5px'}, tcard, notes.join(' · ')); else hs.style.marginBottom = '14px';
   }
@@ -977,8 +1007,8 @@ function renderDetail(C) {
     const rTotal = rKRW + dKRW - taxKRW;
     const d = mk('details', {class: 'card'}, out); if (ui.detOpen) d.open = true; d.addEventListener('toggle', () => { ui.detOpen = d.open; }); mk('summary', {style: 'cursor:pointer;font-weight:500'}, d, '올해 실현손익과 배당 (정리한 종목 포함) · 합계 ' + (rTotal > 0 ? '+' : rTotal < 0 ? '−' : '') + money('KRW', Math.abs(rTotal)) + ' / Score ' + (hasP || hasR || hasD ? upDn(score) : '—'));
     const rs = mk('div', {class: 'tiles', style: 'margin:10px 0 4px'}, d);
-    tile(rs, '실현손익 합계', (rKRW > 0 ? '+' : rKRW < 0 ? '−' : '') + money('KRW', Math.abs(rKRW)), rMiss ? '취득가·환율을 몰라 제외한 ' + rMiss + '건' : '원화 환산, 환율 효과 제외');
-    tile(rs, '배당 합계(세전)', money('KRW', dKRW), dMiss ? '환율 없는 ' + dMiss + '건 제외' : '원화 환산');
+    tile(rs, '실현손익 합계', (rKRW > 0 ? '+' : rKRW < 0 ? '−' : '') + money('KRW', Math.abs(rKRW)), rMiss ? '취득가·환율을 몰라 제외한 ' + rMiss + '건' : (rHist ? (rNow ? '거래일 환율 적용 · ' + rNow + '건은 환율 기록이 없어 현재 환율' : '거래일 환율 적용(환차 포함)') : '원화 환산, 현재 환율(환차 제외)'));
+    tile(rs, '배당 합계(세전)', money('KRW', dKRW), dMiss ? '환율 없는 ' + dMiss + '건 제외' : (rHist ? '배당일 환율로 환산' : '원화 환산'));
     tile(rs, '배당 세금', taxKRW ? '−' + money('KRW', taxKRW) : '—', '원천징수 등');
     tile(rs, '총 손익(실현+배당-세금)', (rTotal > 0 ? '▲ ' : rTotal < 0 ? '▼ ' : '') + money('KRW', Math.abs(rTotal)), '아직 팔지 않은 평가손익은 제외');
     mk('p', {class: 'sub', style: 'margin:8px 0'}, d, '이동평균법입니다. 연초부터 갖고 있던 종목은 취득가를 모르면 계산하지 않습니다. 연초 잔고 탭에서 취득단가를 입력하면 채워집니다.');
@@ -1206,7 +1236,7 @@ function buildSnapshot() {
   try {
     const C = compute();
     return {at: new Date().toISOString(),
-      holdings: C.rows.map(h => { const sy = state.symbols[keyOf(h.name)]; return {n: h.name, t: sy && sy.ticker ? String(sy.ticker) : '', c: h.ccy, q: h.end, k: h.costRemain == null ? null : h.costRemain}; }),
+      holdings: C.rows.map(h => { const sy = state.symbols[keyOf(h.name)]; return {n: h.name, t: sy && sy.ticker ? String(sy.ticker) : '', c: h.ccy, q: h.end, k: h.costRemain == null ? null : h.costRemain, kk: h.costRemainK == null ? null : Math.round(h.costRemainK)}; }),
       cash: C.cash.map(c => ({c: c.ccy, a: c.amt}))};
   } catch (e) { return null; }
 }
@@ -1220,6 +1250,22 @@ async function pullHistory() {
     state.histMsg = '시트 기록 ' + n + '일치를 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) { state.histMsg = '시트 기록을 불러오지 못했습니다(스크립트를 새 버전으로 다시 배포했는지 확인하세요).'; }
   scheduleRender();
+}
+async function pullFx(manual) {
+  const cfg = getSync(); if (!cfg || store.db) return;
+  try {
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&fx=1', {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    if (!j.fx) throw new Error('스크립트를 새 버전으로 다시 배포하세요(환율 기능이 없는 버전입니다).');
+    const o = {USD: j.fx.USD || [], JPY: j.fx.JPY || [], at: Date.now()};
+    fxBuild(o); try { localStorage.setItem(FX_LS, JSON.stringify(o)); } catch (e) {}
+    state.fxMsg = '';
+  } catch (e) { state.fxMsg = '환율 탭을 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  scheduleRender();
+}
+function fxStatus() {
+  const p = ['USD', 'JPY'].map(c => { const m = fxH.map[c]; return m && m.d.length ? c + ' ' + m.d.length + '일치 (' + m.d[0] + ' ~ ' + m.d[m.d.length - 1] + ')' : null; }).filter(Boolean);
+  return p.length ? p.join(' · ') : '아직 불러온 환율이 없습니다. 이 경우 지금까지처럼 현재 환율로 환산합니다.';
 }
 async function syncPush() {
   const cfg = getSync(); if (!cfg) return;
@@ -1241,10 +1287,10 @@ async function syncPull() {
       SYNC_COLS.forEach(c => { state[c] = j.data[c] || {}; });
       try { localStorage.setItem(TS_LS, String(j.updatedAt)); } catch (e) {}
       store.saveLocal(); state.syncMsg = '서버에서 불러왔습니다 · ' + new Date().toLocaleTimeString('ko-KR');
-    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); pullHistory(); await pullTrades(false); return; }
+    } else if (hasLocal() && (!j.data || localTs() > j.updatedAt)) { await syncPush(); pullHistory(); await pullTrades(false); pullFx(false); return; }
     else state.syncMsg = '최신 상태입니다 · ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) { state.syncMsg = '동기화 실패: ' + (e && e.message ? e.message : e); }
-  scheduleRender(); pullHistory(); await pullTrades(false);
+  scheduleRender(); pullHistory(); await pullTrades(false); pullFx(false);
 }
 
 /* ===== 거래내역 구글 시트 저장소 (Apps Script가 "거래내역" 탭에 저장) ===== */
@@ -1291,6 +1337,14 @@ async function pullTrades(manual) {
     state.tradeMsg = '시트에서 ' + incoming.length + '개 계좌를 읽었습니다' + (changed || added ? ' (갱신 ' + changed + ', 추가 ' + added + ')' : ' (변경 없음)') + ' · ' + new Date().toLocaleTimeString('ko-KR');
   } catch (e) { if (manual || !/다시 배포/.test(String(e && e.message))) state.tradeMsg = '시트에서 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
   scheduleRender();
+}
+function renderFxCard(out) {
+  if (store.db) return;
+  const cfg = getSync(), c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '일별 환율 (환차손익 계산용)');
+  mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, c, '구글 시트의 "환율" 탭이 달러·엔 일별 환율을 자동으로 채웁니다. 대시보드는 매수·매도·배당한 날의 환율로 원화 원가와 실현손익을 계산해 환차손익을 보여줍니다. 연초에 갖고 있던 종목은 전년 12/31 환율을 매입환율로 봅니다. 증권사가 실제로 적용한 환율(스프레드 포함)과는 조금 다를 수 있습니다.');
+  if (cfg) { const r = mk('div', {class: 'row'}, c); const b = mk('button', {type: 'button'}, r, '환율 불러오기'); b.addEventListener('click', async () => { b.disabled = true; await pullFx(true); b.disabled = false; }); }
+  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, c, state.fxMsg || (cfg ? '현재: ' + fxStatus() : '기기 간 동기화(Apps Script 주소·비밀번호)를 설정하면 환율 탭을 읽어 올 수 있습니다.'));
+  if (cfg && (state.fxMsg || !fxH.map.USD || !fxH.map.USD.d.length)) mk('p', {class: 'sub', style: 'margin:6px 0 0'}, c, '처음 한 번: Apps Script에 새 코드를 붙여넣고 다시 배포한 뒤, 함수 선택에서 setupFx를 한 번 실행하세요.');
 }
 function renderTradesCard(out, C) {
   if (store.db) return;
@@ -1422,6 +1476,7 @@ function renderAccounts(C) {
   const out = $('res-accounts'); out.replaceChildren();
   renderSyncCard(out);
   renderTradesCard(out, C);
+  renderFxCard(out);
   const up = mk('div', {class: 'card'}, out); mk('h2', {}, up, '거래내역 올리기');
   mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, up, '삼성증권 종합 거래내역 엑셀 또는 나무증권(NH투자증권) 거래내역 엑셀을 선택합니다(나무증권은 입출금이 거래내역에 포함돼 있어 거래내역 파일만 올리면 됩니다). 같은 계좌의 새 파일은 기존 계좌를 갱신하면 됩니다. 파일은 이 브라우저에서만 읽고, 계산 결과만 저장됩니다.');
   const ub = mk('button', {type: 'button', class: 'primary'}, up, '엑셀 파일 선택'); ub.addEventListener('click', openUpload);

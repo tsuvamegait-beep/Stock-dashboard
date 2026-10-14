@@ -9,6 +9,7 @@ const HOUR = 16;            // 매일 기록할 시각(한국시간, 0~23). 바�
 const HIST_NAME = '기록';    // 기록이 쌓일 탭 이름(없으면 자동 생성)
 const TRADES_NAME = '거래내역'; // 거래내역이 저장될 탭 이름(없으면 자동 생성)
 const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
+const FX_NAME = '환율';    // 일별 환율 탭(setupFx를 한 번 실행하면 만들어집니다)
 const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
 
 function out_(obj) {
@@ -35,6 +36,7 @@ function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
   if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
+  if (e.parameter.fx) { const f = readFx_(); return f ? out_({ok: true, fx: f}) : out_({ok: false, error: '환율 탭이 없습니다. Apps Script에서 setupFx를 한 번 실행하세요'}); }
   const d = load_();
   return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
 }
@@ -79,7 +81,7 @@ function calc_(snap, rows) {
     if (!(price > 0) || !f) { miss++; return; }
     const val = h.q * price * f;
     s += val;
-    if (h.k != null) { const cost = h.k * f; k += cost; p += val - cost; }
+    if (h.k != null) { const cost = h.kk != null ? h.kk : h.k * f; k += cost; p += val - cost; } // kk: 거래일 환율로 쌓은 원화 원가(있으면 사용)
   });
   let c = 0; (snap.cash || []).forEach(x => { const f = fx[x.c]; if (f) c += x.a * f; });
   const R = Math.round;
@@ -147,4 +149,26 @@ function readTrades_() {
   return sh.getRange(2, 1, sh.getLastRow() - 1, TRADE_HEAD.length).getValues()
     .filter(r => String(r[0]).trim() && String(r[4]).trim())
     .map(r => r.map((c, i) => (c instanceof Date) ? Utilities.formatDate(c, tz, 'yyyy-MM-dd') : c));
+}
+
+/* ===== 환율 탭: 일별 환율(GOOGLEFINANCE)을 시트가 알아서 채우고, 대시보드가 읽어 감 ===== */
+// 한 번만 실행: 편집기 위쪽 함수 선택에서 setupFx → 실행
+function setupFx() {
+  const ss = SpreadsheetApp.openById(SHEET_ID);
+  const sh = ss.getSheetByName(FX_NAME) || ss.insertSheet(FX_NAME);
+  sh.clear();
+  const from = 'DATE(YEAR(TODAY())-1,12,1)'; // 작년 12월 1일부터 오늘까지(연초 기준일 12/31 포함)
+  sh.getRange('A1').setFormula('=GOOGLEFINANCE("CURRENCY:USDKRW","price",' + from + ',TODAY(),"DAILY")');
+  sh.getRange('D1').setFormula('=GOOGLEFINANCE("CURRENCY:JPYKRW","price",' + from + ',TODAY(),"DAILY")');
+  sh.getRange('G1').setValue('A~B열: 달러(USD→KRW) 일별 값, D~E열: 엔(JPY→KRW, 1엔당) 일별 값. 시트가 자동으로 채웁니다. 이 탭은 지우지 마세요.');
+}
+function readFx_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName(FX_NAME);
+  if (!sh) return null;
+  const last = sh.getLastRow(), tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+  if (last < 2) return {USD: [], JPY: []};
+  const v = sh.getRange(2, 1, last - 1, 5).getValues();
+  const pick = ci => v.filter(r => r[ci] instanceof Date && typeof r[ci + 1] === 'number' && r[ci + 1] > 0)
+    .map(r => [Utilities.formatDate(r[ci], tz, 'yyyy-MM-dd'), Math.round(r[ci + 1] * 10000) / 10000]);
+  return {USD: pick(0), JPY: pick(3)};
 }

@@ -850,26 +850,13 @@ function renderHistory(parent) {
   const last = days[days.length - 1], first = days[0], dv = vals[vals.length - 1] - vals[0];
   mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, first + ' → ' + last + ' · ' + days.length + '일 기록 · ' + (mode === 't' ? '총자산' : '평가손익') + ' 변화 ' + (dv > 0 ? '▲ ' : dv < 0 ? '▼ ' : '') + money('KRW', Math.abs(dv)));
 }
-function holdPicker(parent, C, selIds) {
-  const allIds = C.accts.map(a => a.aid), sel = new Set(selIds), card = mk('div', {class: 'card', style: 'padding:12px 16px'}, parent);
-  const r = mk('div', {class: 'row', style: 'align-items:center;gap:8px;flex-wrap:wrap'}, card); mk('span', {class: 'tlabel'}, r, '계좌');
-  const seg = mk('span', {class: 'seg', style: 'flex-wrap:wrap'}, r);
-  const set = ids => { ui.hacc = ids.length === allIds.length ? null : ids; saveUi(); render(); };
-  const all = mk('button', {type: 'button', 'aria-pressed': String(selIds.length === allIds.length)}, seg, '전체'); all.addEventListener('click', () => set(allIds));
-  const rank = a => { const n = (a.name || '') + ' ' + (a.broker || ''); return /삼성/.test(n) ? 0 : /나무|NH|농협/.test(n) ? (/연금/.test(n) ? 2 : 1) : 3; };
-  C.accts.map((a, i) => ({a, i})).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(o => o.a).forEach(a => {
-    const on = sel.has(a.aid) && selIds.length !== allIds.length;
-    const b = mk('button', {type: 'button', 'aria-pressed': String(on)}, seg, a.name);
-    b.addEventListener('click', () => { if (selIds.length === allIds.length) set([a.aid]); else { const cur = new Set(selIds); if (cur.has(a.aid)) cur.delete(a.aid); else cur.add(a.aid); set(cur.size ? allIds.filter(id => cur.has(id)) : allIds); } });
-  });
-  if (selIds.length !== allIds.length) mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, '여러 계좌를 눌러 함께 볼 수 있습니다. 모두 해제하면 전체로 돌아갑니다.');
-}
 function renderHoldings(C) {
   const out = $('res-holdings'); out.replaceChildren();
   if (!C.accts.length) { emptyState(out); return; }
   const allIds = C.accts.map(a => a.aid), selIds = Array.isArray(ui.hacc) ? allIds.filter(id => ui.hacc.indexOf(id) >= 0) : allIds;
   const accSub = selIds.length !== allIds.length, selSet = new Set(selIds);
-  if (allIds.length > 1) holdPicker(out, C, selIds.length ? selIds : allIds);
+  if (allIds.length > 1) acctPicker(out, C, selIds, {set: setHoldSel, root: '#res-holdings'});
+  if (!selIds.length) return;
   const rows = C.rows.filter(h => passFilter(h, ui.cls, ui.q) && selSet.has(h.aid));
   const cashOn = ui.cls === 'all' && !ui.q;
   const T = totals(rows), cashAll = C.cash.filter(c => selSet.has(c.aid)), cashRows = cashOn ? cashAll : [];
@@ -1366,23 +1353,27 @@ function renderTheme() {
 
 /* 상세 현황 > 계좌별: 증권사 버튼 + 계좌 체크박스 */
 function setAcctSel(ids, allIds) { ui.dacc = ids.length === allIds.length ? null : ids; saveUi(); render(); }
-function acctPicker(parent, C, selIds) {
+const acctRank = a => { const n = (a.name || '') + ' ' + (a.broker || ''); return /삼성/.test(n) ? 0 : /나무|NH|농협/.test(n) ? (/연금/.test(n) ? 2 : 1) : 3; };
+const sortAccts = list => list.map((a, i) => ({a, i})).sort((x, y) => acctRank(x.a) - acctRank(y.a) || x.i - y.i).map(o => o.a);
+function setHoldSel(ids, allIds) { ui.hacc = ids.length === allIds.length ? null : ids; saveUi(); render(); }
+function acctPicker(parent, C, selIds, cfg) {
+  cfg = cfg || {set: setAcctSel, root: '#res-detail'};
   const allIds = C.accts.map(a => a.aid), card = mk('div', {class: 'card', style: 'padding:12px 16px'}, parent), sel = new Set(selIds);
-  const brokers = []; C.accts.forEach(a => { if (brokers.indexOf(a.broker) < 0) brokers.push(a.broker); });
+  const brokers = []; sortAccts(C.accts).forEach(a => { if (brokers.indexOf(a.broker) < 0) brokers.push(a.broker); });
   const r1 = mk('div', {class: 'row', style: 'align-items:center;gap:8px;flex-wrap:wrap'}, card); mk('span', {class: 'tlabel'}, r1, '증권사');
   const seg = mk('span', {class: 'seg'}, r1);
-  const mkBtn = (label, ids, pressed) => { const b = mk('button', {type: 'button', 'aria-pressed': String(pressed)}, seg, label); b.addEventListener('click', () => setAcctSel(ids, allIds)); };
+  const mkBtn = (label, ids, pressed) => { const b = mk('button', {type: 'button', 'aria-pressed': String(pressed)}, seg, label); b.addEventListener('click', () => cfg.set(ids, allIds)); };
   mkBtn('전체', allIds, selIds.length === allIds.length);
   brokers.forEach(bk => { const ids = C.accts.filter(a => a.broker === bk).map(a => a.aid); mkBtn(bk, ids, ids.length === selIds.length && ids.every(id => sel.has(id))); });
   const r2 = mk('div', {class: 'row', style: 'align-items:center;gap:6px 14px;flex-wrap:wrap;margin-top:10px'}, card); mk('span', {class: 'tlabel'}, r2, '계좌');
-  C.accts.forEach(a => {
+  sortAccts(C.accts).forEach(a => {
     const lb = mk('label', {style: 'display:inline-flex;align-items:center;gap:6px;cursor:pointer;padding:4px 10px;border:1px solid var(--axis);border-radius:6px;font-size:14px'}, r2);
     const cb = mk('input', {type: 'checkbox', 'data-aid': a.aid, 'aria-label': a.name + ' 선택'}, lb); cb.checked = sel.has(a.aid);
     lb.append(a.name); if (a.name.indexOf(a.broker) < 0) mk('span', {class: 's2'}, lb, a.broker);
     cb.addEventListener('change', () => {
       const cur = new Set(selIds); if (cb.checked) cur.add(a.aid); else cur.delete(a.aid);
-      setAcctSel(allIds.filter(id => cur.has(id)), allIds);
-      const el = document.querySelector('#res-detail input[data-aid="' + a.aid + '"]'); if (el) el.focus();
+      cfg.set(allIds.filter(id => cur.has(id)), allIds);
+      const el = document.querySelector(cfg.root + ' input[data-aid="' + a.aid + '"]'); if (el) el.focus();
     });
   });
   if (!selIds.length) mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, '선택된 계좌가 없습니다. 계좌를 하나 이상 선택하세요.');

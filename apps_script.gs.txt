@@ -10,6 +10,7 @@ const HIST_NAME = '기록';    // 기록이 쌓일 탭 이름(없으면 자동 �
 const TRADES_NAME = '거래내역'; // 거래내역이 저장될 탭 이름(없으면 자동 생성)
 const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
 const FX_NAME = '환율';    // 일별 환율 탭(setupFx를 한 번 실행하면 만들어집니다)
+const CREDIT_NAME = '신용잔고'; // 종목분석 탭: 코스피 신용융자 잔고 (A열 날짜, B열 조원). 엑셀을 올리면 자동 생성
 const RS_NAME = '_RS계산';  // RS 탭용 임시 계산 탭(자동 생성, 숨김)
 const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
 
@@ -38,6 +39,7 @@ function doGet(e) {
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
   if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
   if (e.parameter.series) return out_(readSeries_(String(e.parameter.t || ''), String(e.parameter.from || '')));
+  if (e.parameter.credit) return out_(readCredit_());
   if (e.parameter.fx) { const f = readFx_(); return f ? out_({ok: true, fx: f}) : out_({ok: false, error: '환율 탭이 없습니다. Apps Script에서 setupFx를 한 번 실행하세요'}); }
   const d = load_();
   return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
@@ -47,6 +49,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { return out_({ok: false, error: '요청 형식 오류'}); }
   if (body.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   if (body.action === 'saveTrades') return out_(saveTrades_(body.account, body.rows));
+  if (body.action === 'saveCredit') return out_(saveCredit_(body.rows));
   if (body.action === 'deleteTrades') return out_(saveTrades_(body.account, []));
   const cur = load_();
   if (body.updatedAt < cur.updatedAt) return out_({ok: false, error: '서버에 더 최신 데이터가 있습니다. 새로고침 후 다시 시도하세요'});
@@ -203,5 +206,27 @@ function readSeries_(tickers, from) {
     });
     sh.clear();
     return {ok: true, series: out};
+  } finally { lock.releaseLock(); }
+}
+
+/* ===== 종목분석 탭: 코스피 신용잔고(날짜, 조원)를 시트 '신용잔고' 탭에 보관 ===== */
+function readCredit_() {
+  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName(CREDIT_NAME);
+  if (!sh || sh.getLastRow() < 2) return {ok: false, error: "시트에 '신용잔고' 탭 자료가 없습니다. 종목분석 탭에서 엑셀을 올리면 자동으로 만들어집니다"};
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul', v = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
+  return {ok: true, rows: v.map(r => [r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]), r[1]])};
+}
+function saveCredit_(rows) {
+  if (!Array.isArray(rows) || !rows.length || rows.length > 5000) return {ok: false, error: '저장할 값이 없거나 너무 많습니다'};
+  const lock = LockService.getScriptLock(); lock.waitLock(25000);
+  try {
+    const ss = SpreadsheetApp.openById(SHEET_ID), tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+    const sh = ss.getSheetByName(CREDIT_NAME) || ss.insertSheet(CREDIT_NAME), map = {};
+    if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(r => { const d = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]); if (/^\d{4}-\d{2}-\d{2}$/.test(d) && typeof r[1] === 'number') map[d] = r[1]; });
+    rows.forEach(r => { if (/^\d{4}-\d{2}-\d{2}$/.test(String(r[0])) && typeof r[1] === 'number' && r[1] > 0) map[r[0]] = r[1]; });
+    const days = Object.keys(map).sort(); sh.clear();
+    sh.getRange(1, 1, 1, 2).setValues([['날짜', '코스피 신용융자 잔고(조원)']]);
+    sh.getRange(2, 1, days.length, 1).setNumberFormat('@'); sh.getRange(2, 1, days.length, 2).setValues(days.map(d => [d, map[d]]));
+    return {ok: true, n: days.length};
   } finally { lock.releaseLock(); }
 }

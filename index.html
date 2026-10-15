@@ -199,6 +199,7 @@ td input.tk{width:110px;text-align:left}
     <button type="button" role="tab" data-tab="holdings" aria-selected="true">보유 현황</button>
     <button type="button" role="tab" data-tab="detail" aria-selected="false">상세 현황</button>
     <button type="button" role="tab" data-tab="rs" aria-selected="false">RS</button>
+    <button type="button" role="tab" data-tab="ana" aria-selected="false">종목분석</button>
     <button type="button" role="tab" data-tab="trades" aria-selected="false">거래 내역</button>
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
@@ -236,10 +237,12 @@ td input.tk{width:110px;text-align:left}
   <section id="tab-opening" class="col" hidden><div class="col" id="res-opening"></div></section>
   <section id="tab-accounts" class="col" hidden><div class="col" id="res-accounts"></div></section>
   <section id="tab-rs" class="col" hidden><div class="col" id="res-rs"></div></section>
+  <section id="tab-ana" class="col" hidden><div class="col" id="res-ana"></div></section>
   <section id="tab-theme" class="col" hidden><div class="col" id="res-theme"></div></section>
 </div>
 <input type="file" id="file" accept=".xlsx,.xls" hidden>
 <input type="file" id="file2" accept=".xlsx,.xls,.csv" hidden>
+<input type="file" id="file3" accept=".xlsx,.xls,.csv" hidden>
 <div id="toast" role="status" hidden></div>
 <div id="tip" hidden></div>
 
@@ -1175,6 +1178,157 @@ function renderRS(C) {
   mk('p', {class: 'sub', style: 'margin:0 4px'}, out, '종가 기준 가격 수익률입니다(배당 제외). 종목과 지수는 각자의 통화로 비교하며 환율 효과는 넣지 않았습니다. 구글 시세(GOOGLEFINANCE)는 지연되거나 일부 종목·지수가 빠질 수 있습니다. 판정은 숫자를 기계적으로 읽은 것이며 투자 권유가 아닙니다. 마지막 불러오기: ' + new Date(Math.min(S.ts, I.ts)).toLocaleString('ko-KR'));
 }
 
+/* ================= 화면: 종목분석 (내 종목 주가 + 코스피 신용잔고) ================= */
+// 신용잔고는 구글 시세(GOOGLEFINANCE)에 없는 지표라, 금융투자협회 등에서 받은 엑셀을 올리거나 구글 시트 '신용잔고' 탭에서 가져옵니다.
+const ANA_LS = 'portfolio-ana', CR_LS = 'portfolio-credit';
+const ANA_PER = RS_PER.filter(p => ['1m', '3m', '6m', 'ytd', '1y'].indexOf(p.id) >= 0);
+const ana = (() => { const d = {sel: '', per: '6m'}; try { return Object.assign(d, JSON.parse(localStorage.getItem(ANA_LS) || '{}')); } catch (e) { return d; } })();
+ana.msg = ''; ana.busy = false; ana.tried = false;
+const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per})); } catch (e) {} };
+let credit = null; try { credit = JSON.parse(localStorage.getItem(CR_LS) || 'null'); } catch (e) { credit = null; }
+const creditSave = () => { try { localStorage.setItem(CR_LS, JSON.stringify(credit)); } catch (e) {} };
+function crDate(x) {
+  if (x == null || x === '') return null;
+  if (typeof x === 'number' && x > 20000 && x < 80000) return new Date(Date.UTC(1899, 11, 30) + x * 864e5).toISOString().slice(0, 10);
+  const m = String(x).trim().match(/^(\d{4})[-\/.\s]?(\d{1,2})[-\/.\s]?(\d{1,2})/); if (!m) return null;
+  const mo = +m[2], d = +m[3]; if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return m[1] + '-' + String(mo).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+// 2차원 배열(엑셀 첫 시트)에서 날짜 열과 '코스피(유가증권) 신용융자 잔고' 열을 찾아 [날짜, 조원] 배열로 바꾼다.
+function crParse(R) {
+  let first = -1, dc = -1;
+  for (let i = 0; i < Math.min(R.length, 40) && first < 0; i++) for (let j = 0; j < R[i].length; j++) { if (crDate(R[i][j]) && /\d/.test(String(R[i][j]))) { first = i; dc = j; break; } }
+  if (first < 0) return {err: '날짜가 들어 있는 열을 찾지 못했습니다.'};
+  const nc = Math.max(...R.slice(0, first + 1).map(r => r.length)), lab = Array(nc).fill('');
+  for (let i = 0; i < first; i++) { let carry = ''; for (let j = 0; j < nc; j++) { const c = String(R[i][j] == null ? '' : R[i][j]).trim(); if (c) carry = c; lab[j] += ' ' + carry; } }
+  const cand = []; for (let j = 0; j < nc; j++) if (j !== dc && /신용/.test(lab[j])) cand.push(j);
+  let vc = -1;
+  if (cand.length) vc = cand.find(j => /유가|코스피|kospi/i.test(lab[j]) && /잔고|융자/.test(lab[j])) ?? cand.find(j => /유가|코스피|kospi/i.test(lab[j])) ?? cand.find(j => /잔고/.test(lab[j])) ?? cand[0];
+  else if (nc === 2 || first === 1) vc = dc === 0 ? 1 : 0;
+  if (vc < 0) return {err: '"신용융자 잔고" 열을 찾지 못했습니다. 머리글에 "신용"이 들어 있는지 확인하세요.'};
+  const map = {};
+  for (let i = first; i < R.length; i++) { const d = crDate(R[i][dc]); if (!d) continue; const v = parseFloat(String(R[i][vc]).replace(/,/g, '')); if (isFinite(v) && v > 0) map[d] = v; }
+  const days = Object.keys(map).sort(); if (days.length < 2) return {err: '읽을 수 있는 날짜별 값이 2개 미만입니다.'};
+  const med = map[days[days.length >> 1]];
+  const f = med >= 1e9 ? 1e-12 : med >= 1e6 ? 1e-6 : med >= 1000 ? 1e-4 : 1, unit = f === 1e-12 ? '원' : f === 1e-6 ? '백만원' : f === 1e-4 ? '억원' : '조원';
+  return {rows: days.map(d => [d, Math.round(map[d] * f * 10000) / 10000]), label: (lab[vc] || '').replace(/\s+/g, ' ').trim() || '신용융자 잔고', unit};
+}
+function crMerge(rows, src, label) {
+  const m = {}; ((credit && credit.rows) || []).forEach(r => { m[r[0]] = r[1]; }); rows.forEach(r => { m[r[0]] = r[1]; });
+  credit = {rows: Object.keys(m).sort().map(d => [d, m[d]]), at: Date.now(), src, label: label || (credit && credit.label) || ''}; creditSave();
+}
+async function pullCredit(manual) {
+  const cfg = getSync(); if (!cfg || ana.busy) return; ana.busy = true; ana.msg = ''; scheduleRender();
+  try {
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&credit=1', {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    if (!j.rows) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(신용잔고 기능이 없는 버전입니다).');
+    const p = crParse(j.rows); if (p.err) throw new Error(p.err);
+    crMerge(p.rows, '구글 시트', p.label); if (manual) toast('신용잔고 ' + p.rows.length + '일치를 불러왔습니다.');
+  } catch (e) { ana.msg = '시트에서 신용잔고를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  ana.busy = false; scheduleRender();
+}
+async function handleCredit(file) {
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { toast('엑셀 읽기 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'); return; }
+  try {
+    const wb = XLSX.read(await file.arrayBuffer(), {type: 'array'}); let p = null, err = '';
+    for (const nm of wb.SheetNames) { const r = crParse(XLSX.utils.sheet_to_json(wb.Sheets[nm], {header: 1, raw: false, defval: ''})); if (r.rows) { p = r; break; } err = r.err; }
+    if (!p) { toast(err || '신용잔고를 찾지 못했습니다.'); return; }
+    crMerge(p.rows, '파일 ' + file.name, p.label); ana.msg = '';
+    toast('신용잔고 ' + p.rows.length + '일치를 읽었습니다(' + p.unit + ' 단위로 판단).');
+    const cfg = getSync();
+    if (cfg) { try { const res = await fetch(cfg.url, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: cfg.key, action: 'saveCredit', rows: p.rows})}); const j = await res.json(); if (!j.ok) throw new Error(j.error || '저장 실패'); toast('구글 시트 "신용잔고" 탭에도 저장했습니다.'); } catch (e) { ana.msg = '파일은 읽었지만 시트에는 저장하지 못했습니다(이 기기에만 보관): ' + (e && e.message ? e.message : e); } }
+  } catch (e) { toast(e && e.message ? e.message : '파일을 읽지 못했습니다.'); }
+  scheduleRender();
+}
+function anaChart(parent, pts, nameP, ccy) {
+  const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 240, L = 54, Rm = 46, Tp = 12, B = 26, n = pts.length;
+  const ps = pts.map(p => p.p), cs = pts.filter(p => p.c != null).map(p => p.c);
+  const rng = (a, f) => { let mn = Math.min(...a), mx = Math.max(...a); const pad = (mx - mn) * 0.1 || Math.abs(mx) * 0.02 || 1; return [mn - pad, mx + pad]; };
+  const [pm, pM] = rng(ps), [cm, cM] = cs.length ? rng(cs) : [0, 1];
+  const X = i => L + i / Math.max(1, n - 1) * (W - L - Rm), YP = v => Tp + (1 - (v - pm) / (pM - pm)) * (Ht - Tp - B), YC = v => Tp + (1 - (v - cm) / (cM - cm)) * (Ht - Tp - B);
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Ht); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', nameP + ' 주가와 코스피 신용잔고'); svg.style.display = 'block';
+  const el = (nm, a, tx) => { const e = document.createElementNS(NS, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; svg.appendChild(e); return e; };
+  const fp = v => Math.abs(pM) >= 1000 ? Math.round(v).toLocaleString('ko-KR') : v.toFixed(Math.abs(pM) < 10 ? 2 : 1);
+  for (let i = 0; i <= 3; i++) { const y = Tp + (Ht - Tp - B) * i / 3; el('line', {x1: L, x2: W - Rm, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'});
+    el('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--s1)'}, fp(pM - (pM - pm) * i / 3));
+    if (cs.length) el('text', {x: W - Rm + 6, y: y + 4, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--s2)'}, (cM - (cM - cm) * i / 3).toFixed(1)); }
+  el('text', {x: L, y: Ht - 7, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts[0].d.slice(2)); el('text', {x: W - Rm, y: Ht - 7, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts[n - 1].d.slice(2));
+  if (n > 8) el('text', {x: X(Math.floor((n - 1) / 2)), y: Ht - 7, 'text-anchor': 'middle', 'font-size': '12', fill: 'var(--muted)'}, pts[Math.floor((n - 1) / 2)].d.slice(2));
+  let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-dasharray': '5 3'}); seg = []; };
+  pts.forEach((p, i) => { if (p.c == null) flush(); else seg.push(X(i).toFixed(1) + ',' + YC(p.c).toFixed(1)); }); flush();
+  el('polyline', {points: pts.map((p, i) => X(i).toFixed(1) + ',' + YP(p.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': '2.4', 'stroke-linejoin': 'round'});
+  el('circle', {cx: X(n - 1).toFixed(1), cy: YP(pts[n - 1].p).toFixed(1), r: 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': '1.5'});
+  const cw = (W - L - Rm) / Math.max(1, n - 1);
+  pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, [{label: nameP, value: money(ccy, p.p), color: 'var(--s1)'}].concat(p.c != null ? [{label: '코스피 신용잔고', value: p.c.toFixed(2) + '조원', color: 'var(--s2)'}] : [])); });
+  parent.appendChild(svg);
+}
+function renderAna(C) {
+  const out = $('res-ana'); out.replaceChildren();
+  const list = mergeRows(C.rows).sort((a, b) => (b.valueKRW || 0) - (a.valueKRW || 0));
+  if (!list.length) { emptyState(out); return; }
+  let h = list.find(x => keyOf(x.name) === ana.sel); if (!h) { h = list[0]; ana.sel = keyOf(h.name); }
+  const st = rsTicker(h), per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2];
+  const c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '종목분석');
+  mk('p', {class: 'sub', style: 'margin:4px 0 12px'}, c, '내 종목의 주가(왼쪽 눈금)와 코스피 신용융자 잔고(오른쪽 눈금, 점선)를 한 그래프에 겹쳐 봅니다. 빚내서 산 돈(신용잔고)이 늘 때 주가가 어떻게 움직였는지 눈으로 비교하는 용도입니다.');
+  const r1 = mk('div', {class: 'row'}, c);
+  const lb1 = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lb1, '종목');
+  const s1 = mk('select', {'aria-label': '종목'}, lb1); list.forEach(x => { const o = mk('option', {value: keyOf(x.name)}, s1, x.name); if (keyOf(x.name) === ana.sel) o.selected = true; });
+  s1.addEventListener('change', () => { ana.sel = s1.value; anaSave(); render(); });
+  const r2 = mk('div', {class: 'row', style: 'margin-top:10px'}, c), seg = mk('span', {class: 'seg', style: 'overflow-x:auto;max-width:100%'}, r2);
+  ANA_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { ana.per = p.id; anaSave(); render(); }); });
+  if (st) mk('span', {class: 'sub'}, r2, st);
+  // 신용잔고 자료 카드
+  const cc = mk('div', {class: 'card'}, out); mk('h3', {style: 'margin:0 0 4px;font-size:15px'}, cc, '코스피 신용잔고 자료');
+  const hasC = credit && credit.rows && credit.rows.length > 1;
+  mk('p', {class: 'sub', style: 'margin:0 0 8px'}, cc, hasC ? credit.rows.length + '일치 · ' + credit.rows[0][0] + ' ~ ' + credit.rows[credit.rows.length - 1][0] + ' · 출처 ' + credit.src + (credit.label ? ' · 열 "' + credit.label + '"' : '') : '아직 자료가 없습니다. 아래 버튼으로 엑셀을 올리거나 구글 시트에서 불러오세요.');
+  const rb = mk('div', {class: 'row'}, cc);
+  const ub = mk('button', {type: 'button', class: 'primary'}, rb, '엑셀/CSV 올리기'); ub.addEventListener('click', () => { $('file3').value = ''; $('file3').click(); });
+  if (getSync()) { const pb = mk('button', {type: 'button'}, rb, ana.busy ? '불러오는 중…' : '시트에서 불러오기'); pb.disabled = ana.busy; pb.addEventListener('click', () => pullCredit(true)); }
+  mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, cc, '금융투자협회 종합통계서비스(freesis.kofia.or.kr)의 증시자금동향/신용공급 현황에서 받은 엑셀을 올리면, 날짜 열과 "신용융자 잔고(유가증권=코스피)" 열을 찾아 읽습니다. 단위(원·백만원·억원)는 값 크기로 자동 판단해 조원으로 바꿉니다. 새 파일은 기존 날짜 위에 덮어쓰며 합쳐집니다. 동기화를 설정했다면 구글 시트 "신용잔고" 탭에도 저장돼 다른 기기에서 불러올 수 있습니다.');
+  const msgs = []; if (ana.msg) msgs.push(ana.msg);
+  const S = st && rsCache[st], today = rsDay(Date.now());
+  if (st && getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }
+  if (!hasC && getSync() && !ana.tried && !ana.busy) { ana.tried = true; setTimeout(() => pullCredit(false), 0); }
+  if (!st) msgs.push('이 종목의 티커를 시세 시트에서 찾지 못했습니다. RS 탭의 "구글 티커" 칸에서 직접 넣을 수 있습니다.');
+  if (!getSync()) msgs.push('주가 이력은 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하고 Apps Script를 새 버전으로 배포하세요.');
+  if (S && S.err) msgs.push(st + ': ' + S.err);
+  msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, m));
+  if (!S || !S.rows || S.rows.length < 2) { if (!ana.busy && !rs.busy && !msgs.length) mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '주가 이력을 불러오면 그래프가 나타납니다.'); return; }
+  const end = S.rows[S.rows.length - 1][0], start = rsStart(per, end);
+  let s0 = rsAt(S.rows, start); if (s0 == null) s0 = 0;
+  const CR = hasC ? credit.rows : [], pts = [];
+  for (let k = s0; k < S.rows.length; k++) { const d = S.rows[k][0], ci = CR.length ? rsAt(CR, d) : null; const ok = ci != null && rsDaysBetween(CR[ci][0], d) <= 10; pts.push({d, p: S.rows[k][1], c: ok ? CR[ci][1] : null}); }
+  if (pts.length < 2) { mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '이 기간을 그릴 데이터가 부족합니다.'); return; }
+  const vc = mk('div', {class: 'card'}, out), vh = mk('div', {class: 'sec-h'}, vc); mk('h2', {}, vh, h.name + ' · ' + per.l);
+  const f = pts[0], l = pts[pts.length - 1], cp = pts.filter(p => p.c != null);
+  const tl = mk('div', {class: 'tiles', style: 'margin:10px 0 12px'}, vc);
+  tile(tl, '현재 주가', money(h.ccy, l.p), l.d + ' 종가');
+  tile(tl, per.l + ' 주가 변화', pct(l.p / f.p - 1), f.d + ' → ' + l.d);
+  let corr = null;
+  if (cp.length >= 2) {
+    const c0 = cp[0], c1 = cp[cp.length - 1];
+    tile(tl, '신용잔고(최근)', c1.c.toFixed(2) + '조원', c1.d.slice(0, 10) + ' 기준 코스피');
+    tile(tl, per.l + ' 신용잔고 변화', (c1.c - c0.c >= 0 ? '+' : '−') + Math.abs(c1.c - c0.c).toFixed(2) + '조원', pct(c1.c / c0.c - 1));
+    if (cp.length >= 10) { const a = cp.map(p => p.p), b = cp.map(p => p.c), mean = x => x.reduce((s, v) => s + v, 0) / x.length, ma = mean(a), mb = mean(b); let cv = 0, va = 0, vb = 0; for (let i = 0; i < a.length; i++) { cv += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; } if (va > 0 && vb > 0) corr = cv / Math.sqrt(va * vb); }
+  }
+  const lg = mk('div', {class: 'legend', style: 'margin:2px 0 4px'}, vc);
+  [[h.name + ' 주가 (왼쪽)', 'var(--s1)'], ['코스피 신용잔고, 조원 (오른쪽)', 'var(--s2)']].forEach(([n, col]) => { const s = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, s); sw.style.background = col; s.append(n); });
+  anaChart(vc, pts, h.name, h.ccy);
+  if (!cp.length) mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, vc, hasC ? '신용잔고 자료가 이 기간을 덮지 않습니다(자료 범위 ' + credit.rows[0][0] + ' ~ ' + credit.rows[credit.rows.length - 1][0] + '). 더 넓은 기간의 파일을 올려 보세요.' : '신용잔고 자료를 올리면 점선이 겹쳐 그려집니다.');
+  else if (cp.length < pts.length * 0.8) mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, vc, '신용잔고 자료가 기간의 일부(' + cp.length + '/' + pts.length + '거래일)만 덮고 있어 점선이 중간에 끊깁니다.');
+  if (cp.length >= 2) {
+    const dP = l.p / f.p - 1, dC = cp[cp.length - 1].c / cp[0].c - 1, up = x => x > 0.01, dn = x => x < -0.01;
+    let t = per.l + ' 동안 ' + h.name + ' 주가는 ' + pct(dP) + ', 코스피 신용잔고는 ' + pct(dC) + ' 변했습니다. ';
+    t += up(dP) && up(dC) ? '주가가 오르는 동안 신용잔고도 함께 늘어, 빚을 낸 매수가 상승에 동행한 모습입니다.' : up(dP) && dn(dC) ? '주가는 올랐는데 신용잔고는 줄어, 빚 없이(또는 빚을 갚으며) 오른 상승입니다.' : dn(dP) && up(dC) ? '주가는 내렸는데 신용잔고는 늘어, 빚을 낸 매수가 하락 구간에 쌓였을 수 있습니다(반대매매 위험 구간 점검용).' : dn(dP) && dn(dC) ? '주가와 신용잔고가 함께 줄어, 빚 부담이 정리되며 조정받은 모습입니다.' : '둘 중 하나가 거의 움직이지 않아 뚜렷한 관계는 보이지 않습니다.';
+    if (corr != null) t += ' 같은 기간 두 선의 상관계수는 ' + corr.toFixed(2) + '(1에 가까우면 같은 방향, −1에 가까우면 반대 방향)입니다.';
+    const rc = mk('div', {class: 'card'}, out); mk('h2', {}, rc, '읽는 법'); mk('p', {style: 'margin:8px 0 0;line-height:1.75'}, rc, t);
+    mk('p', {class: 'sub', style: 'margin:8px 0 0'}, rc, '신용잔고는 코스피 시장 전체의 수치라 개별 종목의 신용 규모가 아닙니다. 그래서 국내 종목에서도 시장 분위기(과열 여부)를 보는 참고용이고, 해외 종목은 연관성이 더 낮습니다. 상관계수는 두 선의 수준(레벨)을 비교한 값이라 인과를 뜻하지 않으며 투자 권유가 아닙니다. 신용잔고는 보통 며칠 늦게 발표되어 최근 값이 비어 있을 수 있습니다.');
+  }
+}
+
+
 /* ================= 화면: 테마 ================= */
 const THEMES = [
   {id: 'auto', name: '자동', desc: '기기의 라이트/다크 설정을 그대로 따릅니다.', sw: null},
@@ -1811,19 +1965,19 @@ let rq = 0, pendingAfterBlur = false;
 function scheduleRender() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function render() {
   const ae = document.activeElement;
-  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening,#res-rs') && ae.type === 'text') { pendingAfterBlur = true; return; }
+  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening,#res-rs,#res-ana') && ae.type === 'text') { pendingAfterBlur = true; return; }
   const C = compute();
   $('banner').hidden = !(state.ready && !state.persist) && state.writable;
   if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderAna(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
-  ['holdings', 'detail', 'rs', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'detail', 'rs', 'ana', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));
@@ -1841,6 +1995,7 @@ function syncSegs() {
   $('btnUpload').addEventListener('click', openUpload);
   $('file').addEventListener('change', e => handleFile(e.target.files[0]));
   $('file2').addEventListener('change', e => handleOpening(e.target.files[0]));
+  $('file3').addEventListener('change', e => handleCredit(e.target.files[0]));
   syncTabs(); syncSegs(); render();
   loadSectors();
   store.init().then(async () => { if (!store.db) { await syncPull(); setTimeout(() => syncSheet(true), 50); } });

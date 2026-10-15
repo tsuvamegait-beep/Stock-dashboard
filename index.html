@@ -1274,6 +1274,39 @@ function renderAna(C) {
   const ub = mk('button', {type: 'button', class: 'primary'}, rb, '엑셀/CSV 올리기'); ub.addEventListener('click', () => { $('file3').value = ''; $('file3').click(); });
   if (getSync()) { const pb = mk('button', {type: 'button'}, rb, ana.busy ? '불러오는 중…' : '시트에서 불러오기'); pb.disabled = ana.busy; pb.addEventListener('click', () => pullCredit(true)); }
   mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, cc, '금융투자협회 종합통계서비스(freesis.kofia.or.kr)의 증시자금동향/신용공급 현황에서 받은 엑셀을 올리면, 날짜 열과 "신용융자 잔고(유가증권=코스피)" 열을 찾아 읽습니다. 단위(원·백만원·억원)는 값 크기로 자동 판단해 조원으로 바꿉니다. 새 파일은 기존 날짜 위에 덮어쓰며 합쳐집니다. 동기화를 설정했다면 구글 시트 "신용잔고" 탭에도 저장돼 다른 기기에서 불러올 수 있습니다.');
+  if (hasC) {
+    const CR0 = credit.rows, lastR = CR0[CR0.length - 1], t0 = rsDay(Date.now());
+    const mStart = rsStart({id: '1m', m: 1}, lastR[0]), k0 = rsAt(CR0, mStart), monthRows = CR0.filter(r => r[0] > mStart);
+    const mc = mk('div', {class: 'card'}, out); mk('h2', {}, mc, '코스피 신용잔고 · 오늘과 최근 1개월');
+    const lag = rsDaysBetween(lastR[0], t0);
+    mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, mc, '최신 자료 ' + lastR[0] + (lag > 0 ? ' (오늘보다 ' + lag + '일 전 · 신용잔고는 보통 며칠 늦게 발표됩니다)' : ' (오늘)') + ' · 단위 조원');
+    const prev = CR0.length > 1 ? CR0[CR0.length - 2] : null, base = k0 != null ? CR0[k0] : monthRows[0];
+    const vals = monthRows.map(r => r[1]), mx = Math.max(...vals), mn = Math.min(...vals);
+    const dlt = (a, b) => (a - b >= 0 ? '+' : '−') + Math.abs(a - b).toFixed(2) + '조원';
+    const tl2 = mk('div', {class: 'tiles', style: 'margin-bottom:12px'}, mc);
+    tile(tl2, lag > 0 ? '최신 신용잔고' : '오늘 신용잔고', lastR[1].toFixed(2) + '조원', lastR[0]);
+    if (prev) tile(tl2, '전일 대비', dlt(lastR[1], prev[1]), pct(lastR[1] / prev[1] - 1, 2) + ' · ' + prev[0]);
+    if (base && base[0] < lastR[0]) tile(tl2, '1개월 변화', dlt(lastR[1], base[1]), pct(lastR[1] / base[1] - 1) + ' · ' + base[0] + ' 대비');
+    if (vals.length > 1) tile(tl2, '1개월 최고 · 최저', mx.toFixed(2) + ' · ' + mn.toFixed(2), '최근 고점 대비 ' + pct(lastR[1] / mx - 1));
+    if (monthRows.length > 1) {
+      const pts2 = monthRows.map(r => ({d: r[0], p: r[1], c: null})), NS2 = 'http://www.w3.org/2000/svg', W2 = 420, H2 = 150, L2 = 46, R2 = 10, T2 = 10, B2 = 24, n2 = pts2.length;
+      const lo = mn - ((mx - mn) * 0.12 || 0.1), hi = mx + ((mx - mn) * 0.12 || 0.1), X2 = i => L2 + i / Math.max(1, n2 - 1) * (W2 - L2 - R2), Y2 = v => T2 + (1 - (v - lo) / (hi - lo)) * (H2 - T2 - B2);
+      const sv = document.createElementNS(NS2, 'svg'); sv.setAttribute('viewBox', '0 0 ' + W2 + ' ' + H2); sv.setAttribute('width', '100%'); sv.setAttribute('role', 'img'); sv.setAttribute('aria-label', '최근 1개월 코스피 신용잔고'); sv.style.display = 'block';
+      const e2 = (nm, a, tx) => { const e = document.createElementNS(NS2, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; sv.appendChild(e); return e; };
+      for (let i = 0; i <= 2; i++) { const y = T2 + (H2 - T2 - B2) * i / 2; e2('line', {x1: L2, x2: W2 - R2, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'}); e2('text', {x: L2 - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--s2)'}, (hi - (hi - lo) * i / 2).toFixed(1)); }
+      e2('text', {x: L2, y: H2 - 6, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts2[0].d.slice(2)); e2('text', {x: W2 - R2, y: H2 - 6, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts2[n2 - 1].d.slice(2));
+      e2('polyline', {points: pts2.map((q, i) => X2(i).toFixed(1) + ',' + Y2(q.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '2.4', 'stroke-linejoin': 'round'});
+      e2('circle', {cx: X2(n2 - 1).toFixed(1), cy: Y2(pts2[n2 - 1].p).toFixed(1), r: 3.5, fill: 'var(--s2)', stroke: 'var(--surface)', 'stroke-width': '1.5'});
+      const cw2 = (W2 - L2 - R2) / Math.max(1, n2 - 1);
+      pts2.forEach((q, i) => { const r = e2('rect', {x: (X2(i) - cw2 / 2).toFixed(1), y: T2, width: Math.max(cw2, 1).toFixed(1), height: H2 - T2 - B2, fill: 'transparent', tabindex: i === n2 - 1 ? '0' : '-1'}); hover(r, q.d, [{label: '코스피 신용잔고', value: q.p.toFixed(2) + '조원', color: 'var(--s2)'}]); });
+      mc.appendChild(sv);
+      const det = mk('details', {style: 'margin-top:10px'}, mc); mk('summary', {style: 'cursor:pointer'}, det, '일별 값 ' + monthRows.length + '일 보기');
+      const tw2 = mk('div', {class: 'tw', style: 'margin-top:8px'}, det), t2 = mk('table', {}, tw2), hr2 = mk('tr', {}, mk('thead', {}, t2));
+      ['날짜', '잔고(조원)', '전일 대비'].forEach((x, i) => mk('th', i === 0 ? {class: 'l'} : {}, hr2, x));
+      const tb2 = mk('tbody', {}, t2);
+      monthRows.slice().reverse().forEach(r => { const ix = CR0.findIndex(y => y[0] === r[0]), pv = ix > 0 ? CR0[ix - 1][1] : null, tr = mk('tr', {}, tb2); mk('td', {class: 'l'}, tr, r[0]); mk('td', {}, tr, r[1].toFixed(2)); mk('td', {}, tr, pv == null ? '—' : dlt(r[1], pv)); });
+    }
+  }
   const msgs = []; if (ana.msg) msgs.push(ana.msg);
   const S = st && rsCache[st], today = rsDay(Date.now());
   if (st && getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }

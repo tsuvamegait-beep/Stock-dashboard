@@ -1245,9 +1245,9 @@ function anaChart(parent, pts, nameP, ccy) {
     if (cs.length) el('text', {x: W - Rm + 6, y: y + 4, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--s2)'}, (cM - (cM - cm) * i / 3).toFixed(1)); }
   el('text', {x: L, y: Ht - 7, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts[0].d.slice(2)); el('text', {x: W - Rm, y: Ht - 7, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts[n - 1].d.slice(2));
   if (n > 8) el('text', {x: X(Math.floor((n - 1) / 2)), y: Ht - 7, 'text-anchor': 'middle', 'font-size': '12', fill: 'var(--muted)'}, pts[Math.floor((n - 1) / 2)].d.slice(2));
-  let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '2', 'stroke-linejoin': 'round', 'stroke-dasharray': '5 3'}); seg = []; };
+  let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '1.4', 'stroke-linejoin': 'round', 'stroke-dasharray': '5 3'}); seg = []; };
   pts.forEach((p, i) => { if (p.c == null) flush(); else seg.push(X(i).toFixed(1) + ',' + YC(p.c).toFixed(1)); }); flush();
-  el('polyline', {points: pts.map((p, i) => X(i).toFixed(1) + ',' + YP(p.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': '2.4', 'stroke-linejoin': 'round'});
+  el('polyline', {points: pts.map((p, i) => X(i).toFixed(1) + ',' + YP(p.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': '1.8', 'stroke-linejoin': 'round'});
   el('circle', {cx: X(n - 1).toFixed(1), cy: YP(pts[n - 1].p).toFixed(1), r: 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': '1.5'});
   const cw = (W - L - Rm) / Math.max(1, n - 1);
   pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, [{label: nameP, value: money(ccy, p.p), color: 'var(--s1)'}].concat(p.c != null ? [{label: '코스피 신용잔고', value: p.c.toFixed(2) + '조원', color: 'var(--s2)'}] : [])); });
@@ -1328,7 +1328,7 @@ function peerChart(parent, pts, ser) {
   el('line', {x1: L, x2: W - Rm, y1: Y(0), y2: Y(0), stroke: 'var(--muted)', 'stroke-width': '1.2', 'stroke-dasharray': '4 3'});
   el('text', {x: L, y: Ht - 7, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts[0].d.slice(2)); el('text', {x: W - Rm, y: Ht - 7, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts[n - 1].d.slice(2));
   if (n > 8) el('text', {x: X(Math.floor((n - 1) / 2)), y: Ht - 7, 'text-anchor': 'middle', 'font-size': '12', fill: 'var(--muted)'}, pts[Math.floor((n - 1) / 2)].d.slice(2));
-  ser.forEach((s, si) => { let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: s.color, 'stroke-width': si === 0 ? '2.8' : '2', 'stroke-linejoin': 'round'}); seg = []; }; pts.forEach((p, i) => { if (p.v[si] == null) flush(); else seg.push(X(i).toFixed(1) + ',' + Y(p.v[si]).toFixed(1)); }); flush();
+  ser.forEach((s, si) => { let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: s.color, 'stroke-width': si === 0 ? '2' : '1.4', 'stroke-linejoin': 'round'}); seg = []; }; pts.forEach((p, i) => { if (p.v[si] == null) flush(); else seg.push(X(i).toFixed(1) + ',' + Y(p.v[si]).toFixed(1)); }); flush();
     for (let i = n - 1; i >= 0; i--) if (pts[i].v[si] != null) { el('circle', {cx: X(i).toFixed(1), cy: Y(pts[i].v[si]).toFixed(1), r: 3.5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': '1.5'}); break; } });
   const cw = (W - L - Rm) / Math.max(1, n - 1);
   pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, ser.map((s, si) => ({label: s.name, value: p.v[si] == null ? '—' : pct(p.v[si]), color: s.color}))); });
@@ -1453,7 +1453,7 @@ function renderAna(C) {
       const e2 = (nm, a, tx) => { const e = document.createElementNS(NS2, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; sv.appendChild(e); return e; };
       for (let i = 0; i <= 2; i++) { const y = T2 + (H2 - T2 - B2) * i / 2; e2('line', {x1: L2, x2: W2 - R2, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'}); e2('text', {x: L2 - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--s2)'}, (hi - (hi - lo) * i / 2).toFixed(1)); }
       e2('text', {x: L2, y: H2 - 6, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts2[0].d.slice(2)); e2('text', {x: W2 - R2, y: H2 - 6, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts2[n2 - 1].d.slice(2));
-      e2('polyline', {points: pts2.map((q, i) => X2(i).toFixed(1) + ',' + Y2(q.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '2.4', 'stroke-linejoin': 'round'});
+      e2('polyline', {points: pts2.map((q, i) => X2(i).toFixed(1) + ',' + Y2(q.p).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s2)', 'stroke-width': '1.8', 'stroke-linejoin': 'round'});
       e2('circle', {cx: X2(n2 - 1).toFixed(1), cy: Y2(pts2[n2 - 1].p).toFixed(1), r: 3.5, fill: 'var(--s2)', stroke: 'var(--surface)', 'stroke-width': '1.5'});
       const cw2 = (W2 - L2 - R2) / Math.max(1, n2 - 1);
       pts2.forEach((q, i) => { const r = e2('rect', {x: (X2(i) - cw2 / 2).toFixed(1), y: T2, width: Math.max(cw2, 1).toFixed(1), height: H2 - T2 - B2, fill: 'transparent', tabindex: i === n2 - 1 ? '0' : '-1'}); hover(r, q.d, [{label: '코스피 신용잔고', value: q.p.toFixed(2) + '조원', color: 'var(--s2)'}]); });

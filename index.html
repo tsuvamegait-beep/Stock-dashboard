@@ -1169,9 +1169,9 @@ function renderRS(C) {
 // 신용잔고는 구글 시세(GOOGLEFINANCE)에 없는 지표라, 금융투자협회 등에서 받은 엑셀을 올리거나 구글 시트 '신용잔고' 탭에서 가져옵니다.
 const ANA_LS = 'portfolio-ana', CR_LS = 'portfolio-credit';
 const ANA_PER = RS_PER.filter(p => ['1m', '3m', '6m', 'ytd', '1y'].indexOf(p.id) >= 0);
-const ana = (() => { const d = {sel: '', per: '6m'}; try { return Object.assign(d, JSON.parse(localStorage.getItem(ANA_LS) || '{}')); } catch (e) { return d; } })();
+const ana = (() => { const d = {sel: '', per: '6m', po: {}, free: ''}; try { return Object.assign(d, JSON.parse(localStorage.getItem(ANA_LS) || '{}')); } catch (e) { return d; } })();
 ana.msg = ''; ana.busy = false; ana.tried = false;
-const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per})); } catch (e) {} };
+const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per, po: ana.po, free: ana.free})); } catch (e) {} };
 let credit = null; try { credit = JSON.parse(localStorage.getItem(CR_LS) || 'null'); } catch (e) { credit = null; }
 const creditSave = () => { try { localStorage.setItem(CR_LS, JSON.stringify(credit)); } catch (e) {} };
 function crDate(x) {
@@ -1251,21 +1251,137 @@ function anaChart(parent, pts, nameP, ccy) {
   pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, [{label: nameP, value: money(ccy, p.p), color: 'var(--s1)'}].concat(p.c != null ? [{label: '코스피 신용잔고', value: p.c.toFixed(2) + '조원', color: 'var(--s2)'}] : [])); });
   parent.appendChild(svg);
 }
+/* --- 동종 업종 비교: 선택 종목과 비슷한 업종 3개를 자동으로 골라 한 차트에 겹쳐 그린다 --- */
+// 구글 티커 기준의 대표 업종 묶음. 순서가 곧 추천 우선순위(보유 종목이 있으면 그쪽이 먼저). 앱을 고쳐서 늘릴 수 있습니다.
+const PEER_GROUPS = [
+  {g: '정유', m: [['MPC', '마라톤 페트롤리엄'], ['VLO', '발레로 에너지'], ['KRX:010950', 'S-Oil'], ['PSX', '필립스66'], ['KRX:096770', 'SK이노베이션'], ['PBF', 'PBF 에너지'], ['DK', '델렉 US']]},
+  {g: '원유 탱커 해운', m: [['FRO', '프론트라인'], ['DHT', 'DHT 홀딩스'], ['INSW', '인터내셔널 시웨이즈'], ['TNK', '텍켄'], ['NAT', '노르딕 아메리칸']]},
+  {g: 'LPG·가스 선박', m: [['LPG', '도리안 LPG'], ['BWLP', 'BW LPG'], ['FLNG', '플렉스 LNG'], ['GLNG', '골라 LNG']]},
+  {g: 'LNG 수출·가스', m: [['LNG', '셰니어 에너지'], ['VG', '벤처 글로벌'], ['CQP', '셰니어 파트너스'], ['EQT', 'EQT']]},
+  {g: '해양 서비스·시추', m: [['TDW', '타이드워터'], ['RIG', '트랜스오션'], ['VAL', '발라리스'], ['NE', '노블']]},
+  {g: '석유화학', m: [['DOW', '다우'], ['LYB', '라이온델바젤'], ['WLK', '웨스트레이크'], ['KRX:011170', '롯데케미칼']]},
+  {g: '석탄', m: [['BTU', '피바디'], ['CNR', '코어 네추럴'], ['ARLP', '얼라이언스 리소스'], ['HCC', '와비 메탈']]},
+  {g: '조선', m: [['KRX:010140', '삼성중공업'], ['KRX:329180', 'HD현대중공업'], ['KRX:042660', '한화오션'], ['KRX:009540', 'HD한국조선해양'], ['KRX:466920', 'SOL 조선TOP3플러스']]},
+  {g: '메모리·대형 반도체', m: [['KRX:005930', '삼성전자'], ['KRX:000660', 'SK하이닉스'], ['MU', '마이크론'], ['SNDK', '샌디스크'], ['TSM', 'TSMC']]},
+  {g: '반도체 장비', m: [['KRX:475300', 'SOL 반도체전공정'], ['KRX:042700', '한미반도체'], ['AMAT', '어플라이드 머티리얼즈'], ['LRCX', '램리서치'], ['KLAC', 'KLA']]},
+  {g: 'AI 광통신', m: [['LITE', '루멘텀'], ['AAOI', '어플라이드 옵토일렉트로닉스'], ['COHR', '코히런트'], ['CIEN', '시에나'], ['FN', '파브리넷']]},
+  {g: '연료전지·AI 전력', m: [['BE', '블룸 에너지'], ['FCEL', '퓨얼셀 에너지'], ['PLUG', '플러그 파워'], ['OKLO', '오클로'], ['VRT', '버티브']]},
+  {g: '전력기기', m: [['KRX:298040', '효성중공업'], ['KRX:267260', 'HD현대일렉트릭'], ['KRX:010120', 'LS ELECTRIC'], ['KRX:103590', '일진전기'], ['GEV', 'GE 버노바'], ['ETN', '이튼'], ['KRX:491820', 'HANARO 전력설비투자']]},
+  {g: '원전·에너지 설비', m: [['KRX:034020', '두산에너빌리티'], ['KRX:000150', '두산'], ['OKLO', '오클로'], ['CEG', '컨스텔레이션'], ['GEV', 'GE 버노바']]},
+  {g: '방산', m: [['KRX:012450', '한화에어로스페이스'], ['KRX:079550', 'LIG넥스원'], ['KRX:047810', '한국항공우주'], ['KRX:064350', '현대로템'], ['KRX:490480', 'SOL K방산'], ['LMT', '록히드 마틴'], ['RTX', 'RTX']]},
+  {g: '증권', m: [['KRX:016360', '삼성증권'], ['KRX:005940', 'NH투자증권'], ['KRX:006800', '미래에셋증권'], ['KRX:071050', '한국금융지주'], ['KRX:0111J0', 'HANARO 증권고배당TOP3플러스']]},
+  {g: '보험', m: [['KRX:032830', '삼성생명'], ['KRX:000810', '삼성화재'], ['KRX:005830', 'DB손해보험'], ['TYO:7181', '간포 생명보험'], ['KRX:140700', 'KODEX 보험']]},
+  {g: '금', m: [['KRX:0072R0', 'TIGER KRX 금현물'], ['GLD', 'SPDR 골드'], ['GDX', '금 광산 ETF'], ['NEM', '뉴몬트']]},
+  {g: '배당 ETF', m: [['KRX:458730', 'TIGER 미국배당다우존스'], ['SCHD', 'SCHD'], ['DVY', 'DVY'], ['VYM', 'VYM']]},
+  {g: '강관·철강 소재', m: [['KRX:005010', '휴스틸'], ['KRX:092790', '넥스틸'], ['KRX:306200', '세아제강'], ['KRX:003030', '세아제강지주']]}
+];
+const pnorm = t => { t = String(t || '').trim().toUpperCase(); const i = t.indexOf(':'); if (i > 0) { const p = t.slice(0, i); if (p !== 'KRX' && p !== 'TYO') t = t.slice(i + 1); } return t; };
+const peerCcy = t => /^KRX:/.test(t) ? 'KRW' : /^TYO:/.test(t) ? 'JPY' : 'USD';
+const peerTk = v => { v = String(v || '').trim().toUpperCase(); return /^[0-9][0-9A-Z]{5}$/.test(v) ? 'KRX:' + v : /^(\d{4})$/.test(v) ? 'TYO:' + v : v; };
+function peerName(t, list) {
+  const k = pnorm(t); const hh = (list || []).find(x => { const tk = rsTicker(x); return tk && pnorm(tk) === k; }); if (hh) return hh.name;
+  for (const g of PEER_GROUPS) { const m = g.m.find(y => pnorm(y[0]) === k); if (m) return m[1]; }
+  return t;
+}
+function peerCands(t, h, list) {
+  const k = pnorm(t), out = [], seen = {}; seen[k] = 1;
+  const add = (tk, nm, own) => { const n = pnorm(tk); if (!n || seen[n]) return; seen[n] = 1; out.push({t: tk, name: nm, own}); };
+  const holdMap = {}; list.forEach(x => { const tk = rsTicker(x); if (tk) holdMap[pnorm(tk)] = x; });
+  const grps = PEER_GROUPS.filter(g => g.m.some(m => pnorm(m[0]) === k));
+  grps.forEach(g => { const mem = g.m.filter(m => pnorm(m[0]) !== k); mem.filter(m => holdMap[pnorm(m[0])]).forEach(m => add(m[0], holdMap[pnorm(m[0])].name, true)); });
+  grps.forEach(g => g.m.forEach(m => add(m[0], m[1], false)));
+  if (h) { const sec = sectorOf(h); if (sec !== '미분류') list.forEach(x => { if (x !== h && sectorOf(x) === sec) { const tk = rsTicker(x); if (tk) add(tk, x.name, true); } }); }
+  return {group: grps.map(g => g.g).join('·'), cands: out};
+}
+function peerChart(parent, pts, ser) {
+  const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 250, L = 48, Rm = 10, Tp = 10, B = 26, n = pts.length;
+  const vals = [0]; pts.forEach(p => p.v.forEach(v => { if (v != null) vals.push(v); }));
+  let mn = Math.min(...vals), mx = Math.max(...vals); const pad = (mx - mn) * 0.08 || 0.01; mn -= pad; mx += pad;
+  const X = i => L + i / Math.max(1, n - 1) * (W - L - Rm), Y = v => Tp + (1 - (v - mn) / (mx - mn)) * (Ht - Tp - B);
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Ht); svg.setAttribute('width', '100%'); svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', '동종 업종 수익률 비교'); svg.style.display = 'block';
+  const el = (nm, a, tx) => { const e = document.createElementNS(NS, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; svg.appendChild(e); return e; };
+  for (let i = 0; i <= 4; i++) { const v = mn + (mx - mn) * i / 4, y = Y(v); el('line', {x1: L, x2: W - Rm, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.3', 'stroke-width': '1'}); el('text', {x: L - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, (v * 100).toFixed(Math.abs(mx - mn) < 0.2 ? 1 : 0) + '%'); }
+  el('line', {x1: L, x2: W - Rm, y1: Y(0), y2: Y(0), stroke: 'var(--muted)', 'stroke-width': '1.2', 'stroke-dasharray': '4 3'});
+  el('text', {x: L, y: Ht - 7, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts[0].d.slice(2)); el('text', {x: W - Rm, y: Ht - 7, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts[n - 1].d.slice(2));
+  if (n > 8) el('text', {x: X(Math.floor((n - 1) / 2)), y: Ht - 7, 'text-anchor': 'middle', 'font-size': '12', fill: 'var(--muted)'}, pts[Math.floor((n - 1) / 2)].d.slice(2));
+  ser.forEach((s, si) => { let seg = []; const flush = () => { if (seg.length > 1) el('polyline', {points: seg.join(' '), fill: 'none', stroke: s.color, 'stroke-width': si === 0 ? '2.8' : '2', 'stroke-linejoin': 'round'}); seg = []; }; pts.forEach((p, i) => { if (p.v[si] == null) flush(); else seg.push(X(i).toFixed(1) + ',' + Y(p.v[si]).toFixed(1)); }); flush();
+    for (let i = n - 1; i >= 0; i--) if (pts[i].v[si] != null) { el('circle', {cx: X(i).toFixed(1), cy: Y(pts[i].v[si]).toFixed(1), r: 3.5, fill: s.color, stroke: 'var(--surface)', 'stroke-width': '1.5'}); break; } });
+  const cw = (W - L - Rm) / Math.max(1, n - 1);
+  pts.forEach((p, i) => { const r = el('rect', {x: (X(i) - cw / 2).toFixed(1), y: Tp, width: Math.max(cw, 1).toFixed(1), height: Ht - Tp - B, fill: 'transparent', tabindex: i === n - 1 ? '0' : '-1'}); hover(r, p.d, ser.map((s, si) => ({label: s.name, value: p.v[si] == null ? '—' : pct(p.v[si]), color: s.color}))); });
+  parent.appendChild(svg);
+}
+function renderPeers(out, list, h, subjT, subjName, per) {
+  const c = mk('div', {class: 'card'}, out), hd = mk('div', {class: 'sec-h'}, c); mk('h2', {}, hd, '동종 업종 비교');
+  if (!subjT) { mk('p', {class: 'sub'}, c, '이 종목의 티커를 찾지 못했습니다. 위 검색 칸에 구글 티커(예: MPC, KRX:010950)를 직접 입력하세요.'); return; }
+  const key = pnorm(subjT), today = rsDay(Date.now()), pc = peerCands(subjT, ana.free ? null : h, list);
+  const st8 = t => { const x = rsCache[t]; return x && x.day === today ? (x.err || !x.rows || !x.rows.length ? 'bad' : 'ok') : 'new'; };
+  const ov = Array.isArray(ana.po[key]) ? ana.po[key] : null; let peers = [];
+  if (ov) peers = ov.map(t => ({t, name: peerName(t, list)}));
+  else for (const cd of pc.cands) { if (peers.length >= 3) break; if (st8(cd.t) === 'bad') continue; peers.push(cd); }
+  const all = [{t: subjT, name: subjName}].concat(peers);
+  const need = all.filter(x => st8(x.t) === 'new').map(x => x.t).slice(0, 4);
+  if (need.length && getSync() && !rs.busy) { const tk = need.join(',') + '|' + today; if (!rs.tried[tk]) { rs.tried[tk] = 1; setTimeout(() => rsFetch(need, false), 0); } }
+  mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, c, ov ? '직접 고른 비교 종목입니다.' : (pc.group ? '업종 "' + pc.group + '"에서 자동으로 골랐습니다(보유 종목 우선).' : (pc.cands.length ? '같은 분류의 보유 종목으로 골랐습니다.' : '비슷한 업종 묶음을 찾지 못했습니다. 아래에서 비교 종목을 직접 추가하세요.')));
+  // 비교 종목 칩 + 추가
+  const chips = mk('div', {class: 'row', style: 'gap:6px 8px;flex-wrap:wrap;align-items:center'}, c);
+  peers.forEach(p => { const b = mk('button', {type: 'button', title: '이 종목 빼기'}, chips, p.name + ' ✕'); b.addEventListener('click', () => { ana.po[key] = peers.filter(x => x.t !== p.t).map(x => x.t); anaSave(); render(); }); });
+  if (peers.length < 3) { const ai = mk('input', {type: 'text', placeholder: '비교 종목 추가 (티커)', 'aria-label': '비교 종목 추가', style: 'width:150px'}, chips); ai.addEventListener('change', () => { const v = peerTk(ai.value); if (!v) return; const cur = peers.map(x => x.t); if (cur.map(pnorm).indexOf(pnorm(v)) < 0 && pnorm(v) !== key) cur.push(v); ana.po[key] = cur; anaSave(); render(); }); }
+  if (ov) { const rb = mk('button', {type: 'button'}, chips, '자동 추천으로'); rb.addEventListener('click', () => { delete ana.po[key]; anaSave(); render(); }); }
+  if (!getSync()) { mk('p', {class: 'sub', style: 'margin:10px 0 0;color:var(--warn-ink)'}, c, '과거 시세는 구글 시트로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하고 Apps Script를 새 버전으로 배포하세요.'); return; }
+  const live = all.map((x, i) => ({t: x.t, name: x.name, color: catColor(i), st: st8(x.t)}));
+  const loaded = live.filter(x => x.st === 'ok').map(x => Object.assign({}, x, {rows: rsCache[x.t].rows}));
+  const failed = live.filter(x => x.st === 'bad');
+  if (rs.busy || live.some(x => x.st === 'new')) mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, '시세를 불러오는 중입니다… (종목당 몇 초 걸립니다)');
+  if (rs.msg) mk('p', {class: 'sub', style: 'margin:10px 0 0;color:var(--warn-ink)'}, c, rs.msg);
+  failed.forEach(x => mk('p', {class: 'sub', style: 'margin:6px 0 0;color:var(--warn-ink)'}, c, x.name + '(' + x.t + '): ' + (rsCache[x.t].err || '데이터 없음') + (ov || x.t === subjT ? '' : ' — 자동으로 다른 종목으로 바꿨습니다.')));
+  if (!loaded.length || loaded[0].t !== subjT) return;
+  if (loaded.length < 2) { mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, '비교할 종목의 데이터가 아직 없습니다.'); return; }
+  const end = loaded.map(x => x.rows[x.rows.length - 1][0]).sort().pop(), start = rsStart(per, end);
+  loaded.forEach(x => { let k = rsAt(x.rows, start); x.late = k == null; if (k == null) k = 0; x.base = x.rows[k][1]; x.first = x.rows[k][0]; });
+  const dset = {}; loaded.forEach(x => x.rows.forEach(r => { if (r[0] >= start && r[0] <= end) dset[r[0]] = 1; }));
+  const grid = Object.keys(dset).sort(); if (grid.length < 2) { mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, '이 기간을 그릴 데이터가 부족합니다.'); return; }
+  const pts = grid.map(d => ({d, v: loaded.map(x => { const k = rsAt(x.rows, d); return k == null ? null : x.rows[k][1] / x.base - 1; })}));
+  const lg = mk('div', {class: 'legend', style: 'margin:8px 0 4px'}, c);
+  loaded.forEach(x => { const s = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, s); sw.style.background = x.color; s.append(x.name); });
+  peerChart(c, pts, loaded);
+  const fin = loaded.map((x, i) => ({x, r: x.rows[x.rows.length - 1][1] / x.base - 1})), rank = fin.slice().sort((a, b) => b.r - a.r), me = fin[0], pos = rank.findIndex(o => o === me) + 1;
+  const peerAvg = fin.slice(1).reduce((a, o) => a + o.r, 0) / (fin.length - 1);
+  mk('p', {style: 'margin:10px 0 0;line-height:1.75'}, c, per.l + ' 동안 ' + rank[0].x.name + '이(가) ' + pct(rank[0].r) + '로 가장 강했고, ' + subjName + '은(는) ' + fin.length + '개 중 ' + pos + '위(' + pct(me.r) + ')입니다. 비교 종목 평균은 ' + pct(peerAvg) + '라서 업종 평균보다 ' + (me.r - peerAvg >= 0 ? '앞서' : '뒤처져') + ' 있습니다(' + pp(me.r - peerAvg) + ').');
+  // 표
+  const tw = mk('div', {class: 'tw', style: 'margin-top:10px'}, c), t = mk('table', {}, tw), hr = mk('tr', {}, mk('thead', {}, t));
+  ['종목', '가격', '변동', per.l + ' 변동률', '전일 종가'].forEach((x, i) => mk('th', i === 0 ? {class: 'l'} : {}, hr, x));
+  const tb = mk('tbody', {}, t);
+  loaded.forEach(x => { const cc = peerCcy(x.t), L = x.rows[x.rows.length - 1][1], P = x.rows.length > 1 ? x.rows[x.rows.length - 2][1] : null, tr = mk('tr', {}, tb), td0 = mk('td', {class: 'l'}, tr);
+    const sw = mk('i', {class: 'sw'}, td0); sw.style.background = x.color; sw.style.marginRight = '6px'; td0.append(x.name); mk('div', {class: 'sub', style: 'font-size:11px'}, td0, x.t + (x.late ? ' · ' + x.first + '부터' : ''));
+    mk('td', {}, tr, money(cc, L)); mk('td', {}, tr, sgn(cc, L - x.base)); mk('td', {}, tr, pct(L / x.base - 1)); mk('td', {}, tr, P == null ? '—' : money(cc, P)); });
+  mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, c, '각 종목의 기간 시작일 종가를 0%로 맞춘 수익률이며 종가 기준입니다(배당 제외, 환율 효과 없음 — 각자의 통화 기준). 업종 묶음은 앱에 들어 있는 대표 종목 목록이라 완벽한 동종 기업 선정이 아닙니다. 마음에 안 들면 ✕로 빼고 티커를 직접 추가하세요. 투자 권유가 아닙니다.');
+}
 function renderAna(C) {
   const out = $('res-ana'); out.replaceChildren();
   const list = mergeRows(C.rows).sort((a, b) => (b.valueKRW || 0) - (a.valueKRW || 0));
   if (!list.length) { emptyState(out); return; }
   let h = list.find(x => keyOf(x.name) === ana.sel); if (!h) { h = list[0]; ana.sel = keyOf(h.name); }
-  const st = rsTicker(h), per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2];
+  if (!ana.po || typeof ana.po !== 'object') ana.po = {};
+  const per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2];
+  let st = rsTicker(h), subjName = h.name;
+  if (ana.free) { st = ana.free; subjName = peerName(st, list); h = {name: subjName, ccy: peerCcy(st), mk: /^KRX:/.test(st) ? 'KR' : 'US'}; }
   const c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '종목분석');
   mk('p', {class: 'sub', style: 'margin:4px 0 12px'}, c, '내 종목의 주가(왼쪽 눈금)와 코스피 신용융자 잔고(오른쪽 눈금, 점선)를 한 그래프에 겹쳐 봅니다. 빚내서 산 돈(신용잔고)이 늘 때 주가가 어떻게 움직였는지 눈으로 비교하는 용도입니다.');
   const r1 = mk('div', {class: 'row'}, c);
   const lb1 = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lb1, '종목');
   const s1 = mk('select', {'aria-label': '종목'}, lb1); list.forEach(x => { const o = mk('option', {value: keyOf(x.name)}, s1, x.name); if (keyOf(x.name) === ana.sel) o.selected = true; });
-  s1.addEventListener('change', () => { ana.sel = s1.value; anaSave(); render(); });
+  s1.addEventListener('change', () => { ana.sel = s1.value; ana.free = ''; anaSave(); render(); });
+  const lbq = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lbq, '검색');
+  const dl = mk('datalist', {id: 'ana-dl'}, lbq); const seen = {}; list.forEach(x => { seen[x.name] = 1; mk('option', {value: x.name}, dl); }); PEER_GROUPS.forEach(g => g.m.forEach(m => { if (!seen[m[1]]) { seen[m[1]] = 1; mk('option', {value: m[1]}, dl); } }));
+  const qi = mk('input', {type: 'text', list: 'ana-dl', placeholder: '종목명 또는 티커 (예: MPC, S-Oil)', 'aria-label': '종목 검색', style: 'width:210px', value: ana.free ? subjName : ''}, lbq);
+  qi.addEventListener('change', () => { const v = qi.value.trim(); if (!v) { ana.free = ''; anaSave(); render(); return; } const q = v.toLowerCase();
+    const hh = list.find(x => x.name.toLowerCase() === q) || list.find(x => x.name.toLowerCase().indexOf(q) >= 0);
+    if (hh) { ana.sel = keyOf(hh.name); ana.free = ''; } else { let tk = ''; for (const g of PEER_GROUPS) { const m = g.m.find(y => y[1].toLowerCase() === q || pnorm(y[0]).toLowerCase() === q) || g.m.find(y => y[1].toLowerCase().indexOf(q) >= 0); if (m) { tk = m[0]; break; } } ana.free = tk || peerTk(v); }
+    anaSave(); render(); });
   const r2 = mk('div', {class: 'row', style: 'margin-top:10px'}, c), seg = mk('span', {class: 'seg', style: 'overflow-x:auto;max-width:100%'}, r2);
   ANA_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { ana.per = p.id; anaSave(); render(); }); });
   if (st) mk('span', {class: 'sub'}, r2, st);
+  renderPeers(out, list, ana.free ? null : list.find(x => keyOf(x.name) === ana.sel), st, subjName, per);
   // 신용잔고 자료 카드
   const cc = mk('div', {class: 'card'}, out); mk('h3', {style: 'margin:0 0 4px;font-size:15px'}, cc, '코스피 신용잔고 자료');
   const hasC = credit && credit.rows && credit.rows.length > 1;

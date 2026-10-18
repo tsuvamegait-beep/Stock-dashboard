@@ -3,13 +3,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>주식 투자 대시보드</title>
-<meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f8f4ec" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
-<script>/* 테마를 고른 적이 없으면 기본은 리포트(밝음). 기기 다크모드를 따르려면 테마 탭에서 "자동" */
-var __t=null;try{__t=localStorage.getItem("portfolio-theme")}catch(e){}__t=__t||"light";
-if(__t!=="auto"){var __d=__t==="dark"||__t==="amber";document.documentElement.setAttribute("data-theme",__t);document.querySelector('meta[name="color-scheme"]').setAttribute("content",__d?"dark":"only light");
-document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.removeAttribute("media");m.setAttribute("content",__d?"#0d0d0d":"#f8f4ec")})}</script>
+<meta name="color-scheme" content="only light">
+<meta name="theme-color" content="#f8f4ec">
+<script>/* 저장된 테마 적용(없거나 모르는 값이면 리포트). 테마 목록은 아래 THEMES와 맞출 것: [id, 어두운가, 상단바 색] */
+(function(){var L=[["light",0,"#f8f4ec"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
+var th=L.filter(function(x){return x[0]===t})[0]||L[0];document.documentElement.setAttribute("data-theme",th[0]);
+document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]?"dark":"only light");document.querySelector('meta[name="theme-color"]').setAttribute("content",th[2])})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&family=Noto+Serif+KR:wght@700&display=swap" rel="stylesheet">
@@ -27,59 +26,9 @@ document.querySelectorAll('meta[name="theme-color"]').forEach(function(m){m.remo
   --font:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
   --num:"IBM Plex Mono","IBM Plex Sans KR",ui-monospace,SFMono-Regular,Menlo,monospace;
   --serif:"Noto Serif KR","Apple SD Gothic Neo",serif;
-  color-scheme:light dark;
+  color-scheme:only light;
 }
 :root[data-theme="light"]{color-scheme:only light}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme]){
-    --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a9890;
-    --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10); --wash:rgba(255,255,255,.06);
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#3fae5a; --s7:#9085e9; --s8:#e66767;
-    --accent:#6da7ec; --field:#121211; --warn-bg:#2b2412; --warn-ink:#e8c777; color-scheme:dark;
-    --up:oklch(70% .19 25); --dn:oklch(72% .14 245);
-  }
-}
-:root[data-theme="dark"]{
-  --plane:#0d0d0d; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#9a9890;
-  --grid:#2c2c2a; --axis:#383835; --hair:rgba(255,255,255,.10); --wash:rgba(255,255,255,.06);
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#3fae5a; --s7:#9085e9; --s8:#e66767;
-  --accent:#6da7ec; --field:#121211; --warn-bg:#2b2412; --warn-ink:#e8c777; color-scheme:dark;
-  --up:oklch(70% .19 25); --dn:oklch(72% .14 245);
-}
-
-/* 따뜻한 테마 3종: 세피아 크림(밝음), 앰버 황혼(어두움), 로즈 샌드(밝음) */
-:root[data-theme="sepia"]{
-  --plane:#f4ecdc; --surface:#fbf6ea; --ink:#2e2418; --ink2:#5c4d3a; --muted:#76664f;
-  --grid:#e3d7c1; --axis:#c9b99c; --hair:rgba(46,36,24,.12); --wash:rgba(46,36,24,.055);
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#a3441c; --field:#fffdf7; --warn-bg:#fbefcf; --warn-ink:#6b4a00; color-scheme:only light;
-}
-:root[data-theme="amber"]{
-  --plane:#1c1611; --surface:#272018; --ink:#f4e8d6; --ink2:#cdbda6; --muted:#a39379;
-  --grid:#342b20; --axis:#4a3c2c; --hair:rgba(255,235,205,.12); --wash:rgba(255,235,205,.06);
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#3fae5a; --s7:#9085e9; --s8:#e66767;
-  --accent:#e8a04a; --field:#16110d; --warn-bg:#33270f; --warn-ink:#f0cf85; color-scheme:dark;
-  --up:oklch(72% .18 28); --dn:oklch(74% .12 240);
-}
-:root[data-theme="rose"]{
-  --plane:#f7ebe6; --surface:#fdf5f1; --ink:#3a2824; --ink2:#6a4f48; --muted:#7f625a;
-  --grid:#ead7cf; --axis:#d2b9ae; --hair:rgba(58,40,36,.12); --wash:rgba(58,40,36,.055);
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#9c3f63; --field:#fffaf7; --warn-bg:#fbeacb; --warn-ink:#6b4a00; color-scheme:only light;
-}
-/* 아이보리 브라운: 실적 리포트 화면처럼 진한 갈색 머리띠 + 크림 바탕 + 구운 주황 포인트 (밝음) */
-:root[data-theme="ivory"]{
-  --plane:#eee7d7; --surface:#fffcf2; --ink:#2f2216; --ink2:#5b4a38; --muted:#6f5f4a;
-  --grid:#e8dfca; --axis:#c7b99d; --hair:rgba(60,42,26,.14); --wash:rgba(60,42,26,.06);
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
-  --accent:#a84e0f; --field:#fffef9; --warn-bg:#f8ebc8; --warn-ink:#6b4a00; color-scheme:only light;
-}
-:root[data-theme="ivory"] body{background:linear-gradient(180deg,#eee7d7,#f3e6d3) fixed}
-:root[data-theme="ivory"] header.top{background:#5c402a;color:#fff9f2;padding:16px 18px;border-radius:10px;align-items:center}
-:root[data-theme="ivory"] header.top h1{color:#fff9f2}
-:root[data-theme="ivory"] header.top .meta{color:#e6d6c0}
-:root[data-theme="ivory"] header.top button.primary{background:#fff9f2;border-color:#fff9f2;color:#5c402a}
-:root[data-theme="ivory"] .tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent)}
 .rs-badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--axis);color:var(--ink2);white-space:nowrap}
 .rs-badge.up{color:var(--up);border-color:var(--up)}
 .rs-badge.down{color:var(--dn);border-color:var(--dn)}
@@ -1540,26 +1489,16 @@ function renderAna(C) {
 
 /* ================= 화면: 테마 ================= */
 const THEMES = [
-  {id: 'auto', name: '자동', desc: '기기의 라이트/다크 설정을 그대로 따릅니다.', sw: null},
-  {id: 'light', name: '리포트', tag: '기본 · 밝음', desc: '증권사 리포트처럼 크림색 종이에 남색 글씨. 총자산은 명조, 숫자는 자릿수가 맞는 고정폭 글꼴입니다.', sw: ['#f8f4ec', '#fbf9f4', '#1b2233', '#22407c']},
-  {id: 'dark', name: '다크', desc: '기본 어두운 화면. 검은 바탕에 하늘색 포인트.', sw: ['#0d0d0d', '#1a1a19', '#f0efec', '#6da7ec']},
-  {id: 'sepia', name: '세피아 크림', tag: '따뜻함 · 밝음', desc: '종이처럼 편안한 크림색 바탕, 테라코타 포인트. 낮에 오래 볼 때 눈이 편합니다.', sw: ['#f4ecdc', '#fbf6ea', '#2e2418', '#a3441c']},
-  {id: 'amber', name: '앰버 황혼', tag: '따뜻함 · 어두움', desc: '짙은 갈색 바탕에 호박색 포인트. 밤에 은은하게 보기 좋고 파란빛이 적습니다.', sw: ['#1c1611', '#272018', '#f4e8d6', '#e8a04a']},
-  {id: 'ivory', name: '아이보리 브라운', tag: '따뜻함 · 밝음 · 리포트풍', desc: '실적 리포트 화면처럼 진한 갈색 머리띠, 크림 바탕, 구운 주황 포인트입니다. 카드가 또렷하게 구분됩니다.', sw: ['#5c402a', '#eee7d7', '#fffcf2', '#a84e0f']},
-  {id: 'rose', name: '로즈 샌드', tag: '따뜻함 · 밝음', desc: '살구빛 분홍 바탕에 먼지장미 포인트. 부드럽고 화사한 분위기입니다.', sw: ['#f7ebe6', '#fdf5f1', '#3a2824', '#9c3f63']}
+  {id: 'light', name: '리포트', tag: '기본 · 밝음', desc: '증권사 리포트처럼 크림색 종이에 남색 글씨. 총자산은 명조, 숫자는 자릿수가 맞는 고정폭 글꼴입니다.', sw: ['#f8f4ec', '#fbf9f4', '#1b2233', '#22407c'], dark: false, bar: '#f8f4ec'}
 ];
-// 고른 적이 없으면 기본은 리포트(light)
+// 고른 적이 없거나 없어진 테마면 리포트(light)
 function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); return THEMES.some(x => x.id === t) ? t : 'light'; } catch (e) { return 'light'; } }
 function setTheme(id) {
-  try { localStorage.setItem('portfolio-theme', id); } catch (e) {}
-  if (id === 'auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', id);
-  const dark = id === 'dark' || id === 'amber';
-  try { document.querySelector('meta[name="color-scheme"]').setAttribute('content', id === 'auto' ? 'light dark' : dark ? 'dark' : 'only light'); } catch (e) {}
-  // 브라우저 상단 바 색: 자동이면 기기 설정을 따르고, 아니면 고른 테마의 밝기에 맞춤
-  document.querySelectorAll('meta[name="theme-color"]').forEach((m, i) => {
-    if (id === 'auto') { m.setAttribute('media', i ? '(prefers-color-scheme: dark)' : '(prefers-color-scheme: light)'); m.setAttribute('content', i ? '#0d0d0d' : '#f8f4ec'); }
-    else { m.removeAttribute('media'); m.setAttribute('content', dark ? '#0d0d0d' : '#f8f4ec'); }
-  });
+  const th = THEMES.find(x => x.id === id) || THEMES[0];
+  try { localStorage.setItem('portfolio-theme', th.id); } catch (e) {}
+  document.documentElement.setAttribute('data-theme', th.id);
+  try { document.querySelector('meta[name="color-scheme"]').setAttribute('content', th.dark ? 'dark' : 'only light'); } catch (e) {}
+  try { document.querySelector('meta[name="theme-color"]').setAttribute('content', th.bar); } catch (e) {}
   render();
 }
 function renderTheme() {
@@ -1571,7 +1510,6 @@ function renderTheme() {
     const b = mk('button', {type: 'button', role: 'radio', 'aria-checked': String(cur === th.id)}, g);
     const sw = mk('span', {class: 'sw4'}, b);
     if (th.sw) th.sw.forEach(col => { const i = mk('i', {}, sw); i.style.background = col; });
-    else { ['#f8f4ec', '#fbf9f4', '#1a1a19', '#0d0d0d'].forEach(col => { const i = mk('i', {}, sw); i.style.background = col; }); }
     mk('span', {class: 'nm'}, b, th.name + (cur === th.id ? ' ✓' : ''));
     if (th.tag) mk('span', {class: 'tg'}, b, th.tag);
     mk('span', {class: 'ds'}, b, th.desc);

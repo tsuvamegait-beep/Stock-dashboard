@@ -12,7 +12,7 @@
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.
 - 과거 시세(RS·분석·종목분석): Apps Script `?series=1`이 시트에서 GOOGLEFINANCE를 계산해 반환. 하루 한 번 브라우저에 캐시(`portfolio-rs-cache`).
-- 코스피 신용잔고: 구글 시세에 없어 엑셀/CSV 업로드(종목분석 탭) + 시트 "신용잔고" 탭. 자동화는 미완(아래 할 일).
+- 코스피 신용잔고: Apps Script `?credit=1&refresh=1`이 금투협 FreeSIS 내부 조회 주소(`POST https://freesis.kofia.or.kr/meta/getMetaDataList.do`, 본문 `{"dmSearch":{"OBJ_NM":"STATSCU0100000070BO","tmpV1":"D","tmpV45":"yyyyMMdd","tmpV46":"yyyyMMdd"}}`, 응답 `ds1[].TMPV1` 날짜·`TMPV3` 유가증권 신용거래융자 백만원)에서 받아 시트 "신용잔고" 탭에 쌓음(3시간 캐시, `setupCreditTrigger`로 매일 19시). 엑셀/CSV 업로드도 그대로 지원.
 - localStorage 키: `portfolio-data-v1` `portfolio-sheet-url` `portfolio-sync` `portfolio-history` `portfolio-ui` `portfolio-sectors` `portfolio-data-ts` `portfolio-theme` `portfolio-fxhist` `portfolio-rs` `portfolio-rs-cache` `portfolio-ana` `portfolio-credit` `portfolio-an`.
 
 ## Apps Script (`apps_script.gs.txt`)
@@ -39,5 +39,5 @@
 - 연금 매입금액이 나무증권 앱과 약 2,071,539원 차이: 조선TOP3플러스만 연초 잔고 평균단가에 의존. 앱의 조선 평균단가를 받으면 "연초 잔고" 탭의 평균단가로 맞출 수 있음(미확정).
 
 ## 다음 할 일(논의 중)
-- 금투협 FreeSIS "신용공여 잔고 추이"(https://freesis.kofia.or.kr/stat/FreeSIS.do?parentDivId=MSIS10000000000000&serviceId=STATSCU0100000070)와 증시자금추이(`serviceId=STATSCU0100000060`) 자동 수집. 화면은 JS 앱이라 내부 요청 주소·본문을 알아내야 함(사용자 PC의 개발자도구 Network 캡처, 또는 GitHub Actions + Playwright로 조회 요청 기록). 공공데이터포털 "금융위원회_금융투자협회종합통계정보" API(신용융자 항목 여부 미확인)도 후보. 수집 결과는 `credit.csv`로 저장소에 커밋하고 종목분석 탭이 읽게 하는 방향(구글 시트 방식은 대안).
+- 신용잔고 자동 수집은 구현됨. 확인 안 된 것: 구글(Apps Script) 서버에서 FreeSIS 접속이 막히지 않는지, FreeSIS가 짧은 시간 여러 요청을 보내면 잠시 차단하는지(PC에서 10여 회 요청 후 접속이 끊긴 적 있음). 막히면 대안은 GitHub Actions로 `credit.csv` 커밋.
 - 종목분석·RS 5년 등 더 긴 기간 지원(과거 시세 조회 길이 확장).

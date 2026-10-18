@@ -10,8 +10,8 @@ const HIST_NAME = '기록';    // 기록이 쌓일 탭 이름(없으면 자동 �
 const TRADES_NAME = '거래내역'; // 거래내역이 저장될 탭 이름(없으면 자동 생성)
 const TRADE_HEAD = ['계좌', '증권사', '날짜', '순번', '구분', '종목', '통화', '시장', '수량', '단가', '거래금액', '정산금액', '수수료', '세금', '잔고', '비고'];
 const FX_NAME = '환율';    // 일별 환율 탭(setupFx를 한 번 실행하면 만들어집니다)
-const CREDIT_NAME = '신용잔고'; // 종목분석 탭: 코스피 신용융자 잔고 (A열 날짜, B열 조원). 엑셀을 올리면 자동 생성
-const AI_MODEL = 'claude-sonnet-5-5'; // 분석 탭 '자동 추천'에 쓰는 Claude 모델(키는 스크립트 속성 ANTHROPIC_API_KEY)
+const CREDIT_NAME = '신용잔고'; // 종목분석 탭: 코스피 신용융자 잔고 (A열 날짜, B열 조원). 금투협 자동 수집 또는 엑셀 업로드로 채워짐
+const AI_MODEL = 'claude-sonnet-5-5'; // 종목분석 탭 '관련 종목 비교 → 자동 추천'에 쓰는 Claude 모델(키는 스크립트 속성 ANTHROPIC_API_KEY)
 const RS_NAME = '_RS계산';  // RS 탭용 임시 계산 탭(자동 생성, 숨김)
 const CHUNK = 2500; // 글자 수 (속성 값 한 칸 9KB 제한 때문에 나눠서 저장)
 
@@ -40,7 +40,7 @@ function doGet(e) {
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
   if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
   if (e.parameter.series) return out_(readSeries_(String(e.parameter.t || ''), String(e.parameter.from || '')));
-  if (e.parameter.credit) return out_(readCredit_());
+  if (e.parameter.credit) return out_(e.parameter.refresh ? refreshCredit_() : readCredit_());
   if (e.parameter.peers) return out_(readPeers_(String(e.parameter.t || '')));
   if (e.parameter.fx) { const f = readFx_(); return f ? out_({ok: true, fx: f}) : out_({ok: false, error: '환율 탭이 없습니다. Apps Script에서 setupFx를 한 번 실행하세요'}); }
   const d = load_();
@@ -233,7 +233,50 @@ function saveCredit_(rows) {
   } finally { lock.releaseLock(); }
 }
 
-/* ===== 분석 탭 '자동 추천': 기준 종목과 관련 있는 종목 3개를 Claude API로 고른다 =====
+/* ===== 코스피 신용잔고 자동 수집: 금융투자협회 FreeSIS "신용공여 잔고 추이"(STATSCU0100000070) =====
+ * 화면 뒤에서 쓰는 조회 주소에 날짜 범위를 보내면 일별 값이 옵니다(단위 백만원).
+ * 열: TMPV1 날짜, TMPV2 신용거래융자 전체, TMPV3 유가증권(=코스피), TMPV4 코스닥, TMPV5~7 대주, TMPV8 청약자금, TMPV9 예탁증권담보융자
+ * 대시보드가 ?credit=1&refresh=1 로 부르거나, setupCreditTrigger를 한 번 실행하면 매일 저녁 자동으로 시트에 쌓입니다. */
+const KOFIA_URL = 'https://freesis.kofia.or.kr/meta/getMetaDataList.do';
+function fetchKofiaCredit_(fromYmd, toYmd) { // 'yyyyMMdd' 두 개 → [['yyyy-MM-dd', 조원], ...]
+  const res = UrlFetchApp.fetch(KOFIA_URL, {
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    payload: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: fromYmd, tmpV46: toYmd}})
+  });
+  if (res.getResponseCode() !== 200) throw new Error('금투협 응답 ' + res.getResponseCode());
+  const j = JSON.parse(res.getContentText()), list = (j && j.ds1) || [];
+  return list.filter(r => /^\d{8}$/.test(String(r.TMPV1)) && typeof r.TMPV3 === 'number' && r.TMPV3 > 0)
+    .map(r => { const d = String(r.TMPV1); return [d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8), Math.round(r.TMPV3 / 1e4) / 100]; });
+}
+function updateCredit_() {
+  const tz = 'Asia/Seoul', ymd = t => Utilities.formatDate(new Date(t), tz, 'yyyyMMdd'), now = Date.now();
+  const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(CREDIT_NAME);
+  const have = sh && sh.getLastRow() > 1;
+  // 시트가 비어 있으면 2년치를 1년씩 나눠 받고, 있으면 최근 3주만 받아 덮어씀(정정 반영)
+  const spans = have ? [[now - 21 * 864e5, now]] : [[now - 730 * 864e5, now - 366 * 864e5], [now - 365 * 864e5, now]];
+  let rows = [];
+  spans.forEach(s => { rows = rows.concat(fetchKofiaCredit_(ymd(s[0]), ymd(s[1]))); });
+  if (!rows.length) return {ok: false, error: '금투협에서 받은 값이 없습니다'};
+  const r = saveCredit_(rows);
+  return {ok: r.ok, fetched: rows.length, latest: rows.map(x => x[0]).sort().pop(), error: r.error};
+}
+// 매일 자동 실행용(트리거). 직접 실행해 시험해 볼 수도 있습니다.
+function updateCredit() { Logger.log(JSON.stringify(updateCredit_())); }
+// 한 번만 실행: 매일 저녁 7시(한국시간)에 updateCredit이 돌도록 예약합니다(신용잔고는 보통 다음 영업일에 발표).
+function setupCreditTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'updateCredit') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('updateCredit').timeBased().everyDays(1).atHour(19).inTimezone('Asia/Seoul').create();
+}
+function refreshCredit_() { // 대시보드 요청: 3시간 안에 이미 받았으면 금투협은 건너뛰고 시트만 읽음
+  const cache = CacheService.getScriptCache();
+  let kofia = {ok: true, skipped: true};
+  if (!cache.get('kofiaCredit')) {
+    try { kofia = updateCredit_(); if (kofia.ok) cache.put('kofiaCredit', '1', 3 * 3600); } catch (err) { kofia = {ok: false, error: String(err && err.message || err)}; }
+  }
+  const out = readCredit_(); out.kofia = kofia; return out;
+}
+
+/* ===== 종목분석 탭 '관련 종목 비교 → 자동 추천': 기준 종목과 관련 있는 종목 3개를 Claude API로 고른다 =====
  * 준비(한 번만): Apps Script 편집기 왼쪽 톱니바퀴(프로젝트 설정) > 스크립트 속성 > 속성 추가
  *   이름 ANTHROPIC_API_KEY / 값 본인의 Anthropic API 키.  (키는 코드에 직접 적지 마세요)
  * 새 버전으로 배포하면 외부 요청 권한 승인 창이 한 번 뜹니다. 같은 종목은 6시간 동안 결과를 재사용합니다. */

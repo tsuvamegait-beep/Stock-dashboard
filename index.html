@@ -1240,15 +1240,20 @@ function crMerge(rows, src, label) {
   const m = {}; ((credit && credit.rows) || []).forEach(r => { m[r[0]] = r[1]; }); rows.forEach(r => { m[r[0]] = r[1]; });
   credit = {rows: Object.keys(m).sort().map(d => [d, m[d]]), at: Date.now(), src, label: label || (credit && credit.label) || ''}; creditSave();
 }
-async function pullCredit(manual) {
+// refresh: Apps Script가 먼저 금융투자협회(FreeSIS)에서 최신 값을 받아 시트에 쌓은 뒤 돌려줌
+async function pullCredit(manual, refresh) {
   const cfg = getSync(); if (!cfg || ana.busy) return; ana.busy = true; ana.msg = ''; scheduleRender();
   try {
-    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&credit=1', {cache: 'no-store'});
-    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&credit=1' + (refresh ? '&refresh=1' : ''), {cache: 'no-store'});
+    const j = await res.json();
+    if (refresh && !j.kofia) { if (manual) ana.msg = '금투협 자동 수집은 Apps Script를 새 버전으로 다시 배포해야 동작합니다(apps_script.gs.txt). 지금은 시트에 있는 값만 불러옵니다.'; }
+    else if (refresh && j.kofia && !j.kofia.ok) ana.msg = '금투협에서 최신 값을 받지 못했습니다(' + (j.kofia.error || '알 수 없는 오류') + '). 시트에 있던 값을 보여 줍니다.';
+    if (!j.ok) throw new Error(j.error || '연결 실패');
     if (!j.rows) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(신용잔고 기능이 없는 버전입니다).');
     const p = crParse(j.rows); if (p.err) throw new Error(p.err);
-    crMerge(p.rows, '구글 시트', p.label); if (manual) toast('신용잔고 ' + p.rows.length + '일치를 불러왔습니다.');
-  } catch (e) { ana.msg = '시트에서 신용잔고를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+    crMerge(p.rows, j.kofia && j.kofia.ok ? '금투협 자동 수집' : '구글 시트', p.label);
+    if (manual) toast('신용잔고 ' + p.rows.length + '일치를 불러왔습니다' + (j.kofia && j.kofia.latest ? ' (금투협 최신 ' + j.kofia.latest + ')' : '') + '.');
+  } catch (e) { ana.msg = (ana.msg ? ana.msg + ' ' : '') + '신용잔고를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
   ana.busy = false; scheduleRender();
 }
 async function handleCredit(file) {
@@ -1469,11 +1474,11 @@ function renderAnaMain(C) {
   // 신용잔고 자료 카드
   const cc = mk('div', {class: 'card'}, out); mk('h3', {style: 'margin:0 0 4px;font-size:15px'}, cc, '코스피 신용잔고 자료');
   const hasC = credit && credit.rows && credit.rows.length > 1;
-  mk('p', {class: 'sub', style: 'margin:0 0 8px'}, cc, hasC ? credit.rows.length + '일치 · ' + credit.rows[0][0] + ' ~ ' + credit.rows[credit.rows.length - 1][0] + ' · 출처 ' + credit.src + (credit.label ? ' · 열 "' + credit.label + '"' : '') : '아직 자료가 없습니다. 아래 버튼으로 엑셀을 올리거나 구글 시트에서 불러오세요.');
+  mk('p', {class: 'sub', style: 'margin:0 0 8px'}, cc, hasC ? credit.rows.length + '일치 · ' + credit.rows[0][0] + ' ~ ' + credit.rows[credit.rows.length - 1][0] + ' · 출처 ' + credit.src + (credit.label ? ' · 열 "' + credit.label + '"' : '') : '아직 자료가 없습니다. "금투협에서 자동 갱신"을 누르거나 엑셀을 올리세요.');
   const rb = mk('div', {class: 'row'}, cc);
-  const ub = mk('button', {type: 'button', class: 'primary'}, rb, '엑셀/CSV 올리기'); ub.addEventListener('click', () => { $('file3').value = ''; $('file3').click(); });
-  if (getSync()) { const pb = mk('button', {type: 'button'}, rb, ana.busy ? '불러오는 중…' : '시트에서 불러오기'); pb.disabled = ana.busy; pb.addEventListener('click', () => pullCredit(true)); }
-  mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, cc, '금융투자협회 종합통계서비스(freesis.kofia.or.kr)의 증시자금동향/신용공급 현황에서 받은 엑셀을 올리면, 날짜 열과 "신용융자 잔고(유가증권=코스피)" 열을 찾아 읽습니다. 단위(원·백만원·억원)는 값 크기로 자동 판단해 조원으로 바꿉니다. 새 파일은 기존 날짜 위에 덮어쓰며 합쳐집니다. 동기화를 설정했다면 구글 시트 "신용잔고" 탭에도 저장돼 다른 기기에서 불러올 수 있습니다.');
+  const ub = mk('button', {type: 'button', class: getSync() ? '' : 'primary'}, rb, '엑셀/CSV 올리기'); ub.addEventListener('click', () => { $('file3').value = ''; $('file3').click(); });
+  if (getSync()) { const pb = mk('button', {type: 'button', class: 'primary'}, rb, ana.busy ? '불러오는 중…' : '금투협에서 자동 갱신'); pb.disabled = ana.busy; pb.title = '구글 Apps Script가 금융투자협회(FreeSIS)에서 최신 신용잔고를 받아 시트에 쌓고 불러옵니다'; pb.addEventListener('click', () => pullCredit(true, true)); }
+  mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, cc, '동기화(Apps Script)를 설정했다면 하루 한 번 자동으로, 또는 "금투협에서 자동 갱신"을 누르면 금융투자협회 종합통계(FreeSIS) "신용공여 잔고 추이"의 유가증권(코스피) 신용거래융자 값을 받아 옵니다. 직접 받은 엑셀을 올려도 됩니다: 금융투자협회 종합통계서비스(freesis.kofia.or.kr)의 증시자금동향/신용공급 현황에서 받은 엑셀을 올리면, 날짜 열과 "신용융자 잔고(유가증권=코스피)" 열을 찾아 읽습니다. 단위(원·백만원·억원)는 값 크기로 자동 판단해 조원으로 바꿉니다. 새 파일은 기존 날짜 위에 덮어쓰며 합쳐집니다. 동기화를 설정했다면 구글 시트 "신용잔고" 탭에도 저장돼 다른 기기에서 불러올 수 있습니다.');
   if (hasC) {
     const CR0 = credit.rows, lastR = CR0[CR0.length - 1], t0 = rsDay(Date.now());
     const mStart = rsStart({id: '1m', m: 1}, lastR[0]), k0 = rsAt(CR0, mStart), monthRows = CR0.filter(r => r[0] > mStart);
@@ -1510,7 +1515,8 @@ function renderAnaMain(C) {
   const msgs = []; if (ana.msg) msgs.push(ana.msg);
   const S = st && rsCache[st], today = rsDay(Date.now());
   if (st && getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }
-  if (!hasC && getSync() && !ana.tried && !ana.busy) { ana.tried = true; setTimeout(() => pullCredit(false), 0); }
+  // 하루 한 번(처음 열 때) 금투협 최신 값으로 자동 갱신
+  if (getSync() && !ana.tried && !ana.busy && (!hasC || rsDay(credit.at || 0) !== rsDay(Date.now()))) { ana.tried = true; setTimeout(() => pullCredit(false, true), 0); }
   if (!st) msgs.push('이 종목의 티커를 시세 시트에서 찾지 못했습니다. RS 탭의 "구글 티커" 칸에서 직접 넣을 수 있습니다.');
   if (!getSync()) msgs.push('주가 이력은 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하고 Apps Script를 새 버전으로 배포하세요.');
   if (S && S.err) msgs.push(st + ': ' + S.err);

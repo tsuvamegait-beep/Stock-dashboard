@@ -207,6 +207,16 @@ td input.tk{width:110px;text-align:left}
 #tip .tr2{display:flex;align-items:center;gap:7px;line-height:1.7}
 #tip .tr2 strong{font-weight:700;font-variant-numeric:tabular-nums}
 #tip .k{width:9px;height:9px;border-radius:2px;flex:none}
+/* 선 그래프: 화면 폭에 맞춰 늘어나도 선 두께는 항상 같은 픽셀(PC에서 굵어지지 않게) */
+svg :is(polyline,line){vector-effect:non-scaling-stroke}
+svg polyline{stroke-width:1.5px}
+svg circle:not([fill="none"]){vector-effect:non-scaling-stroke;stroke-width:1px}
+/* PC: 그래프가 화면 폭만큼 커지면 축 글씨가 너무 커지므로 폭을 제한하고 글씨를 줄임 */
+@media (min-width:700px){
+  svg circle:not([fill="none"]){r:2px}
+  svg[width="100%"]{max-width:760px}
+  svg[width="100%"] text{font-size:7.5px}
+}
 </style>
 
 <div class="wrap">

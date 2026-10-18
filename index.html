@@ -4,6 +4,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>주식 투자 대시보드</title>
 <meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f8f4ec" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
 <script>try{var __t=localStorage.getItem("portfolio-theme");if(__t&&__t!=="auto"){document.documentElement.setAttribute("data-theme",__t);document.querySelector('meta[name="color-scheme"]').setAttribute("content",__t==="dark"||__t==="amber"?"dark":"only light")}}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +22,7 @@
   --accent:oklch(38% .12 260); --field:oklch(99.5% .004 85); --warn-bg:oklch(94% .04 85); --warn-ink:oklch(40% .08 70);
   --up:oklch(52% .2 25); --dn:oklch(48% .17 255);
   --font:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
-  --num:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --num:"IBM Plex Mono","IBM Plex Sans KR",ui-monospace,SFMono-Regular,Menlo,monospace;
   --serif:"Noto Serif KR","Apple SD Gothic Neo",serif;
   color-scheme:light dark;
 }
@@ -97,8 +99,16 @@ h3{font-size:14px;font-weight:700}
 .meta,.sub{color:var(--ink2);font-size:13px}
 .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:12px}
 .top .meta{margin-top:2px}
-button,.btn{font:inherit;font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--axis);border-radius:6px;padding:6px 12px;cursor:pointer}
-button:hover{background:var(--wash)}
+button,.btn{font:inherit;font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--axis);border-radius:6px;padding:6px 12px;cursor:pointer;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background-color 120ms var(--ease-out),transform 120ms var(--ease-out)}
+/* 움직임: 누를 때 살짝 눌림(0.97), 마우스가 있는 기기에서만 hover 색. 탭·구간 버튼은 자주 누르므로 눌림 없음 */
+:root{--ease-out:cubic-bezier(.23,1,.32,1)}
+@media (hover:hover){button:hover{background:var(--wash)}}
+button:active:not(:disabled){transform:scale(.97)}
+.tabs button:active,.seg button:active{transform:none}
+#toast:not([hidden]){animation:toast-in 180ms var(--ease-out)}
+@keyframes toast-in{from{opacity:0;transform:translate(-50%,8px)}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:500;border-radius:2px}
 button.primary:hover{filter:brightness(1.08);background:var(--accent)}
 button.danger{color:var(--ink)}
@@ -203,7 +213,7 @@ td input.tk{width:110px;text-align:left}
 
 <div class="wrap">
   <header class="top">
-    <div><h1>주식 투자 대시보드</h1><p class="meta" id="meta">불러오는 중</p></div>
+    <div><h1>주식 투자 대시보드</h1><p class="meta" id="meta">불러오는 중…</p></div>
     <div class="row"><button type="button" class="primary" id="btnUpload">거래내역 올리기</button></div>
   </header>
   <div class="banner" id="banner" hidden></div>
@@ -223,7 +233,7 @@ td input.tk{width:110px;text-align:left}
   <section id="tab-holdings" class="col">
     <div class="toolbar" id="tb-holdings">
       <span><span class="tlabel">자산군</span><span class="seg" id="seg-cls"><button type="button" data-c="all" aria-pressed="true">전체</button><button type="button" data-c="국내주식" aria-pressed="false">국내주식</button><button type="button" data-c="해외주식" aria-pressed="false">해외주식</button></span></span>
-      <span><input type="text" id="q" placeholder="종목 검색" aria-label="종목 검색" autocomplete="off"></span>
+      <span><input type="text" id="q" placeholder="종목 검색…" aria-label="종목 검색" autocomplete="off"></span>
     </div>
     <div class="col" id="res-holdings"></div>
   </section>
@@ -232,7 +242,7 @@ td input.tk{width:110px;text-align:left}
     <div class="toolbar" id="tb-detail">
       <span><span class="tlabel">보기</span><span class="seg" id="seg-view"><button type="button" data-v="all" aria-pressed="true">전체</button><button type="button" data-v="acct" aria-pressed="false">계좌별</button><button type="button" data-v="ccy" aria-pressed="false">통화별</button></span></span>
       <span><span class="tlabel">자산군</span><span class="seg" id="seg-cls3"><button type="button" data-c="all" aria-pressed="true">전체</button><button type="button" data-c="국내주식" aria-pressed="false">국내주식</button><button type="button" data-c="해외주식" aria-pressed="false">해외주식</button></span></span>
-      <span><input type="text" id="q3" placeholder="종목 검색" aria-label="종목 검색" autocomplete="off"></span>
+      <span><input type="text" id="q3" placeholder="종목 검색…" aria-label="종목 검색" autocomplete="off"></span>
     </div>
     <div class="col" id="res-detail"></div>
   </section>
@@ -241,7 +251,7 @@ td input.tk{width:110px;text-align:left}
     <div class="toolbar">
       <span><span class="tlabel">자산군</span><span class="seg" id="seg-cls2"><button type="button" data-c="all" aria-pressed="true">전체</button><button type="button" data-c="국내주식" aria-pressed="false">국내주식</button><button type="button" data-c="해외주식" aria-pressed="false">해외주식</button></span></span>
       <span><select id="sel-acct" aria-label="계좌"><option value="">모든 계좌</option></select></span>
-      <span><input type="text" id="q2" placeholder="종목 검색" aria-label="종목 검색" autocomplete="off"></span>
+      <span><input type="text" id="q2" placeholder="종목 검색…" aria-label="종목 검색" autocomplete="off"></span>
     </div>
     <div class="col" id="res-trades"></div>
   </section>
@@ -935,8 +945,8 @@ function renderHoldings(C) {
     const items = merged.slice().sort((a, b) => b.valueKRW - a.valueKRW).slice(0, 14).map(h => ({label: h.name, value: h.valueKRW, color: h.cls === '국내주식' ? 'var(--s1)' : 'var(--s2)', text: money('KRW', h.valueKRW), tip: [{label: '평가금액', value: money('KRW', h.valueKRW), color: h.cls === '국내주식' ? 'var(--s1)' : 'var(--s2)'}, {label: '수량', value: qtyF(h.end) + '주', color: 'var(--axis)'}]}));
     hbars(ch, items, false);
   } else {
-    const lg = mk('div', {class: 'legend'}, ch); [['이익', 'var(--s1)'], ['손실', 'var(--s2)']].forEach(([l, c]) => { const sp = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, sp); sw.style.background = c; sp.append(l); });
-    const items = merged.filter(h => h.pnlPct != null).sort((a, b) => b.pnlPct - a.pnlPct).map(h => ({label: h.name, value: h.pnlPct, color: h.pnlPct >= 0 ? 'var(--s1)' : 'var(--s2)', text: pct(h.pnlPct), tip: [{label: '수익률', value: pct(h.pnlPct), color: h.pnlPct >= 0 ? 'var(--s1)' : 'var(--s2)'}, {label: '평가손익', value: sgn(h.ccy, h.pnl), color: 'var(--axis)'}]}));
+    const lg = mk('div', {class: 'legend'}, ch); [['이익', 'var(--up)'], ['손실', 'var(--dn)']].forEach(([l, c]) => { const sp = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, sp); sw.style.background = c; sp.append(l); });
+    const items = merged.filter(h => h.pnlPct != null).sort((a, b) => b.pnlPct - a.pnlPct).map(h => ({label: h.name, value: h.pnlPct, color: h.pnlPct >= 0 ? 'var(--up)' : 'var(--dn)', text: pct(h.pnlPct), tip: [{label: '수익률', value: pct(h.pnlPct), color: h.pnlPct >= 0 ? 'var(--up)' : 'var(--dn)'},{label: '평가손익', value: sgn(h.ccy, h.pnl), color: 'var(--axis)'}]}));
     if (items.length) hbars(ch, items, true); else mk('p', {class: 'sub'}, ch, '취득가를 아는 종목이 없습니다. 계좌 관리에서 연초 취득단가를 입력할 수 있습니다.');
   }
 
@@ -2171,12 +2181,12 @@ function render() {
   if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
-  $('meta').textContent = !state.ready ? '불러오는 중' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
+  $('meta').textContent = !state.ready ? '불러오는 중…' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
   if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderAna(C); renderAn(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
-  document.querySelectorAll('#tabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === ui.tab)));
+  document.querySelectorAll('#tabs button').forEach(b => { const on = b.dataset.tab === ui.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on) b.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
   ['holdings', 'detail', 'rs', 'ana', 'an', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
@@ -2184,7 +2194,17 @@ function syncSegs() {
   [['seg-cls', 'cls'], ['seg-cls2', 'cls'], ['seg-cls3', 'dcls']].forEach(([id, k]) => document.querySelectorAll('#' + id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === ui[k]))));
 }
 (function init() {
-  document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => { ui.tab = b.dataset.tab; saveUi(); syncTabs(); }));
+  document.querySelectorAll('#tabs button').forEach(b => {
+    b.id = 'tabbtn-' + b.dataset.tab; b.setAttribute('aria-controls', 'tab-' + b.dataset.tab);
+    const p = $('tab-' + b.dataset.tab); p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', b.id);
+    b.addEventListener('click', () => { ui.tab = b.dataset.tab; saveUi(); syncTabs(); });
+  });
+  // 키보드: 좌우 화살표·Home·End로 탭 이동
+  $('tabs').addEventListener('keydown', e => {
+    const bs = [...document.querySelectorAll('#tabs button')], i = bs.indexOf(document.activeElement); if (i < 0) return;
+    const j = e.key === 'ArrowRight' ? (i + 1) % bs.length : e.key === 'ArrowLeft' ? (i - 1 + bs.length) % bs.length : e.key === 'Home' ? 0 : e.key === 'End' ? bs.length - 1 : -1;
+    if (j < 0) return; e.preventDefault(); bs[j].click(); bs[j].focus();
+  });
   document.querySelectorAll('#seg-view button').forEach(b => b.addEventListener('click', () => { ui.view = b.dataset.v; saveUi(); syncSegs(); render(); }));
   document.querySelectorAll('#seg-cls3 button').forEach(b => b.addEventListener('click', () => { ui.dcls = b.dataset.c; saveUi(); syncSegs(); render(); }));
   ['seg-cls', 'seg-cls2'].forEach(id => document.querySelectorAll('#' + id + ' button').forEach(b => b.addEventListener('click', () => { ui.cls = b.dataset.c; saveUi(); syncSegs(); render(); })));

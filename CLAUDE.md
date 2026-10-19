@@ -12,7 +12,7 @@
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.
 - 과거 시세(RS·분석·종목분석): Apps Script `?series=1`이 시트에서 GOOGLEFINANCE를 계산해 반환. 하루 한 번 브라우저에 캐시(`portfolio-rs-cache`).
-- 코스피 신용잔고: Apps Script `?credit=1&refresh=1`이 금투협 FreeSIS 내부 조회 주소(`POST https://freesis.kofia.or.kr/meta/getMetaDataList.do`, 본문 `{"dmSearch":{"OBJ_NM":"STATSCU0100000070BO","tmpV1":"D","tmpV45":"yyyyMMdd","tmpV46":"yyyyMMdd"}}`, 응답 `ds1[].TMPV1` 날짜·`TMPV3` 유가증권 신용거래융자 백만원)에서 받아 시트 "신용잔고" 탭에 쌓음(3시간 캐시, `setupCreditTrigger`로 매일 19시). 엑셀/CSV 업로드도 그대로 지원.
+- 코스피 신용잔고: Apps Script `?credit=1&refresh=1`이 금투협 FreeSIS 내부 조회 주소(`POST https://freesis.kofia.or.kr/meta/getMetaDataList.do`, 본문 `{"dmSearch":{"OBJ_NM":"STATSCU0100000070BO","tmpV1":"D","tmpV45":"yyyyMMdd","tmpV46":"yyyyMMdd","tmpV40":"1000000","tmpV41":"1"}}` — tmpV40/41(단위)이 없으면 값이 전부 null, 응답 `ds1[].TMPV1` 날짜·`TMPV3` 유가증권 신용거래융자 백만원)에서 받아 시트 "신용잔고" 탭에 쌓음(3시간 캐시, `setupCreditTrigger`로 매일 19시). 엑셀/CSV 업로드도 그대로 지원.
 - localStorage 키: `portfolio-data-v1` `portfolio-sheet-url` `portfolio-sync` `portfolio-history` `portfolio-ui` `portfolio-sectors` `portfolio-data-ts` `portfolio-theme` `portfolio-fxhist` `portfolio-rs` `portfolio-rs-cache` `portfolio-ana` `portfolio-credit` `portfolio-an`.
 
 ## Apps Script (`apps_script.gs.txt`)

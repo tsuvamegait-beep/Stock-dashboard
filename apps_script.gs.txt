@@ -241,7 +241,8 @@ const KOFIA_URL = 'https://freesis.kofia.or.kr/meta/getMetaDataList.do';
 function fetchKofiaCredit_(fromYmd, toYmd) { // 'yyyyMMdd' 두 개 → [['yyyy-MM-dd', 조원], ...]
   const res = UrlFetchApp.fetch(KOFIA_URL, {
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    payload: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: fromYmd, tmpV46: toYmd}})
+    // tmpV40/tmpV41(표시 단위: 백만원)이 빠지면 날짜만 오고 값은 전부 null로 옵니다
+    payload: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: fromYmd, tmpV46: toYmd, tmpV40: '1000000', tmpV41: '1'}})
   });
   const code = res.getResponseCode(), txt = res.getContentText();
   if (code !== 200) throw new Error('금투협 응답 ' + code + ' ' + txt.slice(0, 120));
@@ -254,8 +255,7 @@ function updateCredit_() {
   const tz = 'Asia/Seoul', ymd = t => Utilities.formatDate(new Date(t), tz, 'yyyyMMdd'), now = Date.now();
   const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(CREDIT_NAME);
   const have = sh && sh.getLastRow() > 1;
-  // 금투협은 짧은 시간에 여러 번 요청하면 잠시 막고, 조회 기간이 1년을 넘으면 값을 비워서(null) 줌.
-  // 그래서 요청은 한 번, 기간은 1년 안: 시트가 비어 있으면 360일, 있으면 최근 3주(정정 반영)
+  // 금투협은 짧은 시간에 여러 번 요청하면 잠시 막으므로 요청은 한 번: 시트가 비어 있으면 360일, 있으면 최근 3주(정정 반영)
   const rows = fetchKofiaCredit_(ymd(now - (have ? 21 : 360) * 864e5), ymd(now));
   if (!rows.length) return {ok: false, error: '금투협에서 받은 값이 없습니다(응답은 왔지만 자료가 비어 있음)'};
   const r = saveCredit_(rows);

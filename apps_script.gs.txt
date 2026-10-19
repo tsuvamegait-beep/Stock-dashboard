@@ -214,7 +214,7 @@ function readSeries_(tickers, from) {
 /* ===== 종목분석 탭: 코스피 신용잔고(날짜, 조원)를 시트 '신용잔고' 탭에 보관 ===== */
 function readCredit_() {
   const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName(CREDIT_NAME);
-  if (!sh || sh.getLastRow() < 2) return {ok: false, error: "시트에 '신용잔고' 탭 자료가 없습니다. 종목분석 탭에서 엑셀을 올리면 자동으로 만들어집니다"};
+  if (!sh || sh.getLastRow() < 2) return {ok: false, error: "시트의 '신용잔고' 탭이 비어 있습니다(금투협 자동 수집이 아직 성공하지 못함)"};
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul', v = sh.getRange(1, 1, sh.getLastRow(), 2).getValues();
   return {ok: true, rows: v.map(r => [r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]), r[1]])};
 }
@@ -243,8 +243,10 @@ function fetchKofiaCredit_(fromYmd, toYmd) { // 'yyyyMMdd' 두 개 → [['yyyy-M
     method: 'post', contentType: 'application/json', muteHttpExceptions: true,
     payload: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: fromYmd, tmpV46: toYmd}})
   });
-  if (res.getResponseCode() !== 200) throw new Error('금투협 응답 ' + res.getResponseCode());
-  const j = JSON.parse(res.getContentText()), list = (j && j.ds1) || [];
+  const code = res.getResponseCode(), txt = res.getContentText();
+  if (code !== 200) throw new Error('금투협 응답 ' + code + ' ' + txt.slice(0, 120));
+  let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('금투협 응답이 JSON이 아님: ' + txt.slice(0, 120)); }
+  const list = (j && j.ds1) || [];
   return list.filter(r => /^\d{8}$/.test(String(r.TMPV1)) && typeof r.TMPV3 === 'number' && r.TMPV3 > 0)
     .map(r => { const d = String(r.TMPV1); return [d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8), Math.round(r.TMPV3 / 1e4) / 100]; });
 }
@@ -252,16 +254,18 @@ function updateCredit_() {
   const tz = 'Asia/Seoul', ymd = t => Utilities.formatDate(new Date(t), tz, 'yyyyMMdd'), now = Date.now();
   const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(CREDIT_NAME);
   const have = sh && sh.getLastRow() > 1;
-  // 시트가 비어 있으면 2년치를 1년씩 나눠 받고, 있으면 최근 3주만 받아 덮어씀(정정 반영)
-  const spans = have ? [[now - 21 * 864e5, now]] : [[now - 730 * 864e5, now - 366 * 864e5], [now - 365 * 864e5, now]];
-  let rows = [];
-  spans.forEach(s => { rows = rows.concat(fetchKofiaCredit_(ymd(s[0]), ymd(s[1]))); });
-  if (!rows.length) return {ok: false, error: '금투협에서 받은 값이 없습니다'};
+  // 금투협은 짧은 시간에 여러 번 요청하면 잠시 막으므로 요청은 한 번만: 시트가 비어 있으면 약 13개월, 있으면 최근 3주(정정 반영)
+  const rows = fetchKofiaCredit_(ymd(now - (have ? 21 : 400) * 864e5), ymd(now));
+  if (!rows.length) return {ok: false, error: '금투협에서 받은 값이 없습니다(응답은 왔지만 자료가 비어 있음)'};
   const r = saveCredit_(rows);
   return {ok: r.ok, fetched: rows.length, latest: rows.map(x => x[0]).sort().pop(), error: r.error};
 }
 // 매일 자동 실행용(트리거). 직접 실행해 시험해 볼 수도 있습니다.
-function updateCredit() { Logger.log(JSON.stringify(updateCredit_())); }
+function updateCredit() {
+  const r = updateCredit_(); Logger.log(JSON.stringify(r));
+  if (!r.ok) throw new Error('신용잔고 수집 실패: ' + r.error);
+  CacheService.getScriptCache().put('kofiaCredit', JSON.stringify(r), 3 * 3600);
+}
 // 한 번만 실행: 매일 저녁 7시(한국시간)에 updateCredit이 돌도록 예약합니다(신용잔고는 보통 다음 영업일에 발표).
 function setupCreditTrigger() {
   ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'updateCredit') ScriptApp.deleteTrigger(t); });
@@ -269,9 +273,11 @@ function setupCreditTrigger() {
 }
 function refreshCredit_() { // 대시보드 요청: 3시간 안에 이미 받았으면 금투협은 건너뛰고 시트만 읽음
   const cache = CacheService.getScriptCache();
-  let kofia = {ok: true, skipped: true};
-  if (!cache.get('kofiaCredit')) {
-    try { kofia = updateCredit_(); if (kofia.ok) cache.put('kofiaCredit', '1', 3 * 3600); } catch (err) { kofia = {ok: false, error: String(err && err.message || err)}; }
+  const last = cache.get('kofiaCredit');
+  let kofia = last ? Object.assign(JSON.parse(last), {skipped: true}) : null; // 최근 결과(성공·실패)를 그대로 알려 줌
+  if (!kofia) {
+    try { kofia = updateCredit_(); } catch (err) { kofia = {ok: false, error: String(err && err.message || err)}; }
+    cache.put('kofiaCredit', JSON.stringify(kofia), kofia.ok ? 3 * 3600 : 30 * 60); // 실패해도 30분은 다시 묻지 않음(차단 방지)
   }
   const out = readCredit_(); out.kofia = kofia; return out;
 }

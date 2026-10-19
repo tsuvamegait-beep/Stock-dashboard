@@ -1240,20 +1240,37 @@ function crMerge(rows, src, label) {
   const m = {}; ((credit && credit.rows) || []).forEach(r => { m[r[0]] = r[1]; }); rows.forEach(r => { m[r[0]] = r[1]; });
   credit = {rows: Object.keys(m).sort().map(d => [d, m[d]]), at: Date.now(), src, label: label || (credit && credit.label) || ''}; creditSave();
 }
-// refresh: Apps Script가 먼저 금융투자협회(FreeSIS)에서 최신 값을 받아 시트에 쌓은 뒤 돌려줌
+// 예비 경로: 브라우저가 금투협 FreeSIS에 직접 요청(사이트가 막으면 실패). 성공하면 [['yyyy-MM-dd', 조원], ...]
+async function crDirect() {
+  const ymd = t => new Date(t + 9 * 36e5).toISOString().slice(0, 10).replace(/-/g, ''), now = Date.now(), last = credit && credit.rows && credit.rows.length ? credit.rows[credit.rows.length - 1][0] : null;
+  const from = last ? ymd(Math.min(now - 21 * 864e5, Date.parse(last))) : ymd(now - 400 * 864e5);
+  const res = await fetch('https://freesis.kofia.or.kr/meta/getMetaDataList.do', {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: from, tmpV46: ymd(now)}})});
+  const j = await res.json();
+  return ((j && j.ds1) || []).filter(r => /^\d{8}$/.test(String(r.TMPV1)) && +r.TMPV3 > 0).map(r => { const d = String(r.TMPV1); return [d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8), Math.round(r.TMPV3 / 1e4) / 100]; });
+}
+// refresh: Apps Script가 먼저 금융투자협회(FreeSIS)에서 최신 값을 받아 시트에 쌓은 뒤 돌려줌. 거기서 막히면 브라우저가 직접 시도.
 async function pullCredit(manual, refresh) {
   const cfg = getSync(); if (!cfg || ana.busy) return; ana.busy = true; ana.msg = ''; scheduleRender();
   try {
     const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&credit=1' + (refresh ? '&refresh=1' : ''), {cache: 'no-store'});
     const j = await res.json();
     if (refresh && !j.kofia) { if (manual) ana.msg = '금투협 자동 수집은 Apps Script를 새 버전으로 다시 배포해야 동작합니다(apps_script.gs.txt). 지금은 시트에 있는 값만 불러옵니다.'; }
-    else if (refresh && j.kofia && !j.kofia.ok) ana.msg = '금투협에서 최신 값을 받지 못했습니다(' + (j.kofia.error || '알 수 없는 오류') + '). 시트에 있던 값을 보여 줍니다.';
+    else if (refresh && j.kofia && !j.kofia.ok) ana.msg = '구글 서버가 금투협에서 값을 받지 못했습니다(' + (j.kofia.error || '알 수 없는 오류') + (j.kofia.skipped ? ', 30분 안에 다시 시도하지 않음' : '') + ').';
     if (!j.ok) throw new Error(j.error || '연결 실패');
     if (!j.rows) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(신용잔고 기능이 없는 버전입니다).');
     const p = crParse(j.rows); if (p.err) throw new Error(p.err);
     crMerge(p.rows, j.kofia && j.kofia.ok ? '금투협 자동 수집' : '구글 시트', p.label);
     if (manual) toast('신용잔고 ' + p.rows.length + '일치를 불러왔습니다' + (j.kofia && j.kofia.latest ? ' (금투협 최신 ' + j.kofia.latest + ')' : '') + '.');
   } catch (e) { ana.msg = (ana.msg ? ana.msg + ' ' : '') + '신용잔고를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  if (refresh && ana.msg) {
+    try {
+      const rows = await crDirect();
+      if (rows.length) {
+        crMerge(rows, '금투협 직접 수집'); ana.msg = ''; if (manual) toast('금투협에서 직접 ' + rows.length + '일치를 받았습니다.');
+        try { await fetch(cfg.url, {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: cfg.key, action: 'saveCredit', rows})}); } catch (e) {}
+      }
+    } catch (e) { /* 브라우저 직접 요청도 막힘: 위 메시지 유지 */ }
+  }
   ana.busy = false; scheduleRender();
 }
 async function handleCredit(file) {

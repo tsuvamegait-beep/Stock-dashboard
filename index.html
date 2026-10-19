@@ -1207,7 +1207,7 @@ const ANA_LS = 'portfolio-ana', CR_LS = 'portfolio-credit';
 const ANA_PER = RS_PER.filter(p => ['1m', '3m', '6m', 'ytd', '1y'].indexOf(p.id) >= 0);
 const ana = (() => { const d = {sel: '', per: '6m', view: 'stock'}; try { return Object.assign(d, JSON.parse(localStorage.getItem(ANA_LS) || '{}')); } catch (e) { return d; } })();
 ana.msg = ''; ana.busy = false; ana.tried = false;
-const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per, view: ana.view})); } catch (e) {} };
+const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per, view: ana.view, base: ana.base})); } catch (e) {} };
 let credit = null; try { credit = JSON.parse(localStorage.getItem(CR_LS) || 'null'); } catch (e) { credit = null; }
 const creditSave = () => { try { localStorage.setItem(CR_LS, JSON.stringify(credit)); } catch (e) {} };
 function crDate(x) {
@@ -1371,7 +1371,6 @@ function peerBlock(c, loaded, per) {
   loaded.forEach(x => { const cc = peerCcy(x.t), L = x.rows[x.rows.length - 1][1], P = x.rows.length > 1 ? x.rows[x.rows.length - 2][1] : null, tr = mk('tr', {}, tb), td0 = mk('td', {class: 'l'}, tr);
     const sw = mk('i', {class: 'sw'}, td0); sw.style.background = x.color; sw.style.marginRight = '6px'; td0.append(x.name); mk('div', {class: 'sub', style: 'font-size:11px'}, td0, x.t + (x.late ? ' · ' + x.first + '부터' : ''));
     mk('td', {}, tr, money(cc, L)); mk('td', {}, tr, sgn(cc, L - x.base)); mk('td', {}, tr, pct(L / x.base - 1)); mk('td', {}, tr, P == null ? '—' : money(cc, P)); });
-  mk('p', {class: 'sub', style: 'margin:8px 0 0;font-size:12px'}, c, '각 종목의 기간 시작일 종가를 0%로 맞춘 수익률이며 종가 기준입니다(배당 제외, 환율 효과 없음 — 각자의 통화 기준). "자동 추천"의 종목 선정은 참고용이며 완벽한 동종 기업 선정이 아닙니다. 투자 권유가 아닙니다.');
 }
 function peerChart(parent, pts, ser) {
   const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 250, L = 48, Rm = 10, Tp = 10, B = 26, n = pts.length;
@@ -1429,85 +1428,61 @@ async function anAuto(list, base) {
   picks.forEach(p => { if (an.items.length < AN_MAX && pnorm(p.t) !== pnorm(base.t) && !an.items.some(x => pnorm(x.t) === pnorm(p.t))) an.items.push({t: p.t, name: p.name, auto: true, why: p.why, via}); });
   anSave(); an.autoBusy = false; scheduleRender();
 }
-// 종목분석 탭 아래쪽 "관련 종목 비교": 고른 종목(기준) + 자동 추천 3종목 + 직접 검색한 종목을 수익률로 겹쳐 그린다.
-function renderPeers(out, list, h, st) {
-  const per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2], today = rsDay(Date.now());
-  if (an.base !== st) { an.items = an.items.filter(x => !x.auto); an.base = st; an.msg = ''; anSave(); } // 기준 종목이 바뀌면 이전 추천은 지움
-  const c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '관련 종목 비교');
-  const r1 = mk('div', {class: 'row', style: 'margin-top:10px'}, c);
-  const base = st ? {t: st, name: h.name} : null;
-  const au = mk('button', {type: 'button', class: 'primary'}, r1, an.autoBusy ? 'Claude에게 묻는 중…' : '자동 추천 (관련 3종목)'); au.disabled = !base || an.autoBusy;
-  au.title = base ? h.name + '와 관련된 종목 3개를 골라 겹칩니다' : '이 종목의 구글 티커가 없어 추천할 수 없습니다';
-  au.addEventListener('click', () => anAuto(list, base));
-  const dl = mk('datalist', {id: 'an-dl'}, r1), seen = {}; list.forEach(x => { seen[x.name] = 1; mk('option', {value: x.name}, dl); }); PEER_GROUPS.forEach(g => g.m.forEach(m => { if (!seen[m[1]]) { seen[m[1]] = 1; mk('option', {value: m[1]}, dl); } }));
-  const qi = mk('input', {type: 'text', list: 'an-dl', placeholder: '종목 더하기 (예: VLO, S-Oil, KRX:010950)…', 'aria-label': '비교할 종목 검색', autocomplete: 'off', style: 'width:250px;max-width:100%'}, r1);
-  const doAdd = () => { const it = anResolve(qi.value, list); if (!it) { toast('종목을 알아보지 못했습니다. 구글 티커로 입력해 보세요(예: VLO, KRX:010950).'); return; } if (base && pnorm(it.t) === pnorm(base.t)) { toast('기준 종목입니다.'); return; } if (!anAdd(it, false)) { if (an.items.some(x => pnorm(x.t) === pnorm(it.t))) toast('이미 추가된 종목입니다.'); return; } qi.value = ''; qi.blur(); render(); };
-  qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
-  mk('button', {type: 'button'}, r1, '더하기').addEventListener('click', doAdd);
-  if (an.msg) mk('p', {class: 'sub', style: 'margin:10px 0 0;color:var(--warn-ink)'}, c, an.msg);
-  if (!base) return;
-  if (!an.items.length) { mk('p', {class: 'sub', style: 'margin:12px 0 0'}, c, '아직 비교할 종목이 없습니다. "자동 추천"을 누르거나 종목을 검색해 더해 보세요.'); return; }
-  const st8 = t => { const x = rsCache[t]; return x && x.day === today ? (x.err || !x.rows || !x.rows.length ? 'bad' : 'ok') : 'new'; };
-  const live = [{t: base.t, name: base.name, base: true}].concat(an.items).map((x, i) => ({t: x.t, name: x.name, color: catColor(i), st: st8(x.t), auto: x.auto, why: x.why, base: x.base}));
-  const chips = mk('div', {class: 'row', style: 'gap:6px 8px;flex-wrap:wrap;align-items:center;margin-top:12px'}, c);
-  live.forEach((x, i) => {
-    const b = mk('button', {type: 'button', title: x.base ? '기준 종목' : (x.why ? x.why + ' · ' : '') + '눌러서 빼기'}, chips); const sw = mk('i', {class: 'sw'}, b); sw.style.background = x.color; sw.style.marginRight = '6px';
-    b.append(x.name + (x.base ? ' · 기준' : x.auto ? ' · 추천' : '') + (x.st === 'bad' ? ' ⚠' : '') + (x.base ? '' : ' ✕'));
-    if (x.base) b.disabled = true; else b.addEventListener('click', () => { an.items.splice(i - 1, 1); anSave(); render(); });
-  });
-  if (!getSync()) { mk('p', {class: 'sub', style: 'margin:10px 0 0;color:var(--warn-ink)'}, c, '과거 시세는 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화(Apps Script 주소·비밀번호)를 설정하세요.'); return; }
-  const need = live.filter(x => x.st === 'new').map(x => x.t).slice(0, 4);
-  if (need.length && !rs.busy) { const tk = need.join(',') + '|' + today; if (!rs.tried[tk]) { rs.tried[tk] = 1; setTimeout(() => rsFetch(need, false), 0); } }
-  if (rs.busy || live.some(x => x.st === 'new')) mk('p', {class: 'sub', style: 'margin:10px 0 0'}, c, '시세를 불러오는 중입니다… (종목당 몇 초 걸립니다)');
-  live.filter(x => x.st === 'bad').forEach(x => mk('p', {class: 'sub', style: 'margin:6px 0 0;color:var(--warn-ink)'}, c, x.name + '(' + x.t + '): ' + (rsCache[x.t].err || '데이터 없음') + ' — 티커가 맞는지 확인하거나 ✕로 빼세요.'));
-  const loaded = live.filter(x => x.st === 'ok').map(x => Object.assign({}, x, {rows: rsCache[x.t].rows}));
-  if (loaded.length < 2) return;
-  const vc = mk('div', {class: 'card'}, out); mk('h2', {}, vc, '수익률 비교 · ' + per.l);
-  peerBlock(vc, loaded, per);
+// 종목분석: 종목은 직접 입력(보유 종목은 자동완성). 보기는 주가(기본) / 신용잔고 비교.
+// 주가 보기 안에서 "자동 추천"이나 "더하기"로 비교 종목을 넣으면 수익률 비교 그래프가 아래에 붙는다(따로 탭 없음).
+const ANA_VIEWS = [{id: 'stock', l: '주가'}, {id: 'credit', l: '신용잔고 비교'}];
+const anaCcy = t => /^(KRX|KOSDAQ):/i.test(t) ? 'KRW' : /^TYO:/i.test(t) ? 'JPY' : /^HKG:/i.test(t) ? 'HKD' : 'USD';
+function anaBase(list) {
+  if (ana.base && ana.base.t) return ana.base;
+  const h = list.find(x => keyOf(x.name) === ana.sel) || list.find(x => rsTicker(x)) || null; // 예전 저장값(보유 종목 선택)도 이어받음
+  const t = h && rsTicker(h); return t ? {t, name: h.name} : null;
 }
-// 종목분석: 위쪽에서 종목·보기·기간을 고르고, 보기에 따라 주가 / 관련 종목 비교 / 신용잔고 비교 중 하나만 그린다.
-const ANA_VIEWS = [{id: 'stock', l: '주가'}, {id: 'peers', l: '관련 종목 비교'}, {id: 'credit', l: '신용잔고 비교'}];
 function renderAna(C) {
   const out = $('res-ana'); out.replaceChildren();
   const list = mergeRows(C.rows).sort((a, b) => (b.valueKRW || 0) - (a.valueKRW || 0));
-  if (!list.length) { emptyState(out); return; }
-  let h = list.find(x => keyOf(x.name) === ana.sel); if (!h) { h = list[0]; ana.sel = keyOf(h.name); }
   if (!ANA_VIEWS.some(v => v.id === ana.view)) ana.view = 'stock';
-  const per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2], st = rsTicker(h);
+  const per = ANA_PER.find(p => p.id === ana.per) || ANA_PER[2], base = anaBase(list);
+  const hh = base && list.find(x => { const t = rsTicker(x); return t && pnorm(t) === pnorm(base.t); }), ccy = hh ? hh.ccy : base ? anaCcy(base.t) : 'KRW';
   const c = mk('div', {class: 'card'}, out); mk('h2', {}, c, '종목분석');
+  // 종목 입력(보유 종목 + 업종표 종목 자동완성, 구글 티커도 가능)
   const r1 = mk('div', {class: 'row', style: 'margin-top:10px'}, c);
   const lb1 = mk('label', {class: 'row', style: 'gap:6px'}, r1); mk('span', {class: 'sub'}, lb1, '종목');
-  const s1 = mk('select', {'aria-label': '종목'}, lb1); list.forEach(x => { const o = mk('option', {value: keyOf(x.name)}, s1, x.name); if (keyOf(x.name) === ana.sel) o.selected = true; });
-  s1.addEventListener('change', () => { ana.sel = s1.value; anaSave(); render(); });
-  if (st) mk('span', {class: 'sub'}, r1, st);
+  const dl = mk('datalist', {id: 'ana-dl'}, r1), seen = {}; list.forEach(x => { seen[x.name] = 1; mk('option', {value: x.name}, dl); }); PEER_GROUPS.forEach(g => g.m.forEach(m => { if (!seen[m[1]]) { seen[m[1]] = 1; mk('option', {value: m[1]}, dl); } }));
+  const qi = mk('input', {type: 'text', list: 'ana-dl', value: base ? base.name : '', placeholder: '종목명 또는 티커 (예: 삼성전자, NVDA)…', 'aria-label': '분석할 종목', autocomplete: 'off', style: 'width:220px;max-width:100%'}, lb1);
+  const pick = () => { const v = qi.value.trim(); if (!v || (base && v === base.name)) return; const it = anResolve(v, list); if (!it) { toast('종목을 알아보지 못했습니다. 구글 티커로 입력해 보세요(예: KRX:005930, NVDA).'); return; } ana.base = {t: it.t, name: it.name}; anaSave(); qi.blur(); render(); };
+  qi.addEventListener('change', pick); qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pick(); } });
+  if (base) mk('span', {class: 'sub'}, r1, base.t);
   const r2 = mk('div', {class: 'row', style: 'margin-top:10px'}, c), vseg = mk('span', {class: 'seg', role: 'group', 'aria-label': '보기', style: 'overflow-x:auto;max-width:100%'}, r2);
   ANA_VIEWS.forEach(v => { const b = mk('button', {type: 'button', 'aria-pressed': String(v.id === ana.view)}, vseg, v.l); b.addEventListener('click', () => { ana.view = v.id; anaSave(); render(); }); });
   const r3 = mk('div', {class: 'row', style: 'margin-top:8px'}, c), seg = mk('span', {class: 'seg', role: 'group', 'aria-label': '기간', style: 'overflow-x:auto;max-width:100%'}, r3);
   ANA_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { ana.per = p.id; anaSave(); render(); }); });
-  if (ana.view === 'peers') { renderPeers(out, list, h, st); return; }
-  // 주가 이력(주가·신용잔고 보기 공통)
-  const S = st && rsCache[st], today = rsDay(Date.now()), msgs = [];
-  if (st && getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }
-  if (!st) msgs.push('이 종목의 티커를 찾지 못했습니다. RS 탭의 "구글 티커" 칸에서 직접 넣을 수 있습니다.');
+  if (!base) { mk('p', {class: 'sub', style: 'margin:12px 0 0'}, c, '분석할 종목을 입력하세요.'); return; }
+  const withC = ana.view === 'credit';
+  if (!withC) anaPeerControls(c, list, base); // 주가 보기: 비교 종목(자동 추천·더하기)을 같은 카드에서
+  // 주가 이력
+  const st = base.t, S = rsCache[st], today = rsDay(Date.now()), msgs = [];
+  if (getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }
   if (!getSync()) msgs.push('주가 이력은 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하세요.');
-  if (S && S.err) msgs.push(st + ': ' + S.err);
-  if (ana.view === 'credit') anaCreditData(out, msgs); else msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, m));
+  if (S && S.err) msgs.push(st + ': ' + S.err + ' — 구글 티커가 맞는지 확인하세요.');
+  if (withC) anaCreditData(out, msgs); else msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, m));
   if (!S || !S.rows || S.rows.length < 2) { if (!msgs.length) mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '주가 이력을 불러오는 중입니다…'); return; }
   const end = S.rows[S.rows.length - 1][0], start = rsStart(per, end);
   let s0 = rsAt(S.rows, start); if (s0 == null) s0 = 0;
-  const withC = ana.view === 'credit', hasC = credit && credit.rows && credit.rows.length > 1, CR = withC && hasC ? credit.rows : [], pts = [];
+  const hasC = credit && credit.rows && credit.rows.length > 1, CR = withC && hasC ? credit.rows : [], pts = [];
   for (let k = s0; k < S.rows.length; k++) { const d = S.rows[k][0], ci = CR.length ? rsAt(CR, d) : null; const ok = ci != null && rsDaysBetween(CR[ci][0], d) <= 10; pts.push({d, p: S.rows[k][1], c: ok ? CR[ci][1] : null}); }
   if (pts.length < 2) { mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '이 기간을 그릴 데이터가 부족합니다.'); return; }
-  const vc = mk('div', {class: 'card'}, out); mk('h2', {}, vc, h.name + ' · ' + per.l);
+  const vc = mk('div', {class: 'card'}, out); mk('h2', {}, vc, base.name + ' · ' + per.l);
   const f = pts[0], l = pts[pts.length - 1], cp = pts.filter(p => p.c != null), ps = pts.map(p => p.p);
   const tl = mk('div', {class: 'tiles', style: 'margin:10px 0 12px'}, vc);
-  tile(tl, '현재 주가', money(h.ccy, l.p), l.d + ' 종가');
+  tile(tl, '현재 주가', money(ccy, l.p), l.d + ' 종가');
   tile(tl, per.l + ' 주가 변화', pct(l.p / f.p - 1), f.d + ' → ' + l.d);
   if (!withC) {
     const mx = Math.max(...ps), mn = Math.min(...ps);
-    tile(tl, per.l + ' 최고', money(h.ccy, mx), '최고 대비 ' + pct(l.p / mx - 1));
-    tile(tl, per.l + ' 최저', money(h.ccy, mn), '최저 대비 ' + pct(l.p / mn - 1));
-    anaChart(vc, pts, h.name, h.ccy); return;
+    tile(tl, per.l + ' 최고', money(ccy, mx), '최고 대비 ' + pct(l.p / mx - 1));
+    tile(tl, per.l + ' 최저', money(ccy, mn), '최저 대비 ' + pct(l.p / mn - 1));
+    anaChart(vc, pts, base.name, ccy);
+    anaPeerChart(out, base, per); // 비교 종목이 있으면 수익률 비교 그래프
+    return;
   }
   let corr = null;
   if (cp.length >= 2) {
@@ -1517,17 +1492,53 @@ function renderAna(C) {
     if (cp.length >= 10) { const a = cp.map(p => p.p), b = cp.map(p => p.c), mean = x => x.reduce((s, v) => s + v, 0) / x.length, ma = mean(a), mb = mean(b); let cv = 0, va = 0, vb = 0; for (let i = 0; i < a.length; i++) { cv += (a[i] - ma) * (b[i] - mb); va += (a[i] - ma) ** 2; vb += (b[i] - mb) ** 2; } if (va > 0 && vb > 0) corr = cv / Math.sqrt(va * vb); }
   }
   const lg = mk('div', {class: 'legend', style: 'margin:2px 0 4px'}, vc);
-  [[h.name + ' 주가 (왼쪽)', 'var(--s1)'], ['코스피 신용잔고, 조원 (오른쪽)', 'var(--s2)']].forEach(([n, col]) => { const s = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, s); sw.style.background = col; s.append(n); });
-  anaChart(vc, pts, h.name, h.ccy);
+  [[base.name + ' 주가 (왼쪽)', 'var(--s1)'], ['코스피 신용잔고, 조원 (오른쪽)', 'var(--s2)']].forEach(([n, col]) => { const s = mk('span', {}, lg); const sw = mk('i', {class: 'sw'}, s); sw.style.background = col; s.append(n); });
+  anaChart(vc, pts, base.name, ccy);
   if (!cp.length) mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, vc, hasC ? '신용잔고 자료가 이 기간을 덮지 않습니다(자료 ' + credit.rows[0][0] + ' ~ ' + credit.rows[credit.rows.length - 1][0] + ').' : '신용잔고 자료가 아직 없습니다.');
   else if (cp.length < pts.length * 0.8) mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, vc, '신용잔고 자료가 기간의 일부(' + cp.length + '/' + pts.length + '거래일)만 덮고 있습니다.');
   if (cp.length >= 2) {
     const dP = l.p / f.p - 1, dC = cp[cp.length - 1].c / cp[0].c - 1, up = x => x > 0.01, dn = x => x < -0.01;
-    let t = per.l + ' 동안 ' + h.name + ' 주가 ' + pct(dP) + ', 코스피 신용잔고 ' + pct(dC) + '. ';
+    let t = per.l + ' 동안 ' + base.name + ' 주가 ' + pct(dP) + ', 코스피 신용잔고 ' + pct(dC) + '. ';
     t += up(dP) && up(dC) ? '주가와 신용잔고가 함께 늘었습니다.' : up(dP) && dn(dC) ? '주가는 오르고 신용잔고는 줄었습니다.' : dn(dP) && up(dC) ? '주가는 내리고 신용잔고는 늘었습니다(반대매매 위험 점검).' : dn(dP) && dn(dC) ? '주가와 신용잔고가 함께 줄었습니다.' : '뚜렷한 관계가 보이지 않습니다.';
     if (corr != null) t += ' 상관계수 ' + corr.toFixed(2) + '.';
     mk('p', {style: 'margin:10px 0 0;line-height:1.75'}, vc, t);
   }
+}
+// 주가 보기의 비교 종목 줄: 자동 추천 버튼 + 더하기 칸 + 칩
+function anaPeerControls(c, list, base) {
+  if (an.base !== base.t) { an.items = an.items.filter(x => !x.auto); an.base = base.t; an.msg = ''; anSave(); } // 기준 종목이 바뀌면 이전 추천은 지움
+  const r = mk('div', {class: 'row', style: 'margin-top:10px'}, c);
+  const au = mk('button', {type: 'button'}, r, an.autoBusy ? 'Claude에게 묻는 중…' : '자동 추천 (관련 3종목)'); au.disabled = an.autoBusy;
+  au.addEventListener('click', () => anAuto(list, base));
+  const ai = mk('input', {type: 'text', list: 'ana-dl', placeholder: '비교 종목 더하기…', 'aria-label': '비교할 종목', autocomplete: 'off', style: 'width:170px;max-width:100%'}, r);
+  const doAdd = () => { const it = anResolve(ai.value, list); if (!it) { toast('종목을 알아보지 못했습니다. 구글 티커로 입력해 보세요(예: VLO, KRX:010950).'); return; } if (pnorm(it.t) === pnorm(base.t)) { toast('지금 보고 있는 종목입니다.'); return; } if (!anAdd(it, false)) { if (an.items.some(x => pnorm(x.t) === pnorm(it.t))) toast('이미 추가된 종목입니다.'); return; } ai.value = ''; ai.blur(); render(); };
+  ai.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+  mk('button', {type: 'button'}, r, '더하기').addEventListener('click', doAdd);
+  if (an.msg) mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, c, an.msg);
+  if (!an.items.length) return;
+  const chips = mk('div', {class: 'row', style: 'gap:6px 8px;flex-wrap:wrap;align-items:center;margin-top:10px'}, c);
+  an.items.forEach((x, i) => {
+    const b = mk('button', {type: 'button', title: (x.why ? x.why + ' · ' : '') + '눌러서 빼기'}, chips); const sw = mk('i', {class: 'sw'}, b); sw.style.background = catColor(i + 1); sw.style.marginRight = '6px';
+    const bad = rsCache[x.t] && rsCache[x.t].err;
+    b.append(x.name + (x.auto ? ' · 추천' : '') + (bad ? ' ⚠' : '') + ' ✕'); b.addEventListener('click', () => { an.items.splice(i, 1); anSave(); render(); });
+  });
+  if (an.items.length) { const clr = mk('button', {type: 'button'}, chips, '모두 빼기'); clr.addEventListener('click', () => { an.items = []; anSave(); render(); }); }
+}
+// 비교 종목이 있을 때만: 기준 종목 + 비교 종목 수익률 겹쳐 그리기
+function anaPeerChart(out, base, per) {
+  if (!an.items.length) return;
+  const today = rsDay(Date.now()), st8 = t => { const x = rsCache[t]; return x && x.day === today ? (x.err || !x.rows || !x.rows.length ? 'bad' : 'ok') : 'new'; };
+  const live = [{t: base.t, name: base.name}].concat(an.items).map((x, i) => ({t: x.t, name: x.name, color: catColor(i), st: st8(x.t)}));
+  if (!getSync()) return;
+  const need = live.filter(x => x.st === 'new').map(x => x.t).slice(0, 4);
+  if (need.length && !rs.busy) { const tk = need.join(',') + '|' + today; if (!rs.tried[tk]) { rs.tried[tk] = 1; setTimeout(() => rsFetch(need, false), 0); } }
+  if (rs.busy || live.some(x => x.st === 'new')) mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '비교 종목 시세를 불러오는 중입니다…');
+  if (rs.msg) mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, rs.msg);
+  live.filter(x => x.st === 'bad').forEach(x => mk('p', {class: 'sub', style: 'margin:6px 4px 0;color:var(--warn-ink)'}, out, x.name + '(' + x.t + '): ' + (rsCache[x.t].err || '데이터 없음')));
+  const loaded = live.filter(x => x.st === 'ok').map(x => Object.assign({}, x, {rows: rsCache[x.t].rows}));
+  if (loaded.length < 2) return;
+  const vc = mk('div', {class: 'card'}, out); mk('h2', {}, vc, '수익률 비교 · ' + per.l);
+  peerBlock(vc, loaded, per);
 }
 // 신용잔고 보기 위쪽: 자료 상태·갱신 버튼, 최근 1개월
 function anaCreditData(out, msgs) {

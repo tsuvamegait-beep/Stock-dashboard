@@ -1243,7 +1243,7 @@ function crMerge(rows, src, label) {
 // 예비 경로: 브라우저가 금투협 FreeSIS에 직접 요청(사이트가 막으면 실패). 성공하면 [['yyyy-MM-dd', 조원], ...]
 async function crDirect() {
   const ymd = t => new Date(t + 9 * 36e5).toISOString().slice(0, 10).replace(/-/g, ''), now = Date.now(), last = credit && credit.rows && credit.rows.length ? credit.rows[credit.rows.length - 1][0] : null;
-  const from = last ? ymd(Math.min(now - 21 * 864e5, Date.parse(last))) : ymd(now - 400 * 864e5);
+  const from = last ? ymd(Math.min(now - 21 * 864e5, Date.parse(last))) : ymd(now - 360 * 864e5); // 금투협은 1년 넘게 조회하면 값을 비워서 줌
   const res = await fetch('https://freesis.kofia.or.kr/meta/getMetaDataList.do', {method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({dmSearch: {OBJ_NM: 'STATSCU0100000070BO', tmpV1: 'D', tmpV45: from, tmpV46: ymd(now)}})});
   const j = await res.json();
   return ((j && j.ds1) || []).filter(r => /^\d{8}$/.test(String(r.TMPV1)) && +r.TMPV3 > 0).map(r => { const d = String(r.TMPV1); return [d.slice(0, 4) + '-' + d.slice(4, 6) + '-' + d.slice(6, 8), Math.round(r.TMPV3 / 1e4) / 100]; });

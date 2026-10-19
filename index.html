@@ -1464,7 +1464,7 @@ function renderAna(C) {
   if (getSync() && (!S || S.day !== today) && !ana.busy && !rs.busy) { const k = st + '|' + today; if (!rs.tried[k + 'a']) { rs.tried[k + 'a'] = 1; setTimeout(() => rsFetch([st], false), 0); } }
   if (!getSync()) msgs.push('주가 이력은 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 설정하세요.');
   if (S && S.err) msgs.push(st + ': ' + S.err + ' — 구글 티커가 맞는지 확인하세요.');
-  if (withC) anaCreditData(out, msgs); else msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, m));
+  if (withC) anaCreditData(out, msgs, per); else msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:10px 4px 0;color:var(--warn-ink)'}, out, m));
   if (!S || !S.rows || S.rows.length < 2) { if (!msgs.length) mk('p', {class: 'sub', style: 'margin:10px 4px 0'}, out, '주가 이력을 불러오는 중입니다…'); return; }
   const end = S.rows[S.rows.length - 1][0], start = rsStart(per, end);
   let s0 = rsAt(S.rows, start); if (s0 == null) s0 = 0;
@@ -1540,8 +1540,8 @@ function anaPeerChart(out, base, per) {
   const vc = mk('div', {class: 'card'}, out); mk('h2', {}, vc, '수익률 비교 · ' + per.l);
   peerBlock(vc, loaded, per);
 }
-// 신용잔고 보기 위쪽: 자료 상태·갱신 버튼, 최근 1개월
-function anaCreditData(out, msgs) {
+// 신용잔고 보기 위쪽: 자료 상태·갱신 버튼, 위에서 고른 기간(1개월·3개월…)의 신용잔고
+function anaCreditData(out, msgs, per) {
   const hasC = credit && credit.rows && credit.rows.length > 1;
   // 하루 한 번(처음 열 때) 금투협 최신 값으로 자동 갱신
   if (getSync() && !ana.tried && !ana.busy && (!hasC || rsDay(credit.at || 0) !== rsDay(Date.now()))) { ana.tried = true; setTimeout(() => pullCredit(false, true), 0); }
@@ -1554,7 +1554,7 @@ function anaCreditData(out, msgs) {
   msgs.forEach(m => mk('p', {class: 'sub', style: 'margin:8px 0 0;color:var(--warn-ink)'}, cc, m));
   if (!hasC) return;
   const CR0 = credit.rows, lastR = CR0[CR0.length - 1], t0 = rsDay(Date.now());
-  const mStart = rsStart({id: '1m', m: 1}, lastR[0]), k0 = rsAt(CR0, mStart), monthRows = CR0.filter(r => r[0] > mStart);
+  const mStart = rsStart(per, lastR[0]), k0 = rsAt(CR0, mStart), monthRows = CR0.filter(r => r[0] > mStart);
   const lag = rsDaysBetween(lastR[0], t0);
   const prev = CR0.length > 1 ? CR0[CR0.length - 2] : null, base = k0 != null ? CR0[k0] : monthRows[0];
   const vals = monthRows.map(r => r[1]), mx = Math.max(...vals), mn = Math.min(...vals);
@@ -1562,12 +1562,12 @@ function anaCreditData(out, msgs) {
   const tl2 = mk('div', {class: 'tiles', style: 'margin:12px 0'}, cc);
   tile(tl2, lag > 0 ? '최신 신용잔고' : '오늘 신용잔고', lastR[1].toFixed(2) + '조원', lastR[0]);
   if (prev) tile(tl2, '전일 대비', dlt(lastR[1], prev[1]), pct(lastR[1] / prev[1] - 1, 2) + ' · ' + prev[0]);
-  if (base && base[0] < lastR[0]) tile(tl2, '1개월 변화', dlt(lastR[1], base[1]), pct(lastR[1] / base[1] - 1) + ' · ' + base[0] + ' 대비');
-  if (vals.length > 1) tile(tl2, '1개월 최고 · 최저', mx.toFixed(2) + ' · ' + mn.toFixed(2), '고점 대비 ' + pct(lastR[1] / mx - 1));
+  if (base && base[0] < lastR[0]) tile(tl2, per.l + ' 변화', dlt(lastR[1], base[1]), pct(lastR[1] / base[1] - 1) + ' · ' + base[0] + ' 대비');
+  if (vals.length > 1) tile(tl2, per.l + ' 최고 · 최저', mx.toFixed(2) + ' · ' + mn.toFixed(2), '고점 대비 ' + pct(lastR[1] / mx - 1));
   if (monthRows.length < 2) return;
   const pts2 = monthRows.map(r => ({d: r[0], p: r[1], c: null})), NS2 = 'http://www.w3.org/2000/svg', W2 = 420, H2 = 150, L2 = 46, R2 = 10, T2 = 10, B2 = 24, n2 = pts2.length;
   const lo = mn - ((mx - mn) * 0.12 || 0.1), hi = mx + ((mx - mn) * 0.12 || 0.1), X2 = i => L2 + i / Math.max(1, n2 - 1) * (W2 - L2 - R2), Y2 = v => T2 + (1 - (v - lo) / (hi - lo)) * (H2 - T2 - B2);
-  const sv = document.createElementNS(NS2, 'svg'); sv.setAttribute('viewBox', '0 0 ' + W2 + ' ' + H2); sv.setAttribute('width', '100%'); sv.setAttribute('role', 'img'); sv.setAttribute('aria-label', '최근 1개월 코스피 신용잔고'); sv.style.display = 'block';
+  const sv = document.createElementNS(NS2, 'svg'); sv.setAttribute('viewBox', '0 0 ' + W2 + ' ' + H2); sv.setAttribute('width', '100%'); sv.setAttribute('role', 'img'); sv.setAttribute('aria-label', per.l + ' 코스피 신용잔고'); sv.style.display = 'block';
   const e2 = (nm, a, tx) => { const e = document.createElementNS(NS2, nm); Object.keys(a).forEach(k => e.setAttribute(k, a[k])); if (tx != null) e.textContent = tx; sv.appendChild(e); return e; };
   for (let i = 0; i <= 2; i++) { const y = T2 + (H2 - T2 - B2) * i / 2; e2('line', {x1: L2, x2: W2 - R2, y1: y, y2: y, stroke: 'var(--axis)', 'stroke-opacity': '0.35', 'stroke-width': '1'}); e2('text', {x: L2 - 6, y: y + 4, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--s2)'}, (hi - (hi - lo) * i / 2).toFixed(1)); }
   e2('text', {x: L2, y: H2 - 6, 'text-anchor': 'start', 'font-size': '12', fill: 'var(--muted)'}, pts2[0].d.slice(2)); e2('text', {x: W2 - R2, y: H2 - 6, 'text-anchor': 'end', 'font-size': '12', fill: 'var(--muted)'}, pts2[n2 - 1].d.slice(2));

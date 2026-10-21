@@ -855,6 +855,102 @@ function recordHistory(C) {
   H[today] = rec; try { localStorage.setItem(HIST_LS, JSON.stringify(H)); } catch (e) {}
 }
 const shortKRW = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; return a >= 1e8 ? s + (a / 1e8).toFixed(a >= 1e9 ? 1 : 2).replace(/\.?0+$/, '') + '억' : a >= 1e4 ? s + Math.round(a / 1e4).toLocaleString('ko-KR') + '만' : s + Math.round(a).toLocaleString('ko-KR'); };
+/* ===== 올해 기록 복원 (별도 기능) =====
+   거래내역으로 날짜별 보유 수량을 다시 계산하고, 그날 종가(GOOGLEFINANCE)·환율을 곱해 빠진 날의 기록을 만든다.
+   이미 기록이 있는 날은 건드리지 않는다. 현금은 지금 잔고에서 그 뒤의 매매·배당·입출금을 거꾸로 빼서 추정한다
+   (환전은 거래내역에 따로 없어서 반영하지 않지만, 원화↔외화로 옮겨진 것이라 총액에는 거의 영향이 없다). */
+const rh = {busy: false, msg: '', plan: null};
+function rhCashAfter(A, ccy, d) { // d 다음 날부터 그 통화 현금이 늘고 준 양
+  let v = 0;
+  A.orders.forEach(o => { if (o.d > d && o.ccy === ccy) v += (o.side === 1 ? -1 : 1) * o.net; });
+  A.divs.forEach(x => { if (x.d > d && x.ccy === ccy) v += x.gross - (ccy === 'KRW' ? (x.taxKRW || 0) : 0); });
+  if (ccy === 'KRW') A.ext.forEach(x => { if (x.d > d) v += (x.kind === 'in' ? 1 : -1) * x.amt; });
+  return v;
+}
+function rhRecord(d, ctx) { // d일 장 마감 기준 하루치 기록
+  let sv = 0, k = 0, p = 0, c = 0, miss = 0;
+  ctx.accts.forEach(a => {
+    const A = a.A, cut = Object.assign({}, A, {orders: A.orders.filter(o => o.d <= d), inkinds: A.inkinds.filter(o => o.d <= d), divs: A.divs.filter(o => o.d <= d)});
+    let H = []; try { H = replay(cut, a.basis, a.extra, fxAt); } catch (e) { return; }
+    H.forEach(h => {
+      if (!(h.end > 1e-9)) return;
+      const tk = ctx.tk[h.name], S = tk && rsCache[tk] && rsCache[tk].rows, i = S && S.length ? rsAt(S, d) : null, f = h.ccy === 'KRW' ? 1 : fxAt(h.ccy, d);
+      if (i == null || !f || rsDaysBetween(S[i][0], d) > 10) { miss++; ctx.miss[h.name] = 1; return; }
+      const val = h.end * S[i][1] * f; sv += val;
+      if (h.costRemainK != null) { k += h.costRemainK; p += val - h.costRemainK; }
+    });
+    const ccys = {}; Object.keys(A.cash || {}).forEach(x => { ccys[x] = 1; }); A.orders.forEach(o => { ccys[o.ccy] = 1; }); A.divs.forEach(x => { ccys[x.ccy] = 1; });
+    Object.keys(ccys).forEach(cc => { const f = cc === 'KRW' ? 1 : fxAt(cc, d); if (!f) { miss++; return; } c += (((A.cash || {})[cc] || 0) - rhCashAfter(A, cc, d)) * f; });
+  });
+  const R = Math.round; return {t: R(sv + c), s: R(sv), c: R(c), p: R(p), k: R(k), m: miss, r: 1};
+}
+async function rhBuild() {
+  if (rh.busy) return;
+  if (!getSync()) { rh.msg = '과거 시세는 구글 시트로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 먼저 설정하세요.'; scheduleRender(); return; }
+  rh.busy = true; rh.plan = null; rh.msg = '환율과 거래내역을 준비하는 중…'; scheduleRender();
+  try {
+    if (!Object.keys(fxH.map).some(c => fxH.map[c].d.length)) await pullFx(true);
+    const C = compute(); if (!C.accts.length) throw new Error('계좌가 없습니다.');
+    const accts = C.accts.map(a => { const basis = {}, extra = {}; Object.keys(state.basis).forEach(k => { const b = state.basis[k]; if (b.acc === a.aid) { basis[b.s] = b.price; if (b.extra) extra[b.s] = b.extra; } }); return {A: a.A, basis, extra}; });
+    const names = {}; C.accts.forEach(a => a.H.forEach(h => { names[h.name] = h; }));
+    const tk = {}, noTk = []; Object.keys(names).forEach(n => { const t = rsTicker(names[n]); if (t) tk[n] = t; else noTk.push(n); });
+    const list = Array.from(new Set(Object.keys(tk).map(n => tk[n]))), today = rsDay(Date.now());
+    for (let i = 0; i < list.length; i += 4) {
+      const b = list.slice(i, i + 4).filter(t => !rsCache[t] || rsCache[t].day !== today);
+      if (!b.length) continue;
+      rh.msg = '과거 시세를 가져오는 중… (' + Math.min(i + 4, list.length) + '/' + list.length + '종목) 1~2분 걸릴 수 있습니다.'; scheduleRender();
+      while (rs.busy) await new Promise(r => setTimeout(r, 300));
+      await rsFetch(b, false);
+    }
+    const bad = Object.keys(tk).filter(n => { const c = rsCache[tk[n]]; return !c || !c.rows || c.rows.length < 2; });
+    const yr = new Date().getFullYear(), start = yr + '-01-01', set = new Set();
+    list.forEach(t => { const S = rsCache[t] && rsCache[t].rows; if (S) S.forEach(r => { if (r[0] >= start && r[0] < today) set.add(r[0]); }); });
+    const have = loadHist(), days = Array.from(set).sort().filter(d => !have[d]);
+    const ctx = {accts, tk, miss: {}}, recs = {}; days.forEach(d => { recs[d] = rhRecord(d, ctx); });
+    const est = rhRecord(today, {accts, tk, miss: {}}), T = totals(C.rows), actual = T.val + C.cash.reduce((a, c) => a + (c.krw || 0), 0);
+    rh.plan = {days, recs, noTk, bad, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
+    rh.msg = days.length ? '' : '복원할 빠진 날이 없습니다(올해 거래일에 모두 기록이 있습니다).';
+    if (!days.length) rh.plan = null;
+  } catch (e) { rh.msg = '복원 계산에 실패했습니다: ' + (e && e.message ? e.message : e); rh.plan = null; }
+  rh.busy = false; scheduleRender();
+}
+async function rhApply(toSheet) {
+  const P = rh.plan; if (!P || rh.busy) return;
+  rh.busy = true; rh.msg = toSheet ? '시트에 저장하는 중…' : '저장하는 중…'; scheduleRender();
+  try {
+    if (toSheet) { const j = await sheetPost({action: 'saveHistoryFill', rows: P.days.map(d => Object.assign({d}, P.recs[d]))}); rh.msg = '시트 "기록" 탭에 ' + j.added + '일치를 채웠습니다.'; }
+    else rh.msg = P.days.length + '일치를 이 기기에 저장했습니다.';
+    const H = loadHist(); P.days.forEach(d => { if (!H[d]) H[d] = P.recs[d]; });
+    try { localStorage.setItem(HIST_LS, JSON.stringify(H)); } catch (e) {}
+    rh.plan = null;
+    if (toSheet) await pullHistory();
+  } catch (e) { rh.msg = '저장하지 못했습니다: ' + (e && e.message ? e.message : e) + (/알 수 없|unknown|형식|action/i.test(String(e && e.message)) ? '' : ' (Apps Script를 새 버전으로 다시 배포했는지 확인하세요)'); }
+  rh.busy = false; scheduleRender();
+}
+function rhUi(card) {
+  if (!getSync()) return;
+  const box = mk('div', {style: 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line, #0002)'}, card), P = rh.plan;
+  if (rh.busy) { mk('p', {class: 'sub', style: 'margin:0'}, box, rh.msg); return; }
+  if (!P) {
+    const b = mk('button', {type: 'button'}, box, '올해 빠진 기록 복원'); b.addEventListener('click', rhBuild);
+    mk('p', {class: 'sub', style: 'margin:6px 0 0;font-size:12px'}, box, '거래내역과 그날 종가·환율로 기록이 없는 날을 계산합니다. 이미 있는 기록은 바꾸지 않습니다.');
+    if (rh.msg) mk('p', {class: 'sub', style: 'margin:6px 0 0'}, box, rh.msg);
+    return;
+  }
+  const f = P.days[0], l = P.days[P.days.length - 1], diff = P.actual > 0 ? P.est / P.actual - 1 : null;
+  mk('p', {style: 'margin:0 0 6px;font-weight:500'}, box, '복원할 날 ' + P.days.length + '일 (' + f + ' ~ ' + l + ')');
+  mk('p', {class: 'sub', style: 'margin:0 0 6px'}, box, '검증: 같은 방식으로 오늘을 계산하면 ' + money('KRW', P.est) + ', 지금 화면의 실제 총자산은 ' + money('KRW', P.actual) + (diff == null ? '' : ' (차이 ' + (diff >= 0 ? '+' : '−') + Math.abs(diff * 100).toFixed(2) + '%)') + '입니다. ' + (diff != null && Math.abs(diff) > 0.02 ? '차이가 2%를 넘으면 아래 안내를 먼저 확인하세요.' : '이 정도 차이는 종가와 현재가 차이 수준입니다.'));
+  const warns = [];
+  if (P.noTk.length) warns.push('티커를 못 찾은 종목(RS 탭의 "구글 티커"에 넣으면 반영): ' + P.noTk.join(', '));
+  if (P.bad.length) warns.push('과거 시세를 못 받은 종목: ' + P.bad.join(', ') + (P.rsErr ? ' · ' + P.rsErr : ''));
+  if (P.miss.length && !P.noTk.length && !P.bad.length) warns.push('일부 날짜에 시세·환율이 없어 빠진 종목: ' + P.miss.join(', '));
+  warns.forEach(w => mk('p', {class: 'sub', style: 'margin:0 0 6px;color:var(--warn-ink)'}, box, w));
+  mk('p', {class: 'sub', style: 'margin:0 0 8px;font-size:12px'}, box, '복원값은 추정입니다(현금은 지금 잔고에서 거꾸로 계산, 시세 없는 종목은 제외). 그래프에서는 속이 빈 점으로 표시되고 언제든 구분할 수 있습니다.');
+  const row = mk('div', {class: 'row'}, box);
+  const sb = mk('button', {type: 'button', class: 'primary'}, row, '시트에 저장'); sb.addEventListener('click', () => rhApply(true));
+  const lb = mk('button', {type: 'button'}, row, '이 기기에만 저장'); lb.addEventListener('click', () => rhApply(false));
+  const cb = mk('button', {type: 'button'}, row, '취소'); cb.addEventListener('click', () => { rh.plan = null; rh.msg = ''; render(); });
+}
 function renderHistory(parent) {
   const H = loadHist(), days = Object.keys(H).sort();
   const card = mk('div', {class: 'card'}, parent), hh = mk('div', {class: 'sec-h'}, card); mk('h2', {}, hh, '기간별 추이');
@@ -862,10 +958,10 @@ function renderHistory(parent) {
   [['t', '총자산'], ['p', '평가손익']].forEach(([k, l]) => { const b = mk('button', {type: 'button', 'aria-pressed': String((ui.histMode || 't') === k)}, seg, l); b.addEventListener('click', () => { ui.histMode = k; saveUi(); render(); }); });
   mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, (getSync() ? '구글 시트가 평일 정해진 시각(한국시간)에 시세 시트 값으로 기록한 값입니다. ' : '페이지를 연 날의 시세·환율로 하루 한 번 기록한 값입니다(이 브라우저에 저장). 매일 정해진 시각에 기록하려면 기기 간 동기화를 설정하고 Apps Script를 최신으로 배포하세요. ') + '입출금과 매매도 총자산에 그대로 반영되므로, 수익 흐름은 "평가손익"으로 보세요.');
   if (state.histMsg && getSync()) mk('p', {class: 'sub', style: 'margin:0 0 10px;font-size:12px'}, card, state.histMsg);
-  if (!days.length) { mk('p', {class: 'sub'}, card, '아직 기록이 없습니다. 시세가 오늘 값으로 불러와지면 자동으로 첫 기록이 쌓입니다.'); return; }
+  if (!days.length) { mk('p', {class: 'sub'}, card, '아직 기록이 없습니다. 시세가 오늘 값으로 불러와지면 자동으로 첫 기록이 쌓입니다.'); rhUi(card); return; }
   const mode = ui.histMode || 't', vals = days.map(d => H[d][mode]);
   if (days.length === 1) {
-    mk('p', {class: 'sub'}, card, days[0] + ' 첫 기록: ' + money('KRW', vals[0]) + '. 내일부터 선이 이어져 그래프로 나타납니다.'); return;
+    mk('p', {class: 'sub'}, card, days[0] + ' 첫 기록: ' + money('KRW', vals[0]) + '. 내일부터 선이 이어져 그래프로 나타납니다.'); rhUi(card); return;
   }
   const NS = 'http://www.w3.org/2000/svg', W = 420, Ht = 240, L = 58, R = 12, Tp = 12, B = 28;
   let mn = Math.min(...vals), mx = Math.max(...vals); if (mode === 'p') { mn = Math.min(mn, 0); mx = Math.max(mx, 0); }
@@ -879,12 +975,14 @@ function renderHistory(parent) {
   el('text', {x: L, y: Ht - 8, 'text-anchor': 'start', 'font-size': '13', fill: 'var(--muted)'}, days[0].slice(5)); el('text', {x: W - R, y: Ht - 8, 'text-anchor': 'end', 'font-size': '13', fill: 'var(--muted)'}, days[days.length - 1].slice(5));
   el('polyline', {points: days.map(d => X(d).toFixed(1) + ',' + Y(H[d][mode]).toFixed(1)).join(' '), fill: 'none', stroke: 'var(--s1)', 'stroke-width': '2.2', 'stroke-linejoin': 'round'});
   days.forEach(d => {
-    const c = el('circle', {cx: X(d).toFixed(1), cy: Y(H[d][mode]).toFixed(1), r: days.length > 60 ? 2 : 3.5, fill: 'var(--s1)', stroke: 'var(--surface)', 'stroke-width': '1.5', tabindex: '0'});
-    const r = H[d]; hover(c, d, [{label: '총자산', value: money('KRW', r.t)}, {label: '평가손익', value: money('KRW', r.p)}, {label: '현금', value: money('KRW', r.c)}].concat(r.m ? [{label: '제외 종목', value: r.m + '개(시세·환율 없음)'}] : []));
+    const rst = !!H[d].r, c = el('circle', {cx: X(d).toFixed(1), cy: Y(H[d][mode]).toFixed(1), r: days.length > 60 ? 2 : 3.5, fill: rst ? 'var(--surface)' : 'var(--s1)', stroke: rst ? 'var(--s1)' : 'var(--surface)', 'stroke-width': rst ? '1.2' : '1.5', tabindex: '0'});
+    const r = H[d]; hover(c, d, [{label: '총자산', value: money('KRW', r.t)}, {label: '평가손익', value: money('KRW', r.p)}, {label: '현금', value: money('KRW', r.c)}].concat(r.m ? [{label: '제외 종목', value: r.m + '개(시세·환율 없음)'}] : [], rst ? [{label: '구분', value: '복원값(추정)'}] : []));
   });
   card.appendChild(svg);
   const last = days[days.length - 1], first = days[0], dv = vals[vals.length - 1] - vals[0];
-  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, first + ' → ' + last + ' · ' + days.length + '일 기록 · ' + (mode === 't' ? '총자산' : '평가손익') + ' 변화 ' + (dv > 0 ? '▲ ' : dv < 0 ? '▼ ' : '') + money('KRW', Math.abs(dv)));
+  const nr = days.filter(d => H[d].r).length;
+  mk('p', {class: 'sub', style: 'margin:8px 0 0'}, card, first + ' → ' + last + ' · ' + days.length + '일 기록' + (nr ? '(복원값 ' + nr + '일 포함 · 속이 빈 점)' : '') + ' · ' + (mode === 't' ? '총자산' : '평가손익') + ' 변화 ' + (dv > 0 ? '▲ ' : dv < 0 ? '▼ ' : '') + money('KRW', Math.abs(dv)));
+  rhUi(card);
 }
 function renderHoldings(C) {
   const out = $('res-holdings'); out.replaceChildren();

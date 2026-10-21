@@ -876,7 +876,7 @@ function rhRecord(d, ctx) { // d일 장 마감 기준 하루치 기록
       if (!(h.end > 1e-9)) return;
       const tk = ctx.tk[h.name], S = tk && rsCache[tk] && rsCache[tk].rows, i = S && S.length ? rsAt(S, d) : null, f = h.ccy === 'KRW' ? 1 : fxAt(h.ccy, d);
       if (i == null || !f || rsDaysBetween(S[i][0], d) > 10) { miss++; ctx.miss[h.name] = 1; return; }
-      const val = h.end * S[i][1] * f; sv += val;
+      const val = h.end * S[i][1] * f; sv += val; if (ctx.by) ctx.by[h.name] = (ctx.by[h.name] || 0) + val;
       if (h.costRemainK != null) { k += h.costRemainK; p += val - h.costRemainK; }
     });
     const ccys = {}; Object.keys(A.cash || {}).forEach(x => { ccys[x] = 1; }); A.orders.forEach(o => { ccys[o.ccy] = 1; }); A.divs.forEach(x => { ccys[x.ccy] = 1; });
@@ -907,12 +907,15 @@ async function rhBuild(force) {
     list.forEach(t => { const S = rsCache[t] && rsCache[t].rows; if (S) S.forEach(r => { if (r[0] >= start && r[0] < today) set.add(r[0]); }); });
     const have = loadHist(), days = Array.from(set).sort().filter(d => !have[d]);
     const ctx = {accts, tk, miss: {}}, recs = {}; days.forEach(d => { recs[d] = rhRecord(d, ctx); });
-    const est = rhRecord(today, {accts, tk, miss: {}}), T = totals(C.rows), actual = T.val + C.cash.reduce((a, c) => a + (c.krw || 0), 0);
+    const ctxT = {accts, tk, miss: {}, by: {}}, est = rhRecord(today, ctxT), T = totals(C.rows), cashNow = C.cash.reduce((a, c) => a + (c.krw || 0), 0), actual = T.val + cashNow;
+    const nowBy = {}; C.rows.forEach(r => { if (r.valueKRW != null) nowBy[r.name] = (nowBy[r.name] || 0) + r.valueKRW; });
+    const diff = Object.keys(Object.assign({}, ctxT.by, nowBy)).map(n => { const e = ctxT.by[n] || 0, a = nowBy[n] || 0; return {n, e, a, tk: tk[n] || '', rel: a ? e / a - 1 : null}; })
+      .filter(x => (x.e || x.a) && (x.rel == null || Math.abs(x.rel) > 0.02)).sort((x, y) => Math.abs(y.e - y.a) - Math.abs(x.e - x.a)).slice(0, 12);
     const fixN = {}; noTk.forEach(n => { fixN[n] = 1; }); bad.forEach(n => { fixN[n] = 1; }); Object.keys(ctx.miss).forEach(n => { fixN[n] = 1; });
     const fix = Object.keys(fixN).map(n => { const rowsNow = C.rows.filter(r => r.name === n), c = tk[n] && rsCache[tk[n]];
       return {n, c: (names[n] && names[n].ccy) || '', tk: tk[n] || '', held: rowsNow.length > 0, val: rowsNow.reduce((a, r) => a + (r.valueKRW || 0), 0), why: !tk[n] ? '티커를 못 찾음' : (!c || !c.rows || c.rows.length < 2) ? '과거 시세를 못 받음' + (c && c.err ? ' (' + c.err + ')' : '') : '일부 날짜에 시세·환율이 없음'}; })
       .sort((a, b) => (b.held - a.held) || (b.val - a.val));
-    rh.plan = {days, recs, noTk, bad, fix, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
+    rh.plan = {days, recs, noTk, bad, fix, diff, cashEst: est.c, cashNow, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
     rh.msg = days.length ? '' : '복원할 빠진 날이 없습니다(올해 거래일에 모두 기록이 있습니다).';
     if (!days.length) rh.plan = null;
   } catch (e) { rh.msg = '복원 계산에 실패했습니다: ' + (e && e.message ? e.message : e); rh.plan = null; }
@@ -961,6 +964,12 @@ function rhUi(card) {
   const f = P.days[0], l = P.days[P.days.length - 1], diff = P.actual > 0 ? P.est / P.actual - 1 : null;
   mk('p', {style: 'margin:0 0 6px;font-weight:500'}, box, '복원할 날 ' + P.days.length + '일 (' + f + ' ~ ' + l + ')');
   mk('p', {class: 'sub', style: 'margin:0 0 6px'}, box, '검증: 같은 방식으로 오늘을 계산하면 ' + money('KRW', P.est) + ', 지금 화면의 실제 총자산은 ' + money('KRW', P.actual) + (diff == null ? '' : ' (차이 ' + (diff >= 0 ? '+' : '−') + Math.abs(diff * 100).toFixed(2) + '%)') + '입니다. ' + (diff != null && Math.abs(diff) > 0.02 ? '차이가 2%를 넘으면 아래 안내를 먼저 확인하세요.' : '이 정도 차이는 종가와 현재가 차이 수준입니다.'));
+  if (P.diff.length || Math.abs(P.cashEst - P.cashNow) > 1000) {
+    mk('p', {style: 'margin:0 0 4px;font-weight:500'}, box, '오늘 값이 지금 화면과 다른 부분');
+    if (Math.abs(P.cashEst - P.cashNow) > 1000) mk('p', {class: 'sub', style: 'margin:0 0 4px;font-size:12px'}, box, '현금: 복원식 ' + money('KRW', P.cashEst) + ' · 지금 화면 ' + money('KRW', P.cashNow));
+    P.diff.forEach(x => mk('p', {class: 'sub', style: 'margin:0 0 4px;font-size:12px'}, box, x.n + (x.tk ? ' (' + x.tk + ')' : '') + ': 복원식 ' + (x.e ? money('KRW', x.e) : '없음') + ' · 지금 화면 ' + (x.a ? money('KRW', x.a) : '없음') + (x.rel != null ? ' (' + (x.rel >= 0 ? '+' : '−') + Math.abs(x.rel * 100).toFixed(1) + '%)' : '')));
+    mk('p', {class: 'sub', style: 'margin:0 0 8px;font-size:12px'}, box, '복원식은 구글 시세의 종가로, 지금 화면은 시세 시트의 현재가로 계산한 값입니다. 크게 다르면 티커가 다른 종목(다른 거래소·다른 종류)을 가리키거나, 시세 단위가 다른 경우가 많습니다.');
+  }
   if (P.fix.length) {
     mk('p', {class: 'sub', style: 'margin:0 0 6px;color:var(--warn-ink)'}, box, '아래 종목은 시세가 빠져서 그 날짜의 합계에 들어가지 않았습니다. 구글 티커를 입력하고 "티커 적용하고 다시 계산"을 누르면 반영됩니다(예: KRX:058610, NYSE:BE, NASDAQ:LITE, TYO:7326). 지금 보유 중인 종목부터 고치면 검증 차이가 가장 빨리 줄어듭니다.');
     const gb = mk('button', {type: 'button', style: 'margin:0 0 6px'}, box, rh.gBusy ? '티커 찾는 중…' : '빠진 티커 자동으로 채우기'); gb.disabled = rh.gBusy; gb.addEventListener('click', rhGuess);

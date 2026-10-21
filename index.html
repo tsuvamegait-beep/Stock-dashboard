@@ -859,7 +859,7 @@ const shortKRW = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; return a 
    거래내역으로 날짜별 보유 수량을 다시 계산하고, 그날 종가(GOOGLEFINANCE)·환율을 곱해 빠진 날의 기록을 만든다.
    이미 기록이 있는 날은 건드리지 않는다. 현금은 지금 잔고에서 그 뒤의 매매·배당·입출금을 거꾸로 빼서 추정한다
    (환전은 거래내역에 따로 없어서 반영하지 않지만, 원화↔외화로 옮겨진 것이라 총액에는 거의 영향이 없다). */
-const rh = {busy: false, msg: '', plan: null, edit: {}, openClosed: false};
+const rh = {busy: false, msg: '', plan: null, edit: {}, openClosed: false, guess: {}, gBusy: false, gMsg: ''};
 function rhCashAfter(A, ccy, d) { // d 다음 날부터 그 통화 현금이 늘고 준 양
   let v = 0;
   A.orders.forEach(o => { if (o.d > d && o.ccy === ccy) v += (o.side === 1 ? -1 : 1) * o.net; });
@@ -910,7 +910,7 @@ async function rhBuild(force) {
     const est = rhRecord(today, {accts, tk, miss: {}}), T = totals(C.rows), actual = T.val + C.cash.reduce((a, c) => a + (c.krw || 0), 0);
     const fixN = {}; noTk.forEach(n => { fixN[n] = 1; }); bad.forEach(n => { fixN[n] = 1; }); Object.keys(ctx.miss).forEach(n => { fixN[n] = 1; });
     const fix = Object.keys(fixN).map(n => { const rowsNow = C.rows.filter(r => r.name === n), c = tk[n] && rsCache[tk[n]];
-      return {n, tk: tk[n] || '', held: rowsNow.length > 0, val: rowsNow.reduce((a, r) => a + (r.valueKRW || 0), 0), why: !tk[n] ? '티커를 못 찾음' : (!c || !c.rows || c.rows.length < 2) ? '과거 시세를 못 받음' + (c && c.err ? ' (' + c.err + ')' : '') : '일부 날짜에 시세·환율이 없음'}; })
+      return {n, c: (names[n] && names[n].ccy) || '', tk: tk[n] || '', held: rowsNow.length > 0, val: rowsNow.reduce((a, r) => a + (r.valueKRW || 0), 0), why: !tk[n] ? '티커를 못 찾음' : (!c || !c.rows || c.rows.length < 2) ? '과거 시세를 못 받음' + (c && c.err ? ' (' + c.err + ')' : '') : '일부 날짜에 시세·환율이 없음'}; })
       .sort((a, b) => (b.held - a.held) || (b.val - a.val));
     rh.plan = {days, recs, noTk, bad, fix, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
     rh.msg = days.length ? '' : '복원할 빠진 날이 없습니다(올해 거래일에 모두 기록이 있습니다).';
@@ -931,6 +931,23 @@ async function rhApply(toSheet) {
   } catch (e) { rh.msg = '저장하지 못했습니다: ' + (e && e.message ? e.message : e) + (/알 수 없|unknown|형식|action/i.test(String(e && e.message)) ? '' : ' (Apps Script를 새 버전으로 다시 배포했는지 확인하세요)'); }
   rh.busy = false; scheduleRender();
 }
+async function rhGuess() { // 빠진 종목의 구글 티커를 Claude에게 물어 입력칸에 채운다(적용은 사용자가 확인한 뒤)
+  const P = rh.plan; if (!P || rh.busy || rh.gBusy) return;
+  const todo = P.fix.filter(x => !rs.tk[keyOf(x.n)] && !String(rh.edit[x.n] || '').trim());
+  if (!todo.length) { rh.gMsg = '채울 종목이 없습니다(이미 직접 입력한 종목은 건너뜁니다).'; scheduleRender(); return; }
+  rh.gBusy = true; rh.gMsg = '티커를 찾는 중… (' + todo.length + '종목)'; scheduleRender();
+  let filled = 0, unsure = 0, err = '';
+  try {
+    for (let i = 0; i < todo.length; i += 15) {
+      const part = todo.slice(i, i + 15), j = await sheetPost({action: 'resolveTickers', items: part.map(x => ({n: x.n, c: x.c, cur: x.tk}))});
+      part.forEach(x => { const g = j.map && j.map[x.n]; if (g && g.t && g.t !== x.tk.toUpperCase()) { rh.edit[x.n] = g.t; rh.guess[x.n] = {t: g.t, sure: g.sure !== false}; filled++; if (g.sure === false) unsure++; } });
+    }
+  } catch (e) { err = e && e.message ? e.message : String(e); }
+  rh.gBusy = false;
+  rh.gMsg = err ? '티커를 찾지 못했습니다: ' + err + (/알 수 없|unknown|지원/.test(err) ? '' : ' (Apps Script를 새 버전으로 다시 배포했는지, 스크립트 속성에 ANTHROPIC_API_KEY가 있는지 확인하세요)')
+    : filled + '종목의 티커를 채웠습니다' + (unsure ? '(확실하지 않은 ' + unsure + '개 표시)' : '') + '. ' + (todo.length - filled) + '종목은 찾지 못해 비워 뒀습니다. 틀린 것은 고치고 "티커 적용하고 다시 계산"을 누르세요.';
+  scheduleRender();
+}
 function rhUi(card) {
   if (!getSync()) return;
   const box = mk('div', {style: 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line, #0002)'}, card), P = rh.plan;
@@ -946,12 +963,15 @@ function rhUi(card) {
   mk('p', {class: 'sub', style: 'margin:0 0 6px'}, box, '검증: 같은 방식으로 오늘을 계산하면 ' + money('KRW', P.est) + ', 지금 화면의 실제 총자산은 ' + money('KRW', P.actual) + (diff == null ? '' : ' (차이 ' + (diff >= 0 ? '+' : '−') + Math.abs(diff * 100).toFixed(2) + '%)') + '입니다. ' + (diff != null && Math.abs(diff) > 0.02 ? '차이가 2%를 넘으면 아래 안내를 먼저 확인하세요.' : '이 정도 차이는 종가와 현재가 차이 수준입니다.'));
   if (P.fix.length) {
     mk('p', {class: 'sub', style: 'margin:0 0 6px;color:var(--warn-ink)'}, box, '아래 종목은 시세가 빠져서 그 날짜의 합계에 들어가지 않았습니다. 구글 티커를 입력하고 "티커 적용하고 다시 계산"을 누르면 반영됩니다(예: KRX:058610, NYSE:BE, NASDAQ:LITE, TYO:7326). 지금 보유 중인 종목부터 고치면 검증 차이가 가장 빨리 줄어듭니다.');
+    const gb = mk('button', {type: 'button', style: 'margin:0 0 6px'}, box, rh.gBusy ? '티커 찾는 중…' : '빠진 티커 자동으로 채우기'); gb.disabled = rh.gBusy; gb.addEventListener('click', rhGuess);
+    if (rh.gMsg) mk('p', {class: 'sub', style: 'margin:0 0 6px'}, box, rh.gMsg);
     const item = (parent, x) => {
       const it = mk('div', {style: 'padding:8px 0;border-top:1px solid var(--line, #0002)'}, parent);
       mk('div', {style: 'font-weight:500'}, it, x.n + (x.held ? ' · 지금 보유' + (x.val ? ' ' + money('KRW', x.val) : '') : ' · 정리한 종목'));
       mk('div', {class: 'sub', style: 'margin:2px 0 4px;font-size:12px'}, it, (x.tk ? x.tk + ' · ' : '') + x.why);
       const inp = mk('input', {type: 'text', 'aria-label': '구글 티커', placeholder: '구글 티커 (예: KRX:058610)', style: 'width:100%'}, it);
       inp.value = x.n in rh.edit ? rh.edit[x.n] : (rs.tk[keyOf(x.n)] || '');
+      const g = rh.guess[x.n]; if (g && inp.value.trim().toUpperCase() === g.t) mk('div', {class: 'sub', style: 'margin:3px 0 0;font-size:12px;color:var(--warn-ink)'}, it, g.sure ? '자동 추천 · 맞는지 확인하세요' : '자동 추천 · 확실하지 않음, 꼭 확인하세요');
       inp.addEventListener('input', () => { rh.edit[x.n] = inp.value; });
     };
     P.fix.filter(x => x.held).forEach(x => item(box, x));

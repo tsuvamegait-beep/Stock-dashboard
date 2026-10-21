@@ -1576,7 +1576,7 @@ function anaCreditData(out, msgs, per) {
   const cw2 = (W2 - L2 - R2) / Math.max(1, n2 - 1);
   pts2.forEach((q, i) => { const r = e2('rect', {x: (X2(i) - cw2 / 2).toFixed(1), y: T2, width: Math.max(cw2, 1).toFixed(1), height: H2 - T2 - B2, fill: 'transparent', tabindex: i === n2 - 1 ? '0' : '-1'}); hover(r, q.d, [{label: '코스피 신용잔고', value: q.p.toFixed(2) + '조원', color: 'var(--s2)'}]); });
   cc.appendChild(sv);
-  const det = mk('details', {style: 'margin-top:10px'}, cc); mk('summary', {style: 'cursor:pointer'}, det, '일별 값 ' + monthRows.length + '일 보기');
+  const det = mk('details', {style: 'margin-top:10px'}, cc); if (ui.crOpen) det.open = true; det.addEventListener('toggle', () => { ui.crOpen = det.open; }); mk('summary', {style: 'cursor:pointer'}, det, '일별 값 ' + monthRows.length + '일 보기');
   const tw2 = mk('div', {class: 'tw', style: 'margin-top:8px'}, det), t2 = mk('table', {}, tw2), hr2 = mk('tr', {}, mk('thead', {}, t2));
   ['날짜', '잔고(조원)', '전일 대비'].forEach((x, i) => mk('th', i === 0 ? {class: 'l'} : {}, hr2, x));
   const tb2 = mk('tbody', {}, t2);
@@ -2268,6 +2268,6 @@ function syncSegs() {
   syncTabs(); syncSegs(); render();
   loadSectors();
   store.init().then(async () => { if (!store.db) { await syncPull(); setTimeout(() => syncSheet(true), 50); } });
-  let rt; new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => { if (state.ready) render(); }, 120); }).observe(document.body);
+  let rt, lastW = document.body.clientWidth; new ResizeObserver(() => { const w = document.body.clientWidth; if (w === lastW) return; lastW = w; clearTimeout(rt); rt = setTimeout(() => { if (state.ready) render(); }, 120); }).observe(document.body);
 })();
 </script>

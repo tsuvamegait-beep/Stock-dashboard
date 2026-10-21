@@ -859,7 +859,7 @@ const shortKRW = v => { const a = Math.abs(v), s = v < 0 ? '−' : ''; return a 
    거래내역으로 날짜별 보유 수량을 다시 계산하고, 그날 종가(GOOGLEFINANCE)·환율을 곱해 빠진 날의 기록을 만든다.
    이미 기록이 있는 날은 건드리지 않는다. 현금은 지금 잔고에서 그 뒤의 매매·배당·입출금을 거꾸로 빼서 추정한다
    (환전은 거래내역에 따로 없어서 반영하지 않지만, 원화↔외화로 옮겨진 것이라 총액에는 거의 영향이 없다). */
-const rh = {busy: false, msg: '', plan: null};
+const rh = {busy: false, msg: '', plan: null, edit: {}, openClosed: false};
 function rhCashAfter(A, ccy, d) { // d 다음 날부터 그 통화 현금이 늘고 준 양
   let v = 0;
   A.orders.forEach(o => { if (o.d > d && o.ccy === ccy) v += (o.side === 1 ? -1 : 1) * o.net; });
@@ -884,7 +884,7 @@ function rhRecord(d, ctx) { // d일 장 마감 기준 하루치 기록
   });
   const R = Math.round; return {t: R(sv + c), s: R(sv), c: R(c), p: R(p), k: R(k), m: miss, r: 1};
 }
-async function rhBuild() {
+async function rhBuild(force) {
   if (rh.busy) return;
   if (!getSync()) { rh.msg = '과거 시세는 구글 시트로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화를 먼저 설정하세요.'; scheduleRender(); return; }
   rh.busy = true; rh.plan = null; rh.msg = '환율과 거래내역을 준비하는 중…'; scheduleRender();
@@ -895,12 +895,12 @@ async function rhBuild() {
     const names = {}; C.accts.forEach(a => a.H.forEach(h => { names[h.name] = h; }));
     const tk = {}, noTk = []; Object.keys(names).forEach(n => { const t = rsTicker(names[n]); if (t) tk[n] = t; else noTk.push(n); });
     const list = Array.from(new Set(Object.keys(tk).map(n => tk[n]))), today = rsDay(Date.now());
-    for (let i = 0; i < list.length; i += 4) {
-      const b = list.slice(i, i + 4).filter(t => !rsCache[t] || rsCache[t].day !== today);
-      if (!b.length) continue;
-      rh.msg = '과거 시세를 가져오는 중… (' + Math.min(i + 4, list.length) + '/' + list.length + '종목) 1~2분 걸릴 수 있습니다.'; scheduleRender();
+    const need = list.filter(t => !rsCache[t] || rsCache[t].day !== today || (force && (rsCache[t].err || !(rsCache[t].rows || []).length)));
+    for (let i = 0; i < need.length; i += 4) {
+      const b = need.slice(i, i + 4);
+      rh.msg = '과거 시세를 가져오는 중… (' + Math.min(i + 4, need.length) + '/' + need.length + '종목) 1~2분 걸릴 수 있습니다.'; scheduleRender();
       while (rs.busy) await new Promise(r => setTimeout(r, 300));
-      await rsFetch(b, false);
+      await rsFetch(b, true);
     }
     const bad = Object.keys(tk).filter(n => { const c = rsCache[tk[n]]; return !c || !c.rows || c.rows.length < 2; });
     const yr = new Date().getFullYear(), start = yr + '-01-01', set = new Set();
@@ -908,7 +908,11 @@ async function rhBuild() {
     const have = loadHist(), days = Array.from(set).sort().filter(d => !have[d]);
     const ctx = {accts, tk, miss: {}}, recs = {}; days.forEach(d => { recs[d] = rhRecord(d, ctx); });
     const est = rhRecord(today, {accts, tk, miss: {}}), T = totals(C.rows), actual = T.val + C.cash.reduce((a, c) => a + (c.krw || 0), 0);
-    rh.plan = {days, recs, noTk, bad, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
+    const fixN = {}; noTk.forEach(n => { fixN[n] = 1; }); bad.forEach(n => { fixN[n] = 1; }); Object.keys(ctx.miss).forEach(n => { fixN[n] = 1; });
+    const fix = Object.keys(fixN).map(n => { const rowsNow = C.rows.filter(r => r.name === n), c = tk[n] && rsCache[tk[n]];
+      return {n, tk: tk[n] || '', held: rowsNow.length > 0, val: rowsNow.reduce((a, r) => a + (r.valueKRW || 0), 0), why: !tk[n] ? '티커를 못 찾음' : (!c || !c.rows || c.rows.length < 2) ? '과거 시세를 못 받음' + (c && c.err ? ' (' + c.err + ')' : '') : '일부 날짜에 시세·환율이 없음'}; })
+      .sort((a, b) => (b.held - a.held) || (b.val - a.val));
+    rh.plan = {days, recs, noTk, bad, fix, miss: Object.keys(ctx.miss), est: est.t, actual, rsErr: rs.msg || ''};
     rh.msg = days.length ? '' : '복원할 빠진 날이 없습니다(올해 거래일에 모두 기록이 있습니다).';
     if (!days.length) rh.plan = null;
   } catch (e) { rh.msg = '복원 계산에 실패했습니다: ' + (e && e.message ? e.message : e); rh.plan = null; }
@@ -932,7 +936,7 @@ function rhUi(card) {
   const box = mk('div', {style: 'margin-top:12px;padding-top:10px;border-top:1px solid var(--line, #0002)'}, card), P = rh.plan;
   if (rh.busy) { mk('p', {class: 'sub', style: 'margin:0'}, box, rh.msg); return; }
   if (!P) {
-    const b = mk('button', {type: 'button'}, box, '올해 빠진 기록 복원'); b.addEventListener('click', rhBuild);
+    const b = mk('button', {type: 'button'}, box, '올해 빠진 기록 복원'); b.addEventListener('click', () => rhBuild(false));
     mk('p', {class: 'sub', style: 'margin:6px 0 0;font-size:12px'}, box, '거래내역과 그날 종가·환율로 기록이 없는 날을 계산합니다. 이미 있는 기록은 바꾸지 않습니다.');
     if (rh.msg) mk('p', {class: 'sub', style: 'margin:6px 0 0'}, box, rh.msg);
     return;
@@ -940,11 +944,22 @@ function rhUi(card) {
   const f = P.days[0], l = P.days[P.days.length - 1], diff = P.actual > 0 ? P.est / P.actual - 1 : null;
   mk('p', {style: 'margin:0 0 6px;font-weight:500'}, box, '복원할 날 ' + P.days.length + '일 (' + f + ' ~ ' + l + ')');
   mk('p', {class: 'sub', style: 'margin:0 0 6px'}, box, '검증: 같은 방식으로 오늘을 계산하면 ' + money('KRW', P.est) + ', 지금 화면의 실제 총자산은 ' + money('KRW', P.actual) + (diff == null ? '' : ' (차이 ' + (diff >= 0 ? '+' : '−') + Math.abs(diff * 100).toFixed(2) + '%)') + '입니다. ' + (diff != null && Math.abs(diff) > 0.02 ? '차이가 2%를 넘으면 아래 안내를 먼저 확인하세요.' : '이 정도 차이는 종가와 현재가 차이 수준입니다.'));
-  const warns = [];
-  if (P.noTk.length) warns.push('티커를 못 찾은 종목(RS 탭의 "구글 티커"에 넣으면 반영): ' + P.noTk.join(', '));
-  if (P.bad.length) warns.push('과거 시세를 못 받은 종목: ' + P.bad.join(', ') + (P.rsErr ? ' · ' + P.rsErr : ''));
-  if (P.miss.length && !P.noTk.length && !P.bad.length) warns.push('일부 날짜에 시세·환율이 없어 빠진 종목: ' + P.miss.join(', '));
-  warns.forEach(w => mk('p', {class: 'sub', style: 'margin:0 0 6px;color:var(--warn-ink)'}, box, w));
+  if (P.fix.length) {
+    mk('p', {class: 'sub', style: 'margin:0 0 6px;color:var(--warn-ink)'}, box, '아래 종목은 시세가 빠져서 그 날짜의 합계에 들어가지 않았습니다. 구글 티커를 입력하고 "티커 적용하고 다시 계산"을 누르면 반영됩니다(예: KRX:058610, NYSE:BE, NASDAQ:LITE, TYO:7326). 지금 보유 중인 종목부터 고치면 검증 차이가 가장 빨리 줄어듭니다.');
+    const item = (parent, x) => {
+      const it = mk('div', {style: 'padding:8px 0;border-top:1px solid var(--line, #0002)'}, parent);
+      mk('div', {style: 'font-weight:500'}, it, x.n + (x.held ? ' · 지금 보유' + (x.val ? ' ' + money('KRW', x.val) : '') : ' · 정리한 종목'));
+      mk('div', {class: 'sub', style: 'margin:2px 0 4px;font-size:12px'}, it, (x.tk ? x.tk + ' · ' : '') + x.why);
+      const inp = mk('input', {type: 'text', 'aria-label': '구글 티커', placeholder: '구글 티커 (예: KRX:058610)', style: 'width:100%'}, it);
+      inp.value = x.n in rh.edit ? rh.edit[x.n] : (rs.tk[keyOf(x.n)] || '');
+      inp.addEventListener('input', () => { rh.edit[x.n] = inp.value; });
+    };
+    P.fix.filter(x => x.held).forEach(x => item(box, x));
+    const cl = P.fix.filter(x => !x.held);
+    if (cl.length) { const dt = mk('details', {style: 'margin:4px 0'}, box); if (rh.openClosed) dt.open = true; dt.addEventListener('toggle', () => { rh.openClosed = dt.open; }); mk('summary', {style: 'cursor:pointer'}, dt, '정리한 종목 ' + cl.length + '개 (이 종목을 보유했던 기간의 값이 빠집니다)'); cl.forEach(x => item(dt, x)); }
+    const fb = mk('button', {type: 'button', class: 'primary', style: 'margin:8px 0 10px'}, box, '티커 적용하고 다시 계산');
+    fb.addEventListener('click', () => { Object.keys(rh.edit).forEach(n => { const v = String(rh.edit[n] || '').trim().toUpperCase(); if (v) rs.tk[keyOf(n)] = v; else delete rs.tk[keyOf(n)]; }); rh.edit = {}; rsSave(); rhBuild(true); });
+  }
   mk('p', {class: 'sub', style: 'margin:0 0 8px;font-size:12px'}, box, '복원값은 추정입니다(현금은 지금 잔고에서 거꾸로 계산, 시세 없는 종목은 제외). 그래프에서는 속이 빈 점으로 표시되고 언제든 구분할 수 있습니다.');
   const row = mk('div', {class: 'row'}, box);
   const sb = mk('button', {type: 'button', class: 'primary'}, row, '시트에 저장'); sb.addEventListener('click', () => rhApply(true));
@@ -2321,7 +2336,7 @@ let rq = 0, pendingAfterBlur = false;
 function scheduleRender() { if (rq) return; rq = requestAnimationFrame(() => { rq = 0; render(); }); }
 function render() {
   const ae = document.activeElement;
-  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening,#res-rs,#res-ana,#res-an') && ae.type === 'text') { pendingAfterBlur = true; return; }
+  if (ae && ae.tagName === 'INPUT' && ae.closest('#res-prices,#res-accounts,#res-opening,#res-rs,#res-ana,#res-an,#res-holdings') && ae.type === 'text') { pendingAfterBlur = true; return; }
   const C = compute();
   $('banner').hidden = !(state.ready && !state.persist) && state.writable;
   if (state.ready && !state.persist) { $('banner').hidden = false; $('banner').textContent = '데이터는 이 브라우저에만 저장됩니다(다른 기기·브라우저와 공유되지 않고, 사이트 데이터를 지우면 사라집니다). 시세는 시세·환율 탭에서 구글 시트 주소를 연결하거나 직접 입력하세요.'; }

@@ -421,14 +421,22 @@ function parseNamooRows(rows) {
     if (!/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
     data.push({d: d.slice(0, 10), type: sv(r, '거래유형'), kind: sv(r, '상세내용'), s: sv(r, '종목명'), qty: nv(r, '수량'), px: nv(r, '단가'), amt: nv(r, '거래금액'), net: nv(r, '정산금액'), bal: nv(r, '잔고'), cash: nv(r, '예수금잔액'), fee: nv(r, '수수료'), tax: nv(r, '세금')});
   }
+  return namooBuild(data, {});
+}
+/* 나무 거래 행(엑셀에서 읽었거나 Open API에서 받아 같은 모양으로 바꾼 것) -> 계좌 데이터
+   data: [{d, type, kind, s, qty, px, amt, net, bal, cash, fee, tax, ccy}]
+   opt.api: Open API 행. 행마다 통화(ccy)가 있고, 환전 행에 외화 금액이 없어서 달러·엔 예수금은 opt.fxCash로 따로 받음 */
+function namooBuild(data, opt) {
+  opt = opt || {};
   if (!data.length) throw new Error('거래 행을 찾지 못했습니다.');
   if (data.length > 1 && data[0].d > data[data.length - 1].d) data.reverse(); // 최신순 파일 -> 오래된 순
   data.forEach((r, i) => { r.n = i + 1; });
 
-  const warn = [], unknown = {}, bump = k => { unknown[k] = (unknown[k] || 0) + 1; };
+  const warn = (opt.warn || []).slice(), unknown = {}, bump = k => { unknown[k] = (unknown[k] || 0) + 1; };
   const trades = [], inkinds = [], divs = [], ext = [], lend = [];
-  const jpy = {}; NAMOO_JPY_NAMES.forEach(s => { jpy[s] = 1; });
-  data.forEach(r => { if (/^외화증권/.test(r.kind) && r.amt >= 50000 && r.px >= 500) jpy[r.s] = 1; });
+  const jpy = {};
+  if (opt.api) data.forEach(r => { if (r.ccy === 'JPY' && r.s) jpy[r.s] = 1; });
+  else { NAMOO_JPY_NAMES.forEach(s => { jpy[s] = 1; }); data.forEach(r => { if (/^외화증권/.test(r.kind) && r.amt >= 50000 && r.px >= 500) jpy[r.s] = 1; }); }
   const ccyOf = s => jpy[s] ? 'JPY' : 'USD';
   const ledger = {USD: 0, JPY: 0};
   data.forEach(r => {
@@ -487,14 +495,35 @@ function parseNamooRows(rows) {
   if (mism) warn.push('보유수량이 거래내역의 잔고와 맞지 않는 거래가 ' + mism + '건 있습니다(같은 날 여러 번 체결된 경우 일시적으로 어긋날 수 있습니다). 연초 수량과 평균단가를 확인하세요.');
   Object.keys(startQty).forEach(s => { if (startQty[s] < -1e-9) warn.push(stockLabel(s) + ': 연초 수량이 음수로 계산됐습니다. 조회 기간 이전 거래가 빠졌을 수 있습니다.'); });
   const jl = Object.keys(jpy).filter(s => startQty[s] !== undefined); if (jl.length) warn.push('일본 주식(JPY)으로 처리한 종목: ' + jl.join(', ') + ' (나머지 해외 종목은 USD로 처리)');
-  if (trades.some(r => r.foreign)) warn.push('나무증권 엑셀은 외화 금액이 1달러 단위로 반올림돼 있어서 해외 종목의 취득금액과 달러 예수금에 몇 달러 정도 오차가 있을 수 있습니다.');
+  if (!opt.api && trades.some(r => r.foreign)) warn.push('나무증권 엑셀은 외화 금액이 1달러 단위로 반올림돼 있어서 해외 종목의 취득금액과 달러 예수금에 몇 달러 정도 오차가 있을 수 있습니다.');
 
   const first = data[0].d, lastD = data[data.length - 1].d;
   const krw = data.slice().reverse().find(r => !/^외화/.test(r.kind) && r.kind !== '환전' && r.type !== '환전');
   const cash = {KRW: krw ? krw.cash : 0};
-  ['USD', 'JPY'].forEach(c => { if (Math.abs(ledger[c]) >= 1) cash[c] = Math.round(ledger[c]); });
+  if (!opt.api) ['USD', 'JPY'].forEach(c => { if (Math.abs(ledger[c]) >= 1) cash[c] = Math.round(ledger[c]); });
+  else if (opt.fxCash) ['USD', 'JPY'].forEach(c => { if (Math.abs(+opt.fxCash[c] || 0) >= 0.005) cash[c] = round(+opt.fxCash[c], 2); });
+  else warn.push('달러·엔 예수금을 나무에서 받지 못해 원화 예수금만 넣었습니다' + (opt.fxErr ? ' (' + opt.fxErr + ')' : '') + '.');
   return {v: 1, year: +first.slice(0, 4), asof: lastD, firstRow: first, lastTrade: lastD, orders, inkinds, ext, divs, startQty, cash, warn, unknown: Object.keys(unknown).map(k => ({name: k, n: unknown[k]})), src: 'namoo'};
 }
+
+/* 나무 Open API 종합거래내역(Apps Script ?nh=trades) 행 -> namooBuild가 읽는 모양.
+   적요(sps_cd_krl_anm)가 엑셀의 "상세내용"과 같은 값입니다. 엑셀의 정산금액은 API에 없어서 금액·수수료·세금으로 계산합니다. */
+function nhApiToData(rows) {
+  const warn = []; let feeKRW = 0;
+  const data = (rows || []).map(x => {
+    const k = String(x.sps_cd_krl_anm || '').trim(), d8 = String(x.ral_trd_dt || x.trd_dt || '');
+    const type = /^외화(매수|매도)$/.test(k) ? '환전' : /매수$/.test(k) ? '매수' : /매도$/.test(k) ? '매도' : '';
+    const foreign = /^외화증권(매수|매도)$/.test(k), amt = +x.trd_amt || 0, tax = +x.tax_sum || 0;
+    let fee = +x.trd_orn_fee || 0;
+    if (foreign && fee > Math.abs(amt) * 0.02) { fee = 0; feeKRW++; } // 외화 금액의 2%가 넘으면 원화 수수료로 보고 뺌
+    const net = type === '매수' ? amt + fee : type === '매도' ? amt - fee - (foreign ? 0 : tax) : amt;
+    return {d: d8.slice(0, 4) + '-' + d8.slice(4, 6) + '-' + d8.slice(6, 8), type, kind: k, s: String(x.iem_nm || '').trim(), qty: +x.trd_qty || 0, px: +x.trd_uit_pr || 0,
+      amt, net, bal: +x.trd_af_bnc_qty || 0, cash: +x.trd_af_dca || 0, fee, tax, ccy: /^(USD|JPY)$/.test(x.cur_cd) ? x.cur_cd : ''};
+  }).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.d));
+  if (feeKRW) warn.push('해외 매매 ' + feeKRW + '건의 수수료가 원화로 보여 취득금액에서 뺐습니다(원가가 수수료만큼 작게 잡힐 수 있음).');
+  return {data, warn};
+}
+const fmtNhAcct = n => String(n).slice(0, 3) + '-' + String(n).slice(3, 5) + '-' + String(n).slice(5);
 
 /* ===== 대시보드 거래내역 표 형식 <-> 계좌 데이터 =====
    구글 시트의 "거래내역" 탭에 이 표를 그대로 저장하고, 다시 읽어서 계좌 데이터로 되돌립니다.
@@ -2309,6 +2338,47 @@ function renderOpening(C) {
     if (ok) { n1.value = q1.value = p1.value = ''; toast('추가했습니다'); }
   });
 }
+/* ===== 나무증권 Open API로 거래내역 가져오기 (Apps Script ?nh=accounts / ?nh=trades) ===== */
+const nhUi = {busy: false, msg: '', accounts: null};
+async function nhGet(q) {
+  const cfg = getSync(); if (!cfg) throw new Error('기기 간 동기화(Apps Script 주소·비밀번호)를 먼저 설정하세요.');
+  const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&' + q, {cache: 'no-store'});
+  const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패'); return j;
+}
+// acct 없이 부르면: 이미 연결한 나무 계좌가 있으면 그 계좌, 없으면 계좌 목록을 보여 줌. pick이면 항상 목록.
+async function nhPull(acct, pick) {
+  if (nhUi.busy) return; nhUi.busy = true; nhUi.msg = ''; scheduleRender();
+  try {
+    if (!acct) {
+      const j = await nhGet('nh=accounts');
+      if (!Array.isArray(j.accounts)) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(나무 가져오기 기능이 없는 버전입니다).');
+      if (!j.accounts.length) throw new Error('나무 API에 연결된 계좌가 없습니다');
+      const linked = Object.keys(state.accounts).map(id => state.accounts[id] && state.accounts[id].nhAcct).filter(Boolean), hit = j.accounts.find(a => linked.indexOf(a.no) >= 0);
+      if (!pick && hit) acct = hit.no;
+      else if (!pick && j.accounts.length === 1) acct = j.accounts[0].no;
+      else { nhUi.accounts = j.accounts; nhUi.msg = '가져올 나무 계좌를 고르세요(주식 거래는 보통 종합매매 계좌입니다).'; return; }
+    }
+    const j = await nhGet('nh=trades&acct=' + encodeURIComponent(acct));
+    if (!Array.isArray(j.rows)) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(나무 가져오기 기능이 없는 버전입니다).');
+    if (!j.rows.length) throw new Error(fmtNhAcct(acct) + ' 계좌는 ' + j.from + '~' + j.to + ' 거래가 없습니다' + (j.msg ? ' (' + j.msg + ')' : '') + '. 다른 계좌를 고르세요.');
+    const c = nhApiToData(j.rows), A = namooBuild(c.data, {api: true, warn: c.warn, fxCash: j.fx, fxErr: j.fxErr});
+    ui.pending = {A, fileName: '나무 API ' + fmtNhAcct(acct), nhAcct: acct}; ui.tab = 'accounts'; syncTabs(); nhUi.accounts = null;
+  } catch (e) { nhUi.msg = '나무에서 가져오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  finally { nhUi.busy = false; scheduleRender(); }
+}
+// 올린 데이터(A)와 기존 계좌(B)를 둘 중 이른 마지막 거래일까지 놓고 비교: 매매·배당 건수, 보유 수량, 예수금
+function compareAccts(B, A, box) {
+  const cut = B.lastTrade < A.lastTrade ? B.lastTrade : A.lastTrade, upTo = X => Object.assign({}, X, {orders: X.orders.filter(o => o.d <= cut), inkinds: X.inkinds.filter(o => o.d <= cut), divs: X.divs.filter(o => o.d <= cut)});
+  const b = upTo(B), a = upTo(A), q = X => { const m = {}; replay(X, {}).forEach(h => { if (Math.abs(h.end) > 1e-9) m[h.s] = h.end; }); return m; };
+  const qb = q(b), qa = q(a), diff = [];
+  Object.keys(Object.assign({}, qb, qa)).forEach(k => { if (Math.abs((qb[k] || 0) - (qa[k] || 0)) > 1e-6) diff.push(stockLabel(k) + ' 기존 ' + (qb[k] || 0) + ' → 새 ' + (qa[k] || 0)); });
+  const ok = x => x ? ' ✓' : ' ✗', w = mk('ul', {class: 'facts'}, box);
+  mk('li', {}, w, '기존 계좌와 비교(' + cut + '까지): 매매 기존 ' + b.orders.length + '건 / 새 ' + a.orders.length + '건' + ok(b.orders.length === a.orders.length) + ', 배당 기존 ' + b.divs.length + '건 / 새 ' + a.divs.length + '건' + ok(b.divs.length === a.divs.length));
+  mk('li', {}, w, diff.length ? '보유 수량이 다른 종목 ' + diff.length + '개: ' + diff.slice(0, 8).join(', ') + (diff.length > 8 ? ' 외' : '') + ' (종목명 표기가 다르면 다른 종목으로 보입니다)' : '보유 수량: 모두 같음 ✓');
+  const newer = A.orders.filter(o => o.d > cut).length + A.divs.filter(o => o.d > cut).length;
+  if (newer) mk('li', {}, w, '기존 데이터 이후 새로 들어온 매매·배당 ' + newer + '건');
+  mk('li', {}, w, '예수금: 기존 ' + (Object.keys(B.cash || {}).map(c => money(c, B.cash[c])).join(' ') || '없음') + ' → 새 ' + (Object.keys(A.cash || {}).map(c => money(c, A.cash[c])).join(' ') || '없음') + (B.lastTrade === A.lastTrade ? '' : ' (기준일이 달라 차이가 날 수 있음)'));
+}
 function renderAccounts(C) {
   const out = $('res-accounts'); out.replaceChildren();
   renderSyncCard(out);
@@ -2317,6 +2387,14 @@ function renderAccounts(C) {
   const up = mk('div', {class: 'card'}, out); mk('h2', {}, up, '거래내역 올리기');
   mk('p', {class: 'sub', style: 'margin:4px 0 10px'}, up, '삼성증권 종합 거래내역 엑셀 또는 나무증권(NH투자증권) 거래내역 엑셀을 선택합니다(나무증권은 입출금이 거래내역에 포함돼 있어 거래내역 파일만 올리면 됩니다). 같은 계좌의 새 파일은 기존 계좌를 갱신하면 됩니다. 파일은 이 브라우저에서만 읽고, 계산 결과만 저장됩니다.');
   const ub = mk('button', {type: 'button', class: 'primary'}, up, '엑셀 파일 선택'); ub.addEventListener('click', openUpload);
+  if (getSync() && !store.db) {
+    const nr = mk('div', {class: 'row', style: 'margin-top:10px'}, up);
+    const nb = mk('button', {type: 'button'}, nr, nhUi.busy ? '나무에서 받는 중…' : '나무증권에서 바로 가져오기'); nb.disabled = nhUi.busy; nb.addEventListener('click', () => nhPull());
+    if (Object.keys(state.accounts).some(id => state.accounts[id] && state.accounts[id].nhAcct) && !nhUi.accounts) { const pb = mk('button', {type: 'button'}, nr, '다른 나무 계좌 고르기'); pb.disabled = nhUi.busy; pb.addEventListener('click', () => nhPull(null, true)); }
+    mk('p', {class: 'sub', style: 'margin:6px 0 0'}, up, '나무증권 Open API로 올해 1월 1일부터 오늘까지의 거래내역을 받아 엑셀을 올린 것과 똑같이 계산합니다(조회만 하고 주문은 하지 않습니다). 연금 계좌는 API에 없어서 엑셀로 올려야 합니다.');
+    if (nhUi.msg) mk('p', {class: 'sub', style: 'margin:6px 0 0'}, up, nhUi.msg);
+    if (nhUi.accounts) { const ar = mk('div', {class: 'row', style: 'margin-top:8px'}, up); nhUi.accounts.forEach(a => { const b = mk('button', {type: 'button'}, ar, fmtNhAcct(a.no)); b.disabled = nhUi.busy; b.addEventListener('click', () => nhPull(a.no)); }); }
+  }
   if (ui.pending) {
     const P = ui.pending, A = P.A, box = mk('div', {style: 'margin-top:14px;border-top:1px solid var(--hair);padding-top:14px'}, up);
     mk('h3', {}, box, '올린 파일 확인');
@@ -2325,17 +2403,20 @@ function renderAccounts(C) {
     if (A.warn.length || A.unknown.length) { const w = mk('ul', {class: 'facts'}, box); A.warn.forEach(x => mk('li', {}, w, x)); A.unknown.forEach(u => mk('li', {}, w, '분류하지 못한 거래 유형: ' + u.name + ' ' + u.n + '건 (계산에 포함되지 않습니다)')); }
     const PB = A.src === 'namoo' ? '나무증권' : '삼성증권';
     // 같은 계좌의 새 파일인지 추정: 같은 증권사이고 보유 종목 이름이 60% 이상 겹치면 기존 계좌 갱신을 미리 고릅니다(다른 계좌를 덮어쓰지 않도록 보수적으로).
-    const match = C.accts.filter(x => x.broker === PB).map(x => { const a = Object.keys(x.A.startQty).concat(x.A.orders.map(o => o.s)), b = Object.keys(A.startQty).concat(A.orders.map(o => o.s)), sa = new Set(a), sb = new Set(b); let i = 0; sa.forEach(s => { if (sb.has(s)) i++; }); return {x, j: i / (new Set(a.concat(b)).size || 1)}; }).filter(m => m.j >= 0.6).sort((p, q) => q.j - p.j).map(m => m.x)[0] || null;
+    const match = (P.nhAcct && C.accts.find(x => state.accounts[x.aid] && state.accounts[x.aid].nhAcct === P.nhAcct)) || C.accts.filter(x => x.broker === PB).map(x => { const a = Object.keys(x.A.startQty).concat(x.A.orders.map(o => o.s)), b = Object.keys(A.startQty).concat(A.orders.map(o => o.s)), sa = new Set(a), sb = new Set(b); let i = 0; sa.forEach(s => { if (sb.has(s)) i++; }); return {x, j: i / (new Set(a.concat(b)).size || 1)}; }).filter(m => m.j >= 0.6).sort((p, q) => q.j - p.j).map(m => m.x)[0] || null;
     const r = mk('div', {class: 'row', style: 'margin-top:12px'}, box);
     const nm = mk('input', {type: 'text', value: (match || {name: PB}).name, 'aria-label': '계좌 이름', style: 'width:180px'}, r);
     const sel = mk('select', {'aria-label': '저장 위치'}, r); mk('option', {value: ''}, sel, '새 계좌로 추가'); C.accts.forEach(a => mk('option', {value: a.aid}, sel, '기존 계좌 갱신: ' + a.name));
     if (match) sel.value = match.aid;
-    sel.addEventListener('change', () => { const a = C.accts.find(x => x.aid === sel.value); if (a) nm.value = a.name; });
+    const cmp = mk('div', {}, box), drawCmp = () => { cmp.replaceChildren(); const a = C.accts.find(x => x.aid === sel.value); if (a) compareAccts(a.A, A, cmp); };
+    drawCmp();
+    sel.addEventListener('change', () => { const a = C.accts.find(x => x.aid === sel.value); if (a) nm.value = a.name; drawCmp(); });
     const sv = mk('button', {type: 'button', class: 'primary'}, r, '저장'), cn = mk('button', {type: 'button'}, r, '취소');
     cn.addEventListener('click', () => { ui.pending = null; render(); });
     sv.addEventListener('click', async () => {
       const name = nm.value.trim() || PB, id = sel.value || ('a' + Date.now().toString(36)), old = state.accounts[id];
       const doc = {name, broker: PB, fileName: P.fileName, uploadedAt: new Date().toISOString(), createdAt: old ? old.createdAt : new Date().toISOString(), data: A};
+      const nhAcct = P.nhAcct || (old && old.nhAcct); if (nhAcct) doc.nhAcct = nhAcct; // 나무 API 계좌 연결(다음부터 바로 가져오기)
       if (JSON.stringify(doc).length > 250000) { toast('거래가 너무 많아 한 계좌에 담을 수 없습니다.'); return; }
       sv.disabled = true; const ok = await store.set('accounts', id, doc); sv.disabled = false;
       if (ok) { ui.pending = null; toast('저장했습니다'); render(); if (getSync()) { await pushTrades([id]); } }
@@ -2346,7 +2427,7 @@ function renderAccounts(C) {
     const nmI = mk('input', {type: 'text', value: a.name, 'aria-label': '계좌 이름', style: 'font-weight:700;width:200px'}, hd);
     nmI.addEventListener('change', () => { const v = nmI.value.trim(); if (v) store.update('accounts', a.aid, {name: v}); });
     mk('span', {class: 'sub'}, hd, '기준일 ' + a.A.asof + ' · 마지막 거래 ' + a.A.lastTrade + ' · 올린 시각 ' + (acc.uploadedAt ? ago(acc.uploadedAt) : ''));
-    mk('p', {class: 'sub'}, card, '매매 ' + a.A.orders.length + '건 · 보유 ' + a.H.filter(h => h.end > 1e-9).length + '종목 · 예수금 ' + Object.keys(a.A.cash).map(c => money(c, a.A.cash[c])).join(' ') + ' · ' + (acc.fileName || ''));
+    mk('p', {class: 'sub'}, card, '매매 ' + a.A.orders.length + '건 · 보유 ' + a.H.filter(h => h.end > 1e-9).length + '종목 · 예수금 ' + Object.keys(a.A.cash).map(c => money(c, a.A.cash[c])).join(' ') + ' · ' + (acc.fileName || '') + (acc.nhAcct ? ' · 나무 API 연결 ' + fmtNhAcct(acc.nhAcct) : ''));
     if (a.A.warn.length || a.A.unknown.length) { const w = mk('ul', {class: 'facts'}, card); a.A.warn.forEach(x => mk('li', {}, w, x)); a.A.unknown.forEach(u => mk('li', {}, w, '분류하지 못한 거래 유형: ' + u.name + ' ' + u.n + '건')); }
     const need = a.H.filter(h => !h.known && (h.end > 1e-9 || h.sellQty > 0));
     if (need.length) { const nb = mk('div', {class: 'row', style: 'margin-top:12px'}, card); mk('span', {class: 'sub'}, nb, '연초부터 보유한 종목 ' + need.length + '건의 취득단가가 비어 있습니다.'); const go = mk('button', {type: 'button'}, nb, '연초 잔고 탭에서 입력'); go.addEventListener('click', () => { ui.tab = 'opening'; saveUi(); syncTabs(); render(); }); }

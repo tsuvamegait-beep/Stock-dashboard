@@ -42,6 +42,7 @@ function doGet(e) {
   if (e.parameter.series) return out_(readSeries_(String(e.parameter.t || ''), String(e.parameter.from || '')));
   if (e.parameter.credit) return out_(e.parameter.refresh ? refreshCredit_() : readCredit_());
   if (e.parameter.peers) return out_(readPeers_(String(e.parameter.t || '')));
+  if (e.parameter.nh) return out_(readNh_(e.parameter));
   if (e.parameter.fx) { const f = readFx_(); return f ? out_({ok: true, fx: f}) : out_({ok: false, error: '환율 탭이 없습니다. Apps Script에서 setupFx를 한 번 실행하세요'}); }
   const d = load_();
   return out_({ok: true, updatedAt: d.updatedAt, data: d.data});
@@ -374,4 +375,110 @@ function readPeers_(ticker) {
   const out = {ok: true, peers: peers, subject: j.subject && okT(j.subject.t) ? {t: String(j.subject.t), name: String(j.subject.name || '').slice(0, 40)} : null, model: AI_MODEL};
   cache.put(ck, JSON.stringify(out), 21600);
   return out;
+}
+
+/* ===== 나무증권 Open API(NH PLUG): 거래내역 자동 가져오기 =====
+ * 준비(한 번만): Apps Script 편집기 왼쪽 톱니바퀴(프로젝트 설정) > 스크립트 속성 > 속성 추가
+ *   이름 NH_APP_KEY / 값 nhplug.com에서 받은 앱키,  이름 NH_APP_SECRET / 값 앱시크릿.  (키는 코드에 직접 적지 마세요)
+ * 조회 API만 씁니다. 주문 API 주소는 아래 NH_PATHS 허용 목록에 없어서 이 코드로는 주문이 나갈 수 없습니다.
+ * 토큰(하루짜리 입장권)은 24시간 유효합니다. 발급할 때마다 증권사 보안 알림이 가므로
+ * 스크립트 속성(NH_TOKEN, NH_TOKEN_EXP)에 보관해 재사용하고, 만료됐거나 401(토큰 무효)일 때만 새로 받습니다.
+ * 확인용: 편집기 위쪽 함수 선택에서 testNh → 실행 → 아래 실행 로그를 확인하세요. */
+const NH_BASE = 'https://api.nhplug.com:8443';
+const NH_PATHS = ['/n2/acctinfo', '/common/inquiry/v1/totalTransaction', '/gbstock/inquiry/v1/margin'];
+function nhToken_(force, bad) { // bad: 401을 받은 토큰(이것만 버리고 새로 받음)
+  const p = PropertiesService.getScriptProperties();
+  const cur = () => { const t = p.getProperty('NH_TOKEN'), x = +p.getProperty('NH_TOKEN_EXP') || 0; return t && Date.now() < x && t !== bad ? t : ''; };
+  if (!force && cur()) return cur();
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    if (cur()) return cur(); // 기다리는 동안 다른 요청이 이미 새로 받았으면 그걸 씀
+    const key = p.getProperty('NH_APP_KEY'), sec = p.getProperty('NH_APP_SECRET');
+    if (!key || !sec) throw new Error('Apps Script 스크립트 속성에 NH_APP_KEY / NH_APP_SECRET이 없습니다');
+    const q = 'appkey=' + encodeURIComponent(key) + '&appsecretkey=' + encodeURIComponent(sec) + '&grant_type=client_credentials&scope=oob';
+    const res = UrlFetchApp.fetch(NH_BASE + '/oauth2/token?' + q, {method: 'post', contentType: 'application/x-www-form-urlencoded', muteHttpExceptions: true});
+    const code = res.getResponseCode(); let j = {}; try { j = JSON.parse(res.getContentText()); } catch (e) {}
+    if (code !== 200 || !j.access_token) throw new Error('나무 토큰 발급 실패(' + code + ') ' + String(j.error_description || j.rsp_msg || j.error || '').slice(0, 120));
+    // 만료 10분 전부터는 새로 받도록 여유를 둠
+    p.setProperties({NH_TOKEN: j.access_token, NH_TOKEN_EXP: String(Date.now() + ((+j.expires_in || 86400) - 600) * 1000)});
+    return j.access_token;
+  } finally { lock.releaseLock(); }
+}
+function nhCall_(path, input, next) { // next: 연속조회 {cts, flag} (응답 헤더로 받은 값 그대로)
+  if (NH_PATHS.indexOf(path) < 0) throw new Error('허용되지 않은 나무 API: ' + path);
+  const go = tok => {
+    const h = {Authorization: 'Bearer ' + tok}; if (next) { h.cts = next.cts; h.cts_flag = next.flag || 'Y'; }
+    return UrlFetchApp.fetch(NH_BASE + path, {method: 'post', contentType: 'application/json', headers: h, payload: JSON.stringify({Input_0: input || {}}), muteHttpExceptions: true});
+  };
+  let tok = nhToken_(), res = go(tok);
+  if (res.getResponseCode() === 401) res = go(nhToken_(true, tok));
+  const code = res.getResponseCode(), txt = res.getContentText();
+  let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('나무 응답(' + code + ')이 JSON이 아님: ' + txt.slice(0, 120)); }
+  const m = j.message || {}, cd = String(j.rsp_cd || m.code || m.msg_code || j.error_code || ''), msg = String(j.rsp_msg || m.msg || m.usr_msg || j.error_description || '');
+  if (code === 429) throw new Error('나무 API 요청이 너무 잦습니다(429). 잠시 뒤 다시 시도하세요');
+  if (code !== 200) throw new Error('나무 응답 ' + code + ' ' + cd + ' ' + msg);
+  const hd = {}, all = res.getAllHeaders(); Object.keys(all).forEach(k => { hd[k.toLowerCase()] = String(all[k]); });
+  return {j, cd, msg, cts: hd.cts || '', flag: hd.cts_flag || ''};
+}
+function nhAccounts_() { // 운영 계좌(01 일반, 02 주문대리인)만
+  const r = nhCall_('/n2/acctinfo', {});
+  const list = (r.j.Output_0 || []).filter(a => a && (a.acct_type === '01' || a.acct_type === '02')).map(a => ({no: String(a.acct_no), type: a.acct_type}));
+  return {list, cd: r.cd, msg: r.msg};
+}
+// 종합거래내역(HTS 8203과 같은 내용): 거래일자 순, 전체 종목·전체 거래(입출금·입출고·매매)
+function nhTrades_(act, from, to) {
+  const rows = []; let next = null, prev = '', last = null;
+  for (let page = 0; page < 60; page++) {
+    last = nhCall_('/common/inquiry/v1/totalTransaction', {iqr_tp_cd: '1', iqr_rge_cd: '1', act_no: act, iqr_sta_dt: from, iqr_end_dt: to, iem_llf_cd: '00', act_trd_dtl_cd: '00'}, next);
+    (last.j.Output_0 || []).forEach(x => { delete x.opi_cus_fnm; delete x.cli_pe_fnm; rows.push(x); }); // 상대방·의뢰인 이름은 버림
+    const more = last.cts && last.cts !== prev && (last.flag ? last.flag === 'Y' : (last.cd === '00165' || last.cd === '00218'));
+    if (!more) break;
+    prev = last.cts; next = {cts: last.cts, flag: last.flag || 'Y'};
+    Utilities.sleep(300); // 초당 5회 제한
+  }
+  return {rows, cd: last.cd, msg: last.msg};
+}
+// 달러·엔 예수금(결제 후 기준). 거래내역의 환전 행에는 원화 금액만 있어서 외화 잔액은 여기서 받음
+function nhFxCash_(act) {
+  const r = nhCall_('/gbstock/inquiry/v1/margin', {act_no: act}), out = {};
+  (r.j.Output_0 || []).forEach(x => { const c = String(x.cur_cd || '').slice(0, 3), v = +(x.stl_af_fc_dca != null ? x.stl_af_fc_dca : x.fc_dca) || 0; if (c && c !== 'KRW' && Math.abs(v) >= 0.005) out[c] = v; });
+  return out;
+}
+// 대시보드 요청: ?nh=accounts  /  ?nh=trades&acct=계좌번호&from=yyyyMMdd&to=yyyyMMdd (기본: 올해 1월 1일 ~ 오늘)
+function readNh_(q) {
+  try {
+    const acc = nhAccounts_();
+    if (q.nh === 'accounts') return {ok: true, accounts: acc.list, msg: acc.msg};
+    const act = String(q.acct || '');
+    if (!acc.list.some(a => a.no === act)) return {ok: false, error: '나무 계좌 목록에 없는 계좌번호입니다', accounts: acc.list};
+    const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
+    const from = /^\d{8}$/.test(q.from || '') ? q.from : today.slice(0, 4) + '0101', to = /^\d{8}$/.test(q.to || '') ? q.to : today;
+    const t = nhTrades_(act, from, to);
+    let fx = null, fxErr = '';
+    try { Utilities.sleep(300); fx = nhFxCash_(act); } catch (err) { fxErr = String(err && err.message || err); }
+    return {ok: true, acct: act, from, to, rows: t.rows, msg: t.msg, cd: t.cd, fx, fxErr};
+  } catch (err) { return {ok: false, error: String(err && err.message || err)}; }
+}
+// 편집기에서 직접 실행해 보는 확인용: 계좌 목록과 올해 거래내역의 적요(거래 종류)별 건수·예시 한 건씩을 로그에 남김
+function testNh() {
+  const mask = s => String(s).slice(0, 3) + '****' + String(s).slice(-4);
+  const acc = nhAccounts_();
+  Logger.log('계좌 ' + acc.list.length + '개: ' + acc.list.map(a => mask(a.no) + '(' + a.type + ')').join(', ') + ' / ' + acc.msg);
+  const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
+  acc.list.forEach(a => {
+    const t = nhTrades_(a.no, today.slice(0, 4) + '0101', today), kinds = {};
+    t.rows.forEach(r => { const k = r.sps_cd_krl_anm || '(빈칸)'; if (!kinds[k]) kinds[k] = {n: 0, ex: r}; kinds[k].n++; });
+    Logger.log('== ' + mask(a.no) + ': ' + t.rows.length + '건 / ' + t.msg);
+    Object.keys(kinds).forEach(k => { const x = kinds[k].ex; Logger.log(k + ' ' + kinds[k].n + '건 · 예: ' + JSON.stringify({cur: x.cur_cd, dt: x.trd_dt, real: x.ral_trd_dt, nm: x.iem_nm, cd: x.iem_cd, qty: x.trd_qty, px: x.trd_uit_pr, amt: x.trd_amt, fee: x.trd_orn_fee, tax: x.tax_sum, bal: x.trd_af_bnc_qty, cash: x.trd_af_dca, int: x.int_amt, r3: x.rks3, r4: x.rks4})); });
+    Utilities.sleep(300);
+  });
+}
+// 편집기에서 직접 실행: 나무 계좌번호 전체를 로그에 출력(본인 확인용, 로그는 나만 볼 수 있음). 순서는 testNh와 같습니다.
+function listNh() {
+  const today = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd');
+  nhAccounts_().list.forEach((a, i) => {
+    const n = nhTrades_(a.no, today.slice(0, 4) + '0101', today).rows.length;
+    Logger.log((i + 1) + '번 계좌: ' + a.no.slice(0, 3) + '-' + a.no.slice(3, 5) + '-' + a.no.slice(5) + ' (구분 ' + a.type + ') · 올해 거래 ' + n + '건');
+    Utilities.sleep(300);
+  });
 }

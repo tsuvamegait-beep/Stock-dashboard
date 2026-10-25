@@ -17,8 +17,9 @@
 - localStorage 키: `portfolio-data-v1` `portfolio-sheet-url` `portfolio-sync` `portfolio-history` `portfolio-ui` `portfolio-sectors` `portfolio-data-ts` `portfolio-theme` `portfolio-fxhist` `portfolio-rs` `portfolio-rs-cache` `portfolio-ana` `portfolio-credit` `portfolio-an`.
 
 ## Apps Script (`apps_script.gs.txt`)
-- 설정값: `SECRET_KEY`, `SHEET_ID`(시세 시트), `AI_MODEL`, 스크립트 속성 `ANTHROPIC_API_KEY`.
-- `doGet` 파라미터: `history` `trades` `series` `credit` `peers` `fx`(없으면 동기화 데이터). `doPost`: `saveTrades` `deleteTrades` `saveCredit` `saveHistoryFill` `resolveTickers` 및 동기화 저장.
+- 설정값: `SECRET_KEY`, `SHEET_ID`(시세 시트), `AI_MODEL`, 스크립트 속성 `ANTHROPIC_API_KEY` `NH_APP_KEY` `NH_APP_SECRET`.
+- 나무증권 Open API(NH PLUG, https://www.nhplug.com/llms.txt): `?nh=accounts` 계좌 목록, `?nh=trades&acct=&from=&to=` 종합거래내역(`/common/inquiry/v1/totalTransaction`, HTS 8203, 연속조회는 응답 헤더 `cts`/`cts_flag`). 토큰은 24시간 유효, 발급마다 보안 알림 → 스크립트 속성 `NH_TOKEN`/`NH_TOKEN_EXP`에 보관하고 만료·401일 때만 재발급. 주문 API는 `NH_PATHS` 허용 목록에 넣지 않음(조회 전용). 편집기에서 `testNh` 실행하면 적요별 건수·예시를 로그로 확인.
+- `doGet` 파라미터: `history` `trades` `series` `credit` `peers` `nh` `fx`(없으면 동기화 데이터). `doPost`: `saveTrades` `deleteTrades` `saveCredit` `saveHistoryFill` `resolveTickers` 및 동기화 저장.
 - 코드를 바꾸면 사용자가 Apps Script에 다시 붙여넣고 "배포 관리 → 새 버전"으로 배포해야 반영됩니다(주소가 바뀌는 "새 배포"는 금지).
 - 비밀번호·웹 앱 주소·API 키는 저장소에 넣지 않습니다(브라우저 localStorage / 스크립트 속성에만).
 
@@ -40,5 +41,5 @@
 - 연금 매입금액이 나무증권 앱과 약 2,071,539원 차이: 조선TOP3플러스만 연초 잔고 평균단가에 의존. 앱의 조선 평균단가를 받으면 "연초 잔고" 탭의 평균단가로 맞출 수 있음(미확정).
 
 ## 다음 할 일(논의 중)
-- 신용잔고 자동 수집은 구현됨. 확인 안 된 것: 구글(Apps Script) 서버에서 FreeSIS 접속이 막히지 않는지, FreeSIS가 짧은 시간 여러 요청을 보내면 잠시 차단하는지(PC에서 10여 회 요청 후 접속이 끊긴 적 있음). 막히면 대안은 GitHub Actions로 `credit.csv` 커밋.
+- 나무 API 거래내역: 구현 완료(2026-10-26). Apps Script `?nh=accounts`/`?nh=trades`(+`/gbstock/inquiry/v1/margin`으로 달러·엔 예수금 `fx`), 대시보드 계좌 관리 탭 "나무증권에서 바로 가져오기" → `nhApiToData` → `namooBuild(data, {api: true, fxCash})`(나무 엑셀 파서 `parseNamooRows`와 계산 공유) → 기존 "올린 파일 확인" 화면(`compareAccts`로 기존 계좌와 비교) → 저장 시 계좌 문서에 `nhAcct` 저장(다음부터 바로 갱신). 실제 계좌: 종합매매 1개만 사용(금현물·CMA는 거래 없음, 연금은 API에 없음 → 엑셀). 남은 확인: 실데이터로 첫 가져오기 결과를 기존 엑셀 데이터와 비교(종목명 표기, 해외 수수료 통화 — 외화 금액의 2% 넘으면 원화로 보고 뺌, 외화배당 금액이 세전인지).
 - 종목분석·RS 5년 등 더 긴 기간 지원(과거 시세 조회 길이 확장).

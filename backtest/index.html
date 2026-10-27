@@ -101,7 +101,7 @@ button.li[aria-pressed=true]{background:var(--wash)}
     <p class="meta" id="meta">단기 이평선이 장기 이평선을 위로 뚫은 다음 날 시가에 사고, 아래로 뚫은 다음 날 시가에 팝니다.</p>
   </header>
 
-  <section class="card" id="connect" hidden>
+  <section class="card" id="connect">
     <h2>Apps Script 연결</h2>
     <div class="row">
       <label class="fld" style="flex:1 1 280px"><span>웹 앱 주소</span><input type="text" id="cUrl" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label>
@@ -133,7 +133,7 @@ button.li[aria-pressed=true]{background:var(--wash)}
     </details>
     <div class="row"><button type="button" class="primary" id="go">실행</button><button type="button" id="upd">최신으로 업데이트</button><span class="sub" id="status"></span></div>
     <div class="prog" id="prog" hidden><i></i></div>
-    <div class="row"><span class="note" id="storeTxt"></span><button type="button" id="storeClear" hidden>지우기</button></div>
+    <div class="row"><span class="note" id="storeTxt"></span><button type="button" id="storeClear" hidden>지우기</button><button type="button" id="openConnect">Apps Script 연결</button></div>
     <div class="banner" id="warn" hidden></div>
   </section>
 
@@ -602,6 +602,7 @@ $('storeClear').onclick = async () => {
 };
 
 fillInputs();
-if (!getSync()) showConnect('백테스트용 Apps Script의 웹 앱 주소와 비밀번호를 넣어 주세요.');
+if (!getSync()) showConnect('백테스트용 Apps Script의 웹 앱 주소와 비밀번호를 넣어 주세요.'); else $('connect').hidden = true;
+$('openConnect').onclick = () => { showConnect(''); $('connect').scrollIntoView({behavior: 'smooth', block: 'start'}); };
 showStore();
 </script>

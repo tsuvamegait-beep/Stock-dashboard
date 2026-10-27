@@ -1378,7 +1378,8 @@ const ANA_LS = 'portfolio-ana', CR_LS = 'portfolio-credit';
 const ANA_PER = RS_PER.filter(p => ['1m', '3m', '6m', 'ytd', '1y'].indexOf(p.id) >= 0);
 const ana = (() => { const d = {sel: '', per: '6m', view: 'stock'}; try { return Object.assign(d, JSON.parse(localStorage.getItem(ANA_LS) || '{}')); } catch (e) { return d; } })();
 ana.msg = ''; ana.busy = false; ana.tried = false;
-const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per, view: ana.view, base: ana.base})); } catch (e) {} };
+if (ana.view === 'credit' && !ana.c1y) ana.per = '1y'; ana.c1y = 1; // 한 번만: 이미 신용잔고 보기에 있던 화면도 1년으로
+const anaSave = () => { try { localStorage.setItem(ANA_LS, JSON.stringify({sel: ana.sel, per: ana.per, view: ana.view, base: ana.base, c1y: 1})); } catch (e) {} };
 let credit = null; try { credit = JSON.parse(localStorage.getItem(CR_LS) || 'null'); } catch (e) { credit = null; }
 const creditSave = () => { try { localStorage.setItem(CR_LS, JSON.stringify(credit)); } catch (e) {} };
 function crDate(x) {
@@ -1624,7 +1625,7 @@ function renderAna(C) {
   qi.addEventListener('change', pick); qi.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pick(); } });
   if (base) mk('span', {class: 'sub'}, r1, base.t);
   const r2 = mk('div', {class: 'row', style: 'margin-top:10px'}, c), vseg = mk('span', {class: 'seg', role: 'group', 'aria-label': '보기', style: 'overflow-x:auto;max-width:100%'}, r2);
-  ANA_VIEWS.forEach(v => { const b = mk('button', {type: 'button', 'aria-pressed': String(v.id === ana.view)}, vseg, v.l); b.addEventListener('click', () => { ana.view = v.id; anaSave(); render(); }); });
+  ANA_VIEWS.forEach(v => { const b = mk('button', {type: 'button', 'aria-pressed': String(v.id === ana.view)}, vseg, v.l); b.addEventListener('click', () => { if (v.id === 'credit' && ana.view !== 'credit') ana.per = '1y'; ana.view = v.id; anaSave(); render(); }); }); // 신용잔고 비교는 1년으로 열림
   const r3 = mk('div', {class: 'row', style: 'margin-top:8px'}, c), seg = mk('span', {class: 'seg', role: 'group', 'aria-label': '기간', style: 'overflow-x:auto;max-width:100%'}, r3);
   ANA_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { ana.per = p.id; anaSave(); render(); }); });
   if (!base) { mk('p', {class: 'sub', style: 'margin:12px 0 0'}, c, '분석할 종목을 입력하세요.'); return; }

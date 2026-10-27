@@ -8,6 +8,13 @@
 - 서버 없음. 데이터는 브라우저 localStorage + 구글 시트 + Apps Script 웹 앱.
 - `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
 
+## 백테스트(`backtest/`, 대시보드와 분리)
+- `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).
+- Apps Script: `?universe=1` 나무 종목 마스터 `m_new_stock.mst`(CP949 237바이트, 코스피200=off168≠0, 코스닥150=off172 Y) → `[코드, 이름, 시장, k200, q150, 정지]`. `?candles=코드:시장,…&n=` 일봉(`/krstock/quote/v1/period`, gubun 1, 응답 `Output_1`), 30종목/요청, 220ms 간격. 나무에는 순위·조건검색 API가 없음.
+- 화면: 골든크로스 다음 날 시가 매수 / 데드크로스 다음 날 시가 매도, 손절 선택, 최대 보유 종목 수(빈자리는 20일 평균 거래대금 큰 순), 비용(수수료·매도세·슬리피지), 비교 = 첫날 상장 종목 동일금액 보유. 분할·배당락은 락구분코드가 있는 날 기준가÷전일종가로 과거 가격 보정(`prep`).
+- 저장: localStorage `backtest-sync` `backtest-cfg` `backtest-univ`, IndexedDB `backtest`/`bars`(일봉, 다음부터 빠진 최근 며칠만 받음).
+- 미확인: 실제 나무 응답(Output_1 필드·순서, array_cnt 상한, 수정주가 여부, 기준가 의미), Apps Script `MS949` 디코딩. 두 Apps Script가 같은 앱키로 토큰을 따로 받으면 서로의 토큰을 무효로 만드는지 모름.
+
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.

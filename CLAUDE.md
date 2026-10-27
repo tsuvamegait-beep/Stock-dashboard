@@ -12,9 +12,8 @@
 - `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).
 - Apps Script: `?universe=1` 나무 종목 마스터 `m_new_stock.mst`(CP949 237바이트, 코스피200=off168≠0, 코스닥150=off172 Y) → `[코드, 이름, 시장, k200, q150, 정지]`. `?candles=코드:시장,…&n=` 일봉(`/krstock/quote/v1/period`, gubun 1, 응답 `Output_1`), 30종목/요청, 220ms 간격. 나무에는 순위·조건검색 API가 없음.
 - 화면: 골든크로스 다음 날 시가 매수 / 데드크로스 다음 날 시가 매도, 손절 선택, 최대 보유 종목 수(빈자리는 20일 평균 거래대금 큰 순), 비용(수수료·매도세·슬리피지), 비교 = 첫날 상장 종목 동일금액 보유. 분할·배당락은 락구분코드가 있는 날 기준가÷전일종가로 과거 가격 보정(`prep`).
-- 시세 창고(구글 드라이브 "백테스트 시세" 폴더): `updateBars`가 코스피200+코스닥150+직접 입력 종목(`BT_EXTRA`)의 일봉을 종목당 최근 1550개까지 gzip JSON 조각 8개(`shard_0~7.json.gz`, 조각 = 코드 글자값 합 % 8, 화면 `shardOf`와 같은 식)로 저장. `setupBtTrigger`(편집기에서 한 번 실행)로 매일 18시 10분 갱신 + 즉시 첫 수집. 실행당 4분 30초 넘으면 저장 후 1분 뒤 `btContinue`로 이어감. 상태는 스크립트 속성 `BT_STATE`(조각 파일 id·갱신 시각), `?status=1`/`?shard=i`(gzip base64)로 제공.
-- 화면 저장: localStorage `backtest-sync` `backtest-cfg` `backtest-univ`, IndexedDB `backtest`(2판) `shards`(창고 조각을 압축 그대로, 갱신 시각이 같으면 다시 받지 않음) `bars`(창고에 없는 종목을 `?candles=`로 바로 받은 것, 압축, 그날만 사용). 화면에 저장 용량과 "지우기" 버튼. 압축 해제는 `DecompressionStream`.
-- 미확인: 실제 나무 응답(Output_1 필드·순서, array_cnt 상한, 수정주가 여부, 기준가 의미), Apps Script `MS949` 디코딩, 드라이브 창고 실제 동작(조각 크기·실행 시간, ungzip). 두 Apps Script가 같은 앱키로 토큰을 따로 받으면 서로의 토큰을 무효로 만드는지 모름.
+- 화면 저장: localStorage `backtest-sync` `backtest-cfg` `backtest-univ`(종목 목록, 업데이트 때만 새로), IndexedDB `backtest`(3판)/`bars` {c, gz(압축 일봉), n, last, at}. "실행"은 폰에 있는 시세로 계산하고 없거나 기간이 모자란 종목만 받음. "최신으로 업데이트"는 마지막 날짜 뒤만 받아 붙임(오늘 이미 받았으면 건너뜀, 16시 전에 받은 건 16시 뒤 한 번 더). 압축은 `CompressionStream`, 화면에 저장 용량·마지막 날짜와 "지우기". 구글 드라이브 창고 방식은 사용자 결정으로 쓰지 않음(2026-10-28).
+- 미확인: 실제 나무 응답(Output_1 필드·순서, array_cnt 상한, 수정주가 여부, 기준가 의미), Apps Script `MS949` 디코딩. 두 Apps Script가 같은 앱키로 토큰을 따로 받으면 서로의 토큰을 무효로 만드는지 모름.
 
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.

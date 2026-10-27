@@ -131,7 +131,7 @@ button.li[aria-pressed=true]{background:var(--wash)}
       </div>
       <p class="note">슬리피지: 시가보다 그만큼 비싸게 사고 싸게 판다고 보고 계산합니다.</p>
     </details>
-    <div class="row"><button type="button" class="primary" id="go">시세 받고 실행</button><span class="sub" id="status"></span></div>
+    <div class="row"><button type="button" class="primary" id="go">실행</button><button type="button" id="upd">최신으로 업데이트</button><span class="sub" id="status"></span></div>
     <div class="prog" id="prog" hidden><i></i></div>
     <div class="row"><span class="note" id="storeTxt"></span><button type="button" id="storeClear" hidden>지우기</button></div>
     <div class="banner" id="warn" hidden></div>
@@ -166,9 +166,9 @@ button.li[aria-pressed=true]{background:var(--wash)}
 
 <script>
 /* ===== 저장 =====
- * localStorage: backtest-sync {url, key} · backtest-cfg 조건 · backtest-univ {at, list} 종목 목록(하루)
- * IndexedDB backtest: shards {i, updated, gz} 드라이브 시세 창고 조각(받은 압축 그대로 보관)
- *                     bars {c, gz, at, n} 창고에 없어 바로 받은 종목(압축, 받은 날만 씀) */
+ * localStorage: backtest-sync {url, key} · backtest-cfg 조건 · backtest-univ {at, list} 종목 목록
+ * IndexedDB backtest/bars: {c 코드, gz 압축한 일봉, n 받은 봉 개수, last 마지막 날짜, at 받은 시각 yyyyMMddHH} — 압축해서 보관하고 계산할 때 한 번 풀어 메모리에 둠.
+ * 한 번 받은 종목은 "최신으로 업데이트"를 누를 때만 마지막 날짜 뒤를 더 받음 */
 const $ = id => document.getElementById(id);
 const LS = {sync: 'backtest-sync', cfg: 'backtest-cfg', univ: 'backtest-univ'};
 const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
@@ -183,54 +183,51 @@ function idb() {
   if (dbp) return dbp;
   dbp = new Promise((res, rej) => {
     if (!window.indexedDB) return rej(new Error('no idb'));
-    const r = indexedDB.open('backtest', 2);
-    r.onupgradeneeded = () => {
-      const db = r.result; // 1판은 압축 없이 종목별로 저장했음 → 지우고 새로 만듦
-      if (db.objectStoreNames.contains('bars')) db.deleteObjectStore('bars');
+    const r = indexedDB.open('backtest', 3);
+    r.onupgradeneeded = () => { // 예전 판(압축 없는 bars, 드라이브 창고용 shards)은 지우고 새로 만듦
+      const db = r.result;
+      [...db.objectStoreNames].forEach(n => db.deleteObjectStore(n));
       db.createObjectStore('bars', {keyPath: 'c'});
-      if (!db.objectStoreNames.contains('shards')) db.createObjectStore('shards', {keyPath: 'i'});
     };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
   });
   dbp.catch(() => { dbp = null; });
   return dbp;
 }
-const mem = {shards: {}, bars: {}}; // IndexedDB를 못 쓰는 브라우저(사생활 보호 창 등)에서는 이 페이지를 연 동안만 보관
-async function dbGet(store, keys) {
+const mem = {}; // IndexedDB를 못 쓰는 브라우저(사생활 보호 창 등)에서는 이 페이지를 연 동안만 보관
+async function barsGet(codes) {
   const out = {};
   try {
     const db = await idb();
-    await Promise.all(keys.map(k => new Promise(res => { const q = db.transaction(store).objectStore(store).get(k); q.onsuccess = () => { if (q.result) out[k] = q.result; res(); }; q.onerror = () => res(); })));
+    await Promise.all(codes.map(c => new Promise(res => { const q = db.transaction('bars').objectStore('bars').get(c); q.onsuccess = () => { if (q.result) out[c] = q.result; res(); }; q.onerror = () => res(); })));
   } catch (e) {}
-  keys.forEach(k => { if (!out[k] && mem[store][k]) out[k] = mem[store][k]; });
+  codes.forEach(c => { if (!out[c] && mem[c]) out[c] = mem[c]; });
   return out;
 }
-async function dbPut(store, recs) {
-  const key = store === 'shards' ? 'i' : 'c';
-  recs.forEach(r => { mem[store][r[key]] = r; });
+async function barsPut(recs) {
+  recs.forEach(r => { mem[r.c] = r; });
   try {
     const db = await idb();
-    await new Promise(res => { const tx = db.transaction(store, 'readwrite'); recs.forEach(r => tx.objectStore(store).put(r)); tx.oncomplete = res; tx.onerror = res; });
+    await new Promise(res => { const tx = db.transaction('bars', 'readwrite'); recs.forEach(r => tx.objectStore('bars').put(r)); tx.oncomplete = res; tx.onerror = res; });
   } catch (e) {}
 }
-async function dbAll(store) {
+async function barsAll() {
   try {
     const db = await idb();
-    return await new Promise(res => { const q = db.transaction(store).objectStore(store).getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
-  } catch (e) { return Object.values(mem[store]); }
+    return await new Promise(res => { const q = db.transaction('bars').objectStore('bars').getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => res([]); });
+  } catch (e) { return Object.values(mem); }
 }
-async function dbClear() {
-  mem.shards = {}; mem.bars = {};
-  try { const db = await idb(); db.close(); } catch (e) {}
+async function barsClear() {
+  Object.keys(mem).forEach(k => { delete mem[k]; });
+  try { (await idb()).close(); } catch (e) {}
   dbp = null;
   await new Promise(res => { try { const r = indexedDB.deleteDatabase('backtest'); r.onsuccess = r.onerror = r.onblocked = () => res(); } catch (e) { res(); } });
-  try { localStorage.removeItem(LS.univ); } catch (e) {}
 }
-// 압축: 창고 조각은 Apps Script가 gzip으로 줌. 폰에 둘 때도 압축한 채로 보관하고 계산할 때만 풂
 const canGz = !!(window.CompressionStream && window.DecompressionStream);
 const gunzip = async u8 => new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 const gzip = async s => new Uint8Array(await new Response(new Blob([s]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
-const b64u8 = b => { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; };
+const packRows = async rows => canGz ? {gz: await gzip(JSON.stringify(rows))} : {raw: JSON.stringify(rows)}; // 압축을 못 하는 브라우저는 그대로 보관
+const unpackRows = async r => JSON.parse(r.gz ? await gunzip(r.gz) : r.raw);
 
 /* ===== 날짜 ===== */
 const kstToday = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10).replace(/-/g, '');
@@ -265,14 +262,14 @@ $('cSave').onclick = async () => {
   const url = $('cUrl').value.trim(), key = $('cKey').value;
   if (!/^https:\/\/script\.google\.com\//.test(url)) { $('cMsg').textContent = 'script.google.com으로 시작하는 웹 앱 주소를 넣어 주세요.'; return; }
   lsSet(LS.sync, {url, key}); $('cMsg').textContent = '확인 중…';
-  try { await api('ping=1'); $('cMsg').textContent = ''; $('connect').hidden = true; setStatus('연결됐습니다. "시세 받고 실행"을 눌러 주세요.'); }
+  try { await api('ping=1'); $('cMsg').textContent = ''; $('connect').hidden = true; setStatus('연결됐습니다. "실행"을 눌러 주세요.'); }
   catch (e) { $('cMsg').textContent = '연결 실패: ' + e.message; }
 };
 
 /* ===== 종목 목록 ===== */
-async function universe(force) {
+async function universe(force) { // 한 번 받은 목록을 계속 씀(업데이트 때만 새로)
   const c = lsGet(LS.univ, null);
-  if (!force && c && c.at === kstToday() && c.list && c.list.length) return c.list;
+  if (!force && c && c.list && c.list.length) return c.list;
   const j = await api('universe=1');
   lsSet(LS.univ, {at: kstToday(), list: j.list});
   return j.list;
@@ -292,80 +289,66 @@ function pickCodes(list) {
 }
 
 /* ===== 시세 받기 =====
- * 1) Apps Script 시세 창고(구글 드라이브, 매일 저녁 갱신)에서 필요한 조각만 받음. 폰에 있는 조각과 갱신 시각이 같으면 받지 않음
- * 2) 창고에 없는 종목(직접 입력한 종목 등)은 나무에서 바로 받음 — 그 종목은 다음 날부터 창고에도 들어감 */
-const SHARDS = 8;
-const shardOf = c => { let s = 0; for (let i = 0; i < c.length; i++) s += c.charCodeAt(i); return s % SHARDS; }; // Apps Script shardOf_와 같은 식
+ * 실행: 폰에 있는 시세로 계산하고, 없는 종목이나 기간이 모자란 종목만 받음
+ * 업데이트(update=true): 이미 있는 종목도 마지막 날짜 뒤를 받아 붙임(마지막 며칠은 장중 값일 수 있어 다시 받아 덮어씀). 종목 목록도 새로 받음
+ * 필요한 봉 수 = 기간(1년 약 250거래일) + 장기 이평 계산용 여유 */
+const kstHour = () => new Date(Date.now() + 9 * 3600e3).getUTCHours();
+// 오늘 이미 받았으면 업데이트를 건너뜀(장 마감 16시 전에 받은 것은 16시 이후에 한 번 더 받음)
+const fetchedNow = at => !!at && at.slice(0, 8) === kstToday() && (kstHour() < 16 || +at.slice(8) >= 16);
 const needBars = () => cfg.years * 250 + Math.max(cfg.ml, 20) + 30;
-let loaded = {}, storeSt = null; // loaded: 코드 → {rows, name}
-async function fetchAll() {
-  if (!canGz) throw new Error('이 브라우저는 압축 풀기를 지원하지 않습니다. 크롬이나 삼성 인터넷 최신판으로 열어 주세요');
-  const list = await universe();
+let loaded = {}; // 코드 → {rows, name} (풀어 둔 일봉)
+async function fetchAll(update) {
+  const list = await universe(update);
   const {sel, warn} = pickCodes(list);
   if (warn.length) showWarn('찾지 못한 종목: ' + warn.join(', '));
   if (!sel.length) throw new Error('종목이 없습니다');
-  const n = needBars(), today = kstToday(), rows = {}, errs = [];
-  setStatus('시세 창고 확인 중…');
-  const st = await api('status=1'); storeSt = st;
-  const need = [...new Set(sel.map(r => shardOf(r[0])))].filter(i => st.shards && st.shards[i]).sort((x, y) => x - y);
-  const have = await dbGet('shards', need);
-  progress(0);
-  for (let k = 0; k < need.length; k++) {
-    const i = need[k]; let rec = have[i];
-    if (!rec || rec.updated !== st.shards[i].updated) {
-      setStatus('창고에서 시세 받는 중… ' + (k + 1) + ' / ' + need.length);
-      const j = await api('shard=' + i);
-      rec = {i, updated: j.updated, gz: b64u8(j.b64)};
-      await dbPut('shards', [rec]);
+  const n = needBars(), today = kstToday(), stamp = today + String(kstHour()).padStart(2, '0');
+  setStatus('폰에 있는 시세 확인 중…');
+  const have = await barsGet(sel.map(r => r[0]));
+  const full = [], inc = [];
+  sel.forEach(r => {
+    const h = have[r[0]];
+    if (!h || h.n < n) full.push({r, n});
+    else if (update && h.last < today && !fetchedNow(h.at)) inc.push({r, n: Math.min(n, Math.ceil((toDate(today) - toDate(h.last)) / 864e5 * 5 / 7) + 5)});
+  });
+  const jobs = [];
+  for (let i = 0; i < full.length; i += 30) jobs.push(full.slice(i, i + 30));
+  for (let i = 0; i < inc.length; i += 30) jobs.push(inc.slice(i, i + 30));
+  const total = full.length + inc.length, errs = [], fresh = {};
+  let done = 0;
+  progress(total ? 0 : 1);
+  for (const job of jobs) {
+    setStatus('시세 받는 중… ' + done + ' / ' + total + '종목');
+    const j = await api('candles=' + job.map(x => x.r[0] + ':' + x.r[2]).join(',') + '&n=' + Math.max.apply(null, job.map(x => x.n)));
+    const recs = [];
+    for (const x of job) {
+      const c = x.r[0], got = j.data && j.data[c], h = have[c];
+      if (!got || !got.length) { errs.push(x.r[1] + (j.errors && j.errors[c] ? '(' + j.errors[c] + ')' : '')); continue; }
+      let rows = got;
+      if (h && h.n >= n) { const m = {}; (await unpackRows(h)).forEach(b => { m[b[0]] = b; }); got.forEach(b => { m[b[0]] = b; }); rows = Object.keys(m).sort().map(d => m[d]); }
+      fresh[c] = rows;
+      recs.push(Object.assign({c, n: Math.max(n, h ? h.n : 0), last: rows[rows.length - 1][0], at: stamp}, await packRows(rows)));
     }
-    const obj = JSON.parse(await gunzip(rec.gz));
-    sel.forEach(r => { if (shardOf(r[0]) === i && obj[r[0]] && obj[r[0]].length) rows[r[0]] = obj[r[0]]; });
-    progress((k + 1) / (need.length + 1));
+    await barsPut(recs);
+    done += job.length; progress(done / total);
   }
-  const miss = sel.filter(r => !rows[r[0]]);
-  if (miss.length) {
-    const cached = await dbGet('bars', miss.map(r => r[0])), todo = [];
-    for (const r of miss) { const c = cached[r[0]]; if (c && c.at === today && c.n >= n) rows[r[0]] = JSON.parse(await gunzip(c.gz)); else todo.push(r); }
-    if (todo.length > 60) {
-      const run = st.run;
-      throw new Error('시세 창고에 아직 없는 종목이 ' + todo.length + '개입니다. ' + (run && run.left ? '창고를 채우는 중이에요(남은 ' + run.left + '종목). 몇 분 뒤 다시 눌러 주세요.' : 'Apps Script 편집기에서 setupBtTrigger를 한 번 실행해 주세요.'));
-    }
-    for (let a = 0; a < todo.length; a += 30) {
-      const job = todo.slice(a, a + 30);
-      setStatus('창고에 없는 종목 받는 중… ' + a + ' / ' + todo.length);
-      const j = await api('candles=' + job.map(r => r[0] + ':' + r[2]).join(',') + '&n=' + n);
-      const recs = [];
-      for (const r of job) {
-        const x = j.data && j.data[r[0]];
-        if (!x || !x.length) { errs.push(r[1] + (j.errors && j.errors[r[0]] ? '(' + j.errors[r[0]] + ')' : '')); continue; }
-        rows[r[0]] = x; recs.push({c: r[0], gz: await gzip(JSON.stringify(x)), at: today, n});
-      }
-      await dbPut('bars', recs);
-    }
-  }
-  progress(1);
   loaded = {};
-  sel.forEach(r => { if (rows[r[0]]) loaded[r[0]] = {rows: rows[r[0]], name: r[1]}; });
+  for (const r of sel) {
+    const c = r[0], rows = fresh[c] || (have[c] ? await unpackRows(have[c]) : null);
+    if (rows && rows.length) loaded[c] = {rows, name: r[1]};
+  }
   if (errs.length) showWarn('못 받은 종목 ' + errs.length + '개: ' + errs.slice(0, 5).join(', ') + (errs.length > 5 ? ' 외' : ''));
   showStore();
-  return sel.length;
+  return total;
 }
-// 폰에 저장된 양(압축된 크기)과 창고 상태
+// 폰에 저장된 양(압축된 크기)과 가장 최근 날짜
 async function showStore() {
-  const recs = (await dbAll('shards')).concat(await dbAll('bars'));
-  const bytes = recs.reduce((t, r) => t + (r.gz ? r.gz.byteLength : 0), 0), st = storeSt;
-  let t = '폰에 저장된 시세 ' + (bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + 'MB' : Math.round(bytes / 1e3) + 'KB');
-  if (st && st.run) {
-    const d = new Date(st.run.at), mm = String(d.getMinutes()).padStart(2, '0');
-    t += ' · 창고 ' + st.tracked + '종목, ' + (d.getMonth() + 1) + '/' + d.getDate() + ' ' + d.getHours() + ':' + mm + ' 갱신' + (st.run.left ? ' (남은 ' + st.run.left + '종목 채우는 중)' : '');
-  }
-  $('storeTxt').textContent = t;
-  $('storeClear').hidden = !bytes;
+  const recs = await barsAll();
+  const bytes = recs.reduce((t, r) => t + (r.gz ? r.gz.byteLength : r.raw ? r.raw.length : 0), 0);
+  const last = recs.reduce((m, r) => r.last > m ? r.last : m, '');
+  $('storeTxt').textContent = recs.length ? '폰에 저장된 시세 ' + recs.length + '종목 · ' + (bytes >= 1e6 ? (bytes / 1e6).toFixed(1) + 'MB' : Math.round(bytes / 1e3) + 'KB') + ' · ' + fmtD(last) + '까지' : '폰에 저장된 시세 없음';
+  $('storeClear').hidden = !recs.length;
 }
-$('storeClear').onclick = async () => {
-  if (!confirm('폰에 저장된 시세를 지울까요? 다음 실행 때 창고에서 다시 받습니다.')) return;
-  await dbClear(); loaded = {}; R = null; dataKey = ''; render(); showStore(); setStatus('지웠습니다.');
-};
 
 /* ===== 분할·배당락 보정 =====
  * 락(권리락·배당락·액면분할 등)이 있는 날은 기준가가 "보정된 전날 종가"라서, 기준가 ÷ 전날 종가 비율을 그 전 가격 전부에 곱함.
@@ -574,7 +557,7 @@ const needKey = () => cfg.uni + '|' + (cfg.uni === 'custom' ? cfg.custom : '') +
 function changed() {
   lsSet(LS.cfg, cfg);
   if (!Object.keys(loaded).length) return;
-  if (needKey() !== dataKey) { setStatus('종목·기간이 바뀌었습니다. "시세 받고 실행"을 눌러 주세요.'); return; }
+  if (needKey() !== dataKey) { setStatus('종목·기간이 바뀌었습니다. "실행"을 눌러 주세요.'); return; }
   runLocal();
 }
 function runLocal() {
@@ -596,20 +579,26 @@ Object.keys(NUMS).forEach(k => {
     $(k).value = v; cfg[k] = v; changed();
   };
 });
-$('go').onclick = async () => {
-  if (!getSync()) { showConnect('먼저 백테스트용 Apps Script를 연결해 주세요.'); return; }
+async function go(update) {
   if (cfg.ms >= cfg.ml) { showWarn('단기 이평은 장기 이평보다 짧아야 합니다.'); return; }
-  $('go').disabled = true; showWarn('');
+  $('go').disabled = $('upd').disabled = true; showWarn('');
   try {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    await fetchAll();
+    const got = await fetchAll(update);
     dataKey = needKey();
     runLocal();
+    if (update && !got) setStatus('이미 최신입니다. ' + $('status').textContent);
   } catch (e) {
     setStatus(''); progress(1);
     showWarn('실패: ' + e.message);
     if (/비밀번호|연결|응답을 읽지/.test(e.message)) showConnect();
-  } finally { $('go').disabled = false; }
+  } finally { $('go').disabled = $('upd').disabled = false; }
+}
+$('go').onclick = () => go(false);
+$('upd').onclick = () => go(true);
+$('storeClear').onclick = async () => {
+  if (!confirm('폰에 저장된 시세를 모두 지울까요? 다음 실행 때 다시 받습니다.')) return;
+  await barsClear(); loaded = {}; R = null; dataKey = ''; render(); showStore(); setStatus('지웠습니다.');
 };
 
 fillInputs();

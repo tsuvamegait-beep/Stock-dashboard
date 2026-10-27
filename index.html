@@ -8,7 +8,7 @@
 <script>/* 저장된 테마 적용(없거나 모르는 값이면 리포트). 테마 목록은 아래 THEMES와 맞출 것: [id, 어두운가, 상단바 색] */
 /* RPG 테마만 쓰는 픽셀 글꼴(갈무리)은 그 테마일 때만 불러옴 */
 window.__themeFont=function(id){if(id!=="rpg"||document.getElementById("font-rpg"))return;var l=document.createElement("link");l.id="font-rpg";l.rel="stylesheet";l.href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css";document.head.appendChild(l)};
-(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
+(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"],["vault",1,"#0f1a17"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
 var th=L.filter(function(x){return x[0]===t})[0]||L[0];document.documentElement.setAttribute("data-theme",th[0]);__themeFont(th[0]);
 document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]?"dark":"only light");document.querySelector('meta[name="theme-color"]').setAttribute("content",th[2])})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -40,6 +40,18 @@ document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]
   --accent:oklch(80% .11 80); --field:oklch(15% .02 260); --warn-bg:oklch(27% .04 80); --warn-ink:oklch(86% .09 85);
   --up:oklch(70% .19 25); --dn:oklch(72% .14 245); color-scheme:dark;
 }
+
+/* 금고(어두움): 짙은 녹색 바탕 + 크림 글씨 + 황동 포인트. 강조색이 빨강·파랑이 아니라 손익색과 겹치지 않음 */
+:root[data-theme="vault"]{
+  --plane:#0f1a17; --surface:#16241f; --ink:#e8e2d0; --ink2:#c9c3b1; --muted:#8fa198;
+  --grid:#20302a; --axis:#34483f; --hair:rgb(232 226 208 / .14); --wash:rgb(232 226 208 / .06);
+  --s1:#c9a45c; --s2:#6fbfa6; --s3:#e08a5a; --s4:#b6a7e8; --s5:#d96f95; --s6:#8fc46a; --s7:#7fb3d5; --s8:#e0c97a;
+  --accent:#c9a45c; --field:#0b1411; --warn-bg:#2b2a1b; --warn-ink:#e6cf94;
+  --up:#ff6b5e; --dn:#5b9bff; color-scheme:dark;
+}
+:root[data-theme="vault"] .top{border-bottom-color:var(--accent)}
+:root[data-theme="vault"] button.primary{color:#0f1a17}
+:root[data-theme="vault"] input[type=checkbox]{accent-color:var(--accent)}
 
 /* RPG(도스 게임 감성): 짙은 나무색 바탕 + 양피지 창 + 금색 입체 테두리, 갈무리 픽셀 글꼴 */
 :root[data-theme="rpg"]{
@@ -1760,7 +1772,8 @@ function anaCreditData(out, msgs, per) {
 const THEMES = [
   {id: 'light', name: '리포트', tag: '기본 · 밝음', desc: '증권사 리포트처럼 크림색 종이에 남색 글씨. 총자산은 명조, 숫자는 자릿수가 맞는 고정폭 글꼴입니다.', sw: ['#f8f4ec', '#fbf9f4', '#1b2233', '#22407c'], dark: false, bar: '#f8f4ec'},
   {id: 'night', name: '밤의 리포트', tag: '어두움', desc: '리포트의 남색을 바탕으로 뒤집고 크림색 글씨, 황동색 포인트. 같은 배치로 밤에 보기 편합니다.', sw: ['#12182a', '#1a2134', '#efe9da', '#d9b36a'], dark: true, bar: '#12182a'},
-  {id: 'rpg', name: 'RPG', tag: '도트 · 도스 게임 감성', desc: '짙은 나무색 바탕에 양피지 창, 금색 입체 테두리. 픽셀 글꼴과 칸칸이 끊긴 HP바 막대로 옛 RPG 화면처럼 보입니다.', sw: ['#3d2a1c', '#eadcbc', '#3a2a1c', '#d4a94a'], dark: true, bar: '#3d2a1c'}
+  {id: 'rpg', name: 'RPG', tag: '도트 · 도스 게임 감성', desc: '짙은 나무색 바탕에 양피지 창, 금색 입체 테두리. 픽셀 글꼴과 칸칸이 끊긴 HP바 막대로 옛 RPG 화면처럼 보입니다.', sw: ['#3d2a1c', '#eadcbc', '#3a2a1c', '#d4a94a'], dark: true, bar: '#3d2a1c'},
+  {id: 'vault', name: '금고', tag: '어두움 · 녹색과 황동', desc: '짙은 녹색 바탕에 크림색 글씨, 황동색 포인트. 강조색이 빨강·파랑이 아니라 손익 색과 헷갈리지 않습니다.', sw: ['#0f1a17', '#16241f', '#e8e2d0', '#c9a45c'], dark: true, bar: '#0f1a17'}
 ];
 // 고른 적이 없거나 없어진 테마면 리포트(light)
 function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); return THEMES.some(x => x.id === t) ? t : 'light'; } catch (e) { return 'light'; } }

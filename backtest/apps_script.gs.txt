@@ -9,6 +9,9 @@
  *    이름 NH_APP_KEY / 값 nhplug.com 앱키,  이름 NH_APP_SECRET / 값 앱시크릿  (키는 코드에 직접 적지 마세요)
  * 4) 배포 > 새 배포 > 유형: 웹 앱 > 실행 계정: 나 > 액세스 권한: 모든 사용자 → 나온 웹 앱 주소를 백테스트 화면에 입력
  *    코드를 고친 뒤에는 "배포 관리 → 수정(연필) → 버전: 새 버전"으로 배포(주소가 그대로 유지됨)
+ * 5) 시세 창고(구글 드라이브) 켜기: 프로젝트 설정 > 시간대를 "(GMT+09:00) 서울"로 → 함수 선택에서 setupBtTrigger → 실행
+ *    (처음 한 번 드라이브 권한을 묻습니다.) 바로 350종목 시세를 모으기 시작하고, 이후 매일 18시 10분쯤 자동 갱신합니다.
+ *    드라이브 "백테스트 시세" 폴더에 압축 파일 8개(shard_0~7.json.gz)로 저장됩니다. 폴더를 지우면 다음 실행 때 새로 만듭니다.
  * 확인용: 편집기 위쪽 함수 선택에서 testBt → 실행 → 실행 로그 확인
  */
 const SECRET_KEY = '여기에-나만-아는-긴-비밀번호를-적으세요';
@@ -19,12 +22,16 @@ function out_(obj) {
 // ?universe=1 : 국내 종목 목록. 한 종목 = [코드, 이름, 시장(1 코스피·4 코스닥), 코스피200(1/0), 코스닥150(1/0), 거래정지(1/0)]
 // ?candles=005930:1,035720:1&n=1400 : 종목별 일봉(오래된 날짜 → 최근). 한 요청에 최대 30종목.
 //   한 봉 = [yyyyMMdd, 시가, 고가, 저가, 종가, 거래량, 기준가, 락구분코드] — 분할·배당락 보정은 백테스트 화면에서 기준가로 함
+//   창고에 없는 종목(직접 입력)을 받을 때 쓰고, 그 종목은 다음 창고 갱신부터 함께 모읍니다.
+// ?status=1 : 시세 창고 상태(조각별 갱신 시각·종목 수, 마지막 실행) / ?shard=0~7 : 창고 조각 하나(gzip을 base64로)
 function doGet(e) {
   const q = (e && e.parameter) || {};
   if (q.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   try {
     if (q.universe) return out_({ok: true, list: universe_()});
     if (q.candles) return out_(candlesMany_(String(q.candles), +q.n || 300));
+    if (q.status) return out_(btStatus_());
+    if (q.shard != null && q.shard !== '') return out_(btShard_(+q.shard));
     return out_({ok: true, hello: '백테스트 Apps Script 연결됨'});
   } catch (err) { return out_({ok: false, error: String(err && err.message || err)}); }
 }
@@ -124,12 +131,109 @@ function candlesMany_(codes, n) {
   if (!list.length) return {ok: false, error: '종목코드가 없습니다'};
   n = Math.max(5, Math.min(n, 3000));
   const data = {}, errors = {};
+  btTrack_(list);
   list.forEach((s, i) => {
     const [code, mkt] = s.split(':');
     if (i) Utilities.sleep(220);
     try { data[code] = candles_(code, mkt, n); } catch (err) { errors[code] = String(err && err.message || err); }
   });
   return {ok: true, data, errors};
+}
+
+/* ===== 시세 창고(구글 드라이브) =====
+ * 종목을 코드 글자값 합 % 8로 조각 8개에 나눠 담음(백테스트 화면의 shardOf와 같은 식). 조각 = gzip한 JSON {코드: 일봉[], _at: {코드: 받은 시각 yyyyMMddHH}}
+ * 대상: 코스피200 + 코스닥150 + 화면에서 직접 입력해 받은 종목(BT_EXTRA). 종목당 최근 BT_KEEP개 봉만 보관(5년 + 이평 여유).
+ * 실행 한 번이 6분을 넘지 못해서 4분 30초가 되면 저장하고 1분 뒤 이어서 실행(btContinue). 상태는 스크립트 속성 BT_STATE. */
+const BT_SHARDS = 8, BT_KEEP = 1550, BT_CLOSE_HOUR = 16; // 16시 이후에 받은 봉만 그날 종가로 확정 봄
+function shardOf_(code) { let s = 0; for (let i = 0; i < code.length; i++) s += code.charCodeAt(i); return s % BT_SHARDS; }
+function btState_() { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('BT_STATE') || '{}') || {}; } catch (e) { return {}; } }
+function btSaveState_(st) { PropertiesService.getScriptProperties().setProperty('BT_STATE', JSON.stringify(st)); }
+function btFolder_() {
+  const p = PropertiesService.getScriptProperties(), id = p.getProperty('BT_FOLDER');
+  if (id) { try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch (e) {} }
+  const f = DriveApp.createFolder('백테스트 시세'); p.setProperty('BT_FOLDER', f.getId()); return f;
+}
+function btTracked_() { // [[코드, 시장]]
+  const out = [], seen = {};
+  universe_().forEach(r => { if ((r[3] || r[4]) && !seen[r[0]]) { seen[r[0]] = 1; out.push([r[0], r[2]]); } });
+  String(PropertiesService.getScriptProperties().getProperty('BT_EXTRA') || '').split(',').forEach(s => { const [c, m] = s.split(':'); if (c && m && !seen[c]) { seen[c] = 1; out.push([c, m]); } });
+  return out;
+}
+function btTrack_(list) { // 직접 입력 종목을 창고 대상에 추가(최근 것 300개까지)
+  const p = PropertiesService.getScriptProperties(), cur = String(p.getProperty('BT_EXTRA') || '').split(',').filter(Boolean);
+  const big = {}; try { universe_().forEach(r => { if (r[3] || r[4]) big[r[0]] = 1; }); } catch (e) { return; }
+  const add = list.filter(s => !big[s.split(':')[0]] && cur.indexOf(s) < 0);
+  if (add.length) p.setProperty('BT_EXTRA', cur.concat(add).slice(-300).join(','));
+}
+function shardRead_(meta) {
+  if (!meta || !meta.id) return {};
+  try { const b = DriveApp.getFileById(meta.id).getBlob().setContentType('application/x-gzip'); return JSON.parse(Utilities.ungzip(b).getDataAsString()); }
+  catch (e) { return {}; }
+}
+function shardWrite_(i, data, st) {
+  const gz = Utilities.gzip(Utilities.newBlob(JSON.stringify(data), 'application/json'), 'shard_' + i + '.json.gz');
+  const f = btFolder_().createFile(gz), old = st.shards[i];
+  if (old && old.id) { try { DriveApp.getFileById(old.id).setTrashed(true); } catch (e) {} }
+  st.shards[i] = {id: f.getId(), updated: Date.now(), count: Object.keys(data).filter(k => k[0] !== '_').length, size: gz.getBytes().length};
+}
+function updateBars() {
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(5000)) return;
+  const t0 = Date.now(), now = new Date(), today = Utilities.formatDate(now, 'Asia/Seoul', 'yyyyMMdd'), hour = +Utilities.formatDate(now, 'Asia/Seoul', 'H');
+  const stamp = today + Utilities.formatDate(now, 'Asia/Seoul', 'HH'), dayNum = d => Date.UTC(+d.slice(0, 4), +d.slice(4, 6) - 1, +d.slice(6, 8)) / 864e5;
+  try {
+    const st = btState_(); st.shards = st.shards || {};
+    const by = {}; btTracked_().forEach(x => { const i = shardOf_(x[0]); (by[i] = by[i] || []).push(x); });
+    let left = 0, done = 0, errs = 0, first = true;
+    for (let i = 0; i < BT_SHARDS; i++) {
+      const items = by[i] || [];
+      if (Date.now() - t0 > 270000) { left += items.length; continue; }
+      const old = shardRead_(st.shards[i]), at = old._at || {}, data = {_at: {}};
+      items.forEach(([c]) => { if (old[c]) { data[c] = old[c]; data._at[c] = at[c] || ''; } });
+      let changed = !st.shards[i] || Object.keys(old).filter(k => k[0] !== '_').length !== Object.keys(data).length - 1; // 빠진 종목 정리
+      for (let k = 0; k < items.length; k++) {
+        const [code, mkt] = items[k], got = data._at[code] || '', rows = data[code];
+        const fresh = got.slice(0, 8) === today && (hour < BT_CLOSE_HOUR || +got.slice(8) >= BT_CLOSE_HOUR);
+        if (rows && fresh) { done++; continue; }
+        if (Date.now() - t0 > 270000) { left += items.length - k; break; }
+        if (!first) Utilities.sleep(220); // 초당 5회 제한
+        first = false;
+        try {
+          const n = rows && rows.length ? Math.min(BT_KEEP, Math.ceil((dayNum(today) - dayNum(rows[rows.length - 1][0])) * 5 / 7) + 5) : BT_KEEP;
+          const m = {};
+          (rows || []).forEach(b => { m[b[0]] = b; });
+          candles_(code, mkt, n).forEach(b => { m[b[0]] = b; }); // 겹치는 날은 새로 받은 값(장중에 받은 값을 덮어씀)
+          data[code] = Object.keys(m).sort().slice(-BT_KEEP).map(d => m[d]);
+          data._at[code] = stamp; changed = true; done++;
+        } catch (err) { errs++; }
+      }
+      if (changed) shardWrite_(i, data, st);
+    }
+    st.run = {at: Date.now(), done, left, errs};
+    btSaveState_(st);
+    if (left > 0) ScriptApp.newTrigger('btContinue').timeBased().after(60 * 1000).create();
+  } finally { lock.releaseLock(); }
+}
+function btContinue() {
+  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'btContinue') ScriptApp.deleteTrigger(t); });
+  updateBars();
+}
+// 편집기에서 한 번 실행: 매일 18시 10분쯤 자동 갱신을 켜고 바로 첫 수집을 시작
+function setupBtTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => { if (['updateBars', 'btContinue'].indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('updateBars').timeBased().atHour(18).nearMinute(10).everyDays(1).inTimezone('Asia/Seoul').create();
+  updateBars();
+  const st = btState_();
+  Logger.log('자동 갱신 켬. 이번 실행: ' + JSON.stringify(st.run) + (st.run && st.run.left ? ' → 남은 종목은 1분 뒤부터 이어서 받습니다' : ''));
+}
+function btStatus_() {
+  const st = btState_(), shards = {};
+  Object.keys(st.shards || {}).forEach(i => { const s = st.shards[i]; shards[i] = {updated: s.updated, count: s.count, size: s.size}; });
+  return {ok: true, n: BT_SHARDS, shards, run: st.run || null, tracked: btTracked_().length};
+}
+function btShard_(i) {
+  const meta = (btState_().shards || {})[i];
+  if (!meta || !meta.id) return {ok: false, error: '창고 조각 ' + i + '이 아직 없습니다'};
+  return {ok: true, i, updated: meta.updated, b64: Utilities.base64Encode(DriveApp.getFileById(meta.id).getBlob().getBytes())};
 }
 
 // 편집기에서 직접 실행해 보는 확인용: 종목 수와 삼성전자 최근 일봉 3개, 받은 봉 개수를 로그에 남김

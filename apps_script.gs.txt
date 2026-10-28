@@ -53,6 +53,7 @@ function doPost(e) {
   if (body.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   if (body.action === 'saveTrades') return out_(saveTrades_(body.account, body.rows));
   if (body.action === 'saveCredit') return out_(saveCredit_(body.rows));
+  if (body.action === 'deleteHistory') return out_(deleteHistory_(String(body.d || '')));
   if (body.action === 'saveHistoryFill') return out_(saveHistoryFill_(body.rows));
   if (body.action === 'resolveTickers') return out_(resolveTickers_(body.items));
   if (body.action === 'deleteTrades') return out_(saveTrades_(body.account, []));
@@ -81,7 +82,7 @@ function calc_(snap, rows) {
     if (id === 'USDKRW' || id === 'JPYKRW') { const x = lv > 0 ? lv : v; if (x > 0) fx[id.slice(0, 3)] = x; return; }
     items.push({code, n: norm_(name), v, lv});
   });
-  let s = 0, k = 0, p = 0, miss = 0;
+  let s = 0, k = 0, p = 0, miss = 0; const by = {}, g = id => by[id] || (by[id] = {t: 0, s: 0, c: 0, p: 0, k: 0});
   (snap.holdings || []).forEach(h => {
     const tk = String(h.t || '').trim().toUpperCase(), nn = norm_(h.n);
     let it = tk ? items.find(x => x.code === tk) : null;
@@ -90,16 +91,18 @@ function calc_(snap, rows) {
     const price = it ? (h.c === 'KRW' ? it.v : it.lv) : NaN;
     if (!(price > 0) || !f) { miss++; return; }
     const val = h.q * price * f;
-    s += val;
-    if (h.k != null) { const cost = h.kk != null ? h.kk : h.k * f; k += cost; p += val - cost; } // kk: 거래일 환율로 쌓은 원화 원가(있으면 사용)
+    s += val; if (h.ac) g(h.ac).s += val;
+    if (h.k != null) { const cost = h.kk != null ? h.kk : h.k * f; k += cost; p += val - cost; if (h.ac) { g(h.ac).k += cost; g(h.ac).p += val - cost; } } // kk: 거래일 환율로 쌓은 원화 원가(있으면 사용)
   });
-  let c = 0; (snap.cash || []).forEach(x => { const f = fx[x.c]; if (f) c += x.a * f; });
+  let c = 0; (snap.cash || []).forEach(x => { const f = fx[x.c]; if (f) { c += x.a * f; if (x.ac) g(x.ac).c += x.a * f; } });
   const R = Math.round;
-  return {t: R(s + c), s: R(s), c: R(c), p: R(p), k: R(k), m: miss};
+  Object.keys(by).forEach(id => { const x = by[id]; x.t = x.s + x.c; ['t', 's', 'c', 'p', 'k'].forEach(f => { x[f] = R(x[f]); }); });
+  return {t: R(s + c), s: R(s), c: R(c), p: R(p), k: R(k), m: miss, a: by};
 }
 function histSheet_(ss) {
   let sh = ss.getSheetByName(HIST_NAME);
-  if (!sh) { sh = ss.insertSheet(HIST_NAME); sh.appendRow(['날짜', '총자산', '주식평가액', '현금', '평가손익', '취득원가', '제외종목수', '구분']); sh.getRange('A:A').setNumberFormat('@'); }
+  if (!sh) { sh = ss.insertSheet(HIST_NAME); sh.appendRow(['날짜', '총자산', '주식평가액', '현금', '평가손익', '취득원가', '제외종목수', '구분', '계좌별']); sh.getRange('A:A').setNumberFormat('@'); }
+  if (sh.getRange('I1').getValue() !== '계좌별') { sh.getRange('H1').setValue('구분'); sh.getRange('I1').setValue('계좌별'); }
   return sh;
 }
 function recordDaily() {
@@ -113,38 +116,50 @@ function recordDaily() {
   const src = ss.getSheets().filter(x => x.getSheetId() === 0)[0] || ss.getSheets()[0];
   const rec = calc_(snap, src.getDataRange().getDisplayValues());
   const sh = histSheet_(ss), last = sh.getLastRow();
-  const row = [today, rec.t, rec.s, rec.c, rec.p, rec.k, rec.m];
-  if (last >= 2 && String(sh.getRange(last, 1).getDisplayValue()) === today) sh.getRange(last, 1, 1, 7).setValues([row]);
-  else sh.appendRow(row);
+  const acc = Object.keys(rec.a || {}).length ? JSON.stringify(rec.a) : '';
+  if (last >= 2 && String(sh.getRange(last, 1).getDisplayValue()) === today) { sh.getRange(last, 1, 1, 7).setValues([[today, rec.t, rec.s, rec.c, rec.p, rec.k, rec.m]]); sh.getRange(last, 9).setValue(acc); }
+  else sh.appendRow([today, rec.t, rec.s, rec.c, rec.p, rec.k, rec.m, '', acc]);
 }
 function readHistory_() {
   const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HIST_NAME), out = {};
   if (!sh || sh.getLastRow() < 2) return out;
-  sh.getRange(2, 1, sh.getLastRow() - 1, 8).getDisplayValues().forEach(r => { if (/^\d{4}-\d{2}-\d{2}$/.test(r[0])) { out[r[0]] = {t: num_(r[1]), s: num_(r[2]), c: num_(r[3]), p: num_(r[4]), k: num_(r[5]), m: num_(r[6]) || 0}; if (String(r[7]).trim() === '복원') out[r[0]].r = 1; } });
+  sh.getRange(2, 1, sh.getLastRow() - 1, 9).getDisplayValues().forEach(r => { if (/^\d{4}-\d{2}-\d{2}$/.test(r[0])) { out[r[0]] = {t: num_(r[1]), s: num_(r[2]), c: num_(r[3]), p: num_(r[4]), k: num_(r[5]), m: num_(r[6]) || 0}; if (String(r[7]).trim() === '복원') out[r[0]].r = 1; if (r[8]) { try { out[r[0]].a = JSON.parse(r[8]); } catch (e) {} } } });
   return out;
+}
+/* 대시보드의 "기록 지우기": 그 날짜의 행을 '기록' 탭에서 지운다 */
+function deleteHistory_(d) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return {ok: false, error: '날짜 형식 오류'};
+  const lock = LockService.getScriptLock(); lock.waitLock(25000);
+  try {
+    const sh = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HIST_NAME); if (!sh || sh.getLastRow() < 2) return {ok: true, removed: 0};
+    const v = sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues(); let removed = 0;
+    for (let i = v.length - 1; i >= 0; i--) if (String(v[i][0]).slice(0, 10) === d) { sh.deleteRow(i + 2); removed++; }
+    return {ok: true, removed};
+  } finally { lock.releaseLock(); }
 }
 /* 대시보드의 "올해 기록 복원"이 보낸 빠진 날 기록을 '기록' 탭에 합친다. 이미 있는 날(실제 기록)은 절대 덮어쓰지 않고, 날짜순으로 정렬한다. 구분 열에 '복원'을 적는다. */
 function saveHistoryFill_(rows) {
-  if (!Array.isArray(rows) || !rows.length || rows.length > 400) return {ok: false, error: '저장할 기록이 없거나 너무 많습니다'};
+  if (!Array.isArray(rows) || !rows.length || rows.length > 800) return {ok: false, error: '저장할 기록이 없거나 너무 많습니다'};
   const lock = LockService.getScriptLock(); lock.waitLock(25000);
   try {
     const ss = SpreadsheetApp.openById(SHEET_ID), sh = histSheet_(ss), last = sh.getLastRow();
     const map = {};
-    if (last >= 2) sh.getRange(2, 1, last - 1, 8).getValues().forEach(r => { const d = String(r[0]).slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d)) map[d] = [d, r[1], r[2], r[3], r[4], r[5], r[6], r[7] === undefined ? '' : r[7]]; });
-    let added = 0;
+    if (last >= 2) sh.getRange(2, 1, last - 1, 9).getValues().forEach(r => { const d = String(r[0]).slice(0, 10); if (/^\d{4}-\d{2}-\d{2}$/.test(d)) map[d] = [d, r[1], r[2], r[3], r[4], r[5], r[6], r[7] === undefined ? '' : r[7], r[8] === undefined ? '' : r[8]]; });
+    let added = 0, addedA = 0;
     rows.forEach(x => {
-      const d = String(x && x.d || '');
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || map[d]) return;
+      const d = String(x && x.d || ''), acc = x && x.a && typeof x.a === 'object' && Object.keys(x.a).length ? JSON.stringify(x.a) : '';
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return;
+      if (map[d]) { if (acc && !map[d][8]) { map[d][8] = acc; addedA++; } return; } // 이미 있는 날: 총합은 그대로, 비어 있는 계좌별 값만
+      if (x.onlyA) return;
       const v = [x.t, x.s, x.c, x.p, x.k, x.m].map(Number);
       if (v.some(n => !isFinite(n))) return;
-      map[d] = [d, v[0], v[1], v[2], v[3], v[4], v[5], '복원']; added++;
+      map[d] = [d, v[0], v[1], v[2], v[3], v[4], v[5], '복원', acc]; added++;
     });
     const all = Object.keys(map).sort().map(d => map[d]);
-    sh.getRange('H1').setValue('구분');
-    if (last >= 2) sh.getRange(2, 1, last - 1, 8).clearContent();
+    if (last >= 2) sh.getRange(2, 1, last - 1, 9).clearContent();
     sh.getRange('A:A').setNumberFormat('@');
-    sh.getRange(2, 1, all.length, 8).setValues(all);
-    return {ok: true, added, total: all.length};
+    sh.getRange(2, 1, all.length, 9).setValues(all);
+    return {ok: true, added, addedA, total: all.length};
   } finally { lock.releaseLock(); }
 }
 // 한 번만 실행하세요: 매일 HOUR시(한국시간)에 recordDaily가 돌도록 예약합니다.

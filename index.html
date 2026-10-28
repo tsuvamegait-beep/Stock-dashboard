@@ -2074,26 +2074,27 @@ async function syncSheet(silent) {
     const byTicker = {}, nameList = [];
     Object.keys(state.symbols).forEach(k => { const s = state.symbols[k]; if (s.ticker) byTicker[String(s.ticker).trim().toUpperCase()] = k; });
     const held = {}; Object.keys(state.accounts).forEach(a => replay(state.accounts[a].data, {}).forEach(h => { held[keyOf(h.name)] = h; }));
-    Object.keys(held).forEach(k => nameList.push([normName(held[k].name), k]));
+    Object.keys(held).forEach(k => { nameList.push([normName(held[k].name), k]); const l = normName(stockLabel(held[k].name)); if (l !== normName(held[k].name)) nameList.push([l, k]); });
     const findByName = nm => { const n = normName(nm); if (!n) return null; let hit = nameList.find(x => x[0] === n); if (!hit) hit = nameList.find(x => n.length >= 2 && (x[0].startsWith(n) || n.startsWith(x[0]))); return hit ? hit[1] : null; };
-    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0, nolocal = 0, secChanged = false; const writes = [], done = {};
+    const now = new Date().toISOString(); let np = 0, nf = 0, skipped = 0, nolocal = 0, secChanged = false; const writes = [], done = {}, miss = [], skipN = [], nolN = [], empty = [];
     rows.slice(hi + 1).forEach(r => {
-      let v = numOf(r[pc]); const lv = lc >= 0 ? numOf(r[lc]) : NaN; if (!(v > 0) && !(lv > 0)) return;
+      let v = numOf(r[pc]); const lv = lc >= 0 ? numOf(r[lc]) : NaN; if (!(v > 0) && !(lv > 0)) { const nm = String(r[nameCols[0]] != null ? r[nameCols[0]] : '').trim() || String(r[codeCols[0]] || '').trim(); if (nm && !/^(usdkrw|jpykrw)$/i.test(nm.replace(/[\/\s]/g, ''))) empty.push(nm); return; }
       const ids = codeCols.map(c => String(r[c] || '').trim()).filter(Boolean), names = nameCols.map(c => String(r[c] || '').trim()).filter(Boolean);
       const fxId = ids.concat(names).map(x => x.toUpperCase().replace(/[\/\s]/g, '')).find(x => x === 'USDKRW' || x === 'JPYKRW');
       if (fxId) { if (lv > 0) v = lv; if (!done[fxId]) { done[fxId] = 1; writes.push(['fx', fxId, {ccy: fxId.slice(0, 3), rate: v, asof: now, src: 'sheet'}]); nf++; } return; }
       let k = null; for (const id of ids) { k = byTicker[id.toUpperCase()]; if (k) break; }
       if (!k) for (const nm of names.concat(ids)) { k = findByName(nm); if (k) break; }
-      if (!k || done[k]) return; done[k] = 1;
+      if (!k) { miss.push(names[0] || ids[0] || '?'); return; }
+      if (done[k]) return; done[k] = 1;
       if (sc >= 0) { const sv = String(r[sc] || '').trim(), cs = (state.sectors || {})[k]; if (sv && !(cs && cs.src === 'manual') && !(cs && cs.v === sv)) { state.sectors[k] = {v: sv, src: 'sheet'}; secChanged = true; } }
       const h = held[k], s = state.symbols[k] || {}, old = state.prices[k], ccy = (h && h.ccy) || s.ccy || 'KRW';
-      if (ccy === 'KRW') { if (!(v > 0)) return; } else { if (lv > 0) v = lv; else { nolocal++; return; } }
-      if (old && old.price > 0 && (v / old.price > 3 || v / old.price < 1 / 3)) { skipped++; return; }
+      if (ccy === 'KRW') { if (!(v > 0)) return; } else { if (lv > 0) v = lv; else { nolocal++; nolN.push(names[0] || ids[0]); return; } }
+      if (old && old.price > 0 && (v / old.price > 3 || v / old.price < 1 / 3)) { skipped++; skipN.push((names[0] || ids[0]) + ' ' + v + '(이전 ' + old.price + ')'); return; }
       writes.push(['prices', k, {name: (h && h.name) || s.name || names[0] || ids[0], ccy, price: v, asof: now, src: 'sheet', note: '구글 시트', ticker: s.ticker || '', code: ids[0] || ''}]); np++;
     });
     if (secChanged) saveSectors();
     for (const w of writes) await store.set(w[0], w[1], w[2]);
-    state.sheetMsg = '시트에서 시세 ' + np + '건, 환율 ' + nf + '건을 불러왔습니다.' + (nolocal ? ' 해외 종목 ' + nolocal + '건은 현지통화 가격 열("현지가")이 없어 건너뛰었습니다.' : '') + (skipped ? ' 이전 값과 3배 이상 차이 나는 ' + skipped + '건은 건너뛰었습니다(통화를 확인하세요).' : '');
+    state.sheetMsg = '시트에서 시세 ' + np + '건, 환율 ' + nf + '건을 불러왔습니다.' + (nolocal ? ' 해외 종목 ' + nolocal + '건(' + nolN.slice(0, 5).join(', ') + ')은 현지통화 가격 열("현지가")이 비어 있어 건너뛰었습니다.' : '') + (skipped ? ' 이전 값과 3배 이상 차이 나는 ' + skipped + '건(' + skipN.slice(0, 5).join(', ') + ')은 건너뛰었습니다(통화를 확인하세요).' : '') + (empty.length ? ' 가격이 비어 있거나 숫자가 아닌 행 ' + empty.length + '건: ' + empty.slice(0, 8).join(', ') + ' (시트에서 GOOGLEFINANCE 값이 #N/A인지, 티커가 맞는지 확인하세요).' : '') + (miss.length ? ' 보유 종목과 이어지지 않은 행 ' + miss.length + '건: ' + miss.slice(0, 8).join(', ') + (miss.length > 8 ? ' 외' : '') + ' (시트의 종목명을 거래내역 이름과 같게 하거나, 아래 표에서 그 종목의 티커를 시트의 종목코드와 같게 적어 주세요).' : '');
     if (!silent) toast(state.sheetMsg);
   } catch (e) {
     state.sheetMsg = e && e.message && !/^(http|Failed|TypeError)/.test(e.message) ? e.message : '시트를 불러오지 못했습니다. 주소와 "웹에 게시" 설정을 확인하세요.';

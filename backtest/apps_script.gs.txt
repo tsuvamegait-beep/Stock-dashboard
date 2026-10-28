@@ -1,6 +1,6 @@
 /**
  * 백테스트용 Apps Script (주식 대시보드 Apps Script와 별개의 새 프로젝트)
- * 나무증권 Open API(NH PLUG)에서 국내 종목 목록과 일봉만 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
+ * 나무증권 Open API(NH PLUG)에서 국내 종목 목록, 일봉, 투자자별 순매수만 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
  *
  * 준비(한 번만)
  * 1) script.google.com → 새 프로젝트 → 이 파일 내용을 전부 붙여넣고 저장
@@ -19,12 +19,14 @@ function out_(obj) {
 // ?universe=1 : 국내 종목 목록. 한 종목 = [코드, 이름, 시장(1 코스피·4 코스닥), 코스피200(1/0), 코스닥150(1/0), 거래정지(1/0)]
 // ?candles=005930:1,035720:1&n=1400 : 종목별 일봉(오래된 날짜 → 최근). 한 요청에 최대 30종목.
 //   한 봉 = [yyyyMMdd, 시가, 고가, 저가, 종가, 거래량, 기준가, 락구분코드] — 분할·배당락 보정은 백테스트 화면에서 기준가로 함
+// ?flows=005930:1,…&n=999 : 종목별 투자자 순매수(오래된 날짜 → 최근, 최대 999일). 한 줄 = [yyyyMMdd, 외국인, 기관계, 개인] 순매수 수량(주)
 function doGet(e) {
   const q = (e && e.parameter) || {};
   if (q.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
   try {
     if (q.universe) return out_({ok: true, list: universe_()});
     if (q.candles) return out_(candlesMany_(String(q.candles), +q.n || 300));
+    if (q.flows) return out_(flowsMany_(String(q.flows), +q.n || 300));
     return out_({ok: true, hello: '백테스트 Apps Script 연결됨'});
   } catch (err) { return out_({ok: false, error: String(err && err.message || err)}); }
 }
@@ -33,7 +35,7 @@ function doGet(e) {
  * 토큰(하루짜리 입장권)은 24시간 유효합니다. 발급할 때마다 증권사 보안 알림이 가므로
  * 스크립트 속성(NH_TOKEN, NH_TOKEN_EXP)에 보관해 재사용하고, 만료됐거나 401(토큰 무효)일 때만 새로 받습니다. */
 const NH_BASE = 'https://api.nhplug.com:8443';
-const NH_PATHS = ['/krstock/quote/v1/period']; // 시세 조회만 허용(주문 주소는 넣지 않음)
+const NH_PATHS = ['/krstock/quote/v1/period', '/krstock/quote/v1/currentInvestor']; // 시세 조회만 허용(주문 주소는 넣지 않음)
 function nhToken_(force, bad) { // bad: 401을 받은 토큰(이것만 버리고 새로 받음)
   const p = PropertiesService.getScriptProperties();
   const cur = () => { const t = p.getProperty('NH_TOKEN'), x = +p.getProperty('NH_TOKEN_EXP') || 0; return t && Date.now() < x && t !== bad ? t : ''; };
@@ -119,20 +121,33 @@ function candles_(code, mkt, n) {
   }
   return Object.keys(map).sort().map(d => map[d]);
 }
-function candlesMany_(codes, n) {
+function candlesMany_(codes, n) { return many_(codes, Math.max(5, Math.min(n, 3000)), candles_); }
+function many_(codes, n, fn) { // 한 요청에 최대 30종목, 종목 사이 220ms 쉼(초당 5회 제한)
   const list = codes.split(',').map(s => s.trim()).filter(s => /^[0-9A-Z]{6}:[14]$/.test(s)).slice(0, 30);
   if (!list.length) return {ok: false, error: '종목코드가 없습니다'};
-  n = Math.max(5, Math.min(n, 3000));
   const data = {}, errors = {};
   list.forEach((s, i) => {
     const [code, mkt] = s.split(':');
     if (i) Utilities.sleep(220);
-    try { data[code] = candles_(code, mkt, n); } catch (err) { errors[code] = String(err && err.message || err); }
+    try { data[code] = fn(code, mkt, n); } catch (err) { errors[code] = String(err && err.message || err); }
   });
   return {ok: true, data, errors};
 }
 
-// 편집기에서 직접 실행해 보는 확인용: 종목 수와 삼성전자 최근 일봉 3개, 받은 봉 개수를 로그에 남김
+/* ===== 투자자별 순매수: 주식현재가 투자자(/krstock/quote/v1/currentInvestor) =====
+ * 최근 날짜부터 array_cnt(최대 999)일. 날짜를 지정해 더 옛날을 이어 받는 입력은 없음 */
+function flows_(code, mkt, n) {
+  const r = nhCall_('/krstock/quote/v1/currentInvestor', {market_cd: 'KRX', iem_cd: code, array_cnt: String(Math.max(1, Math.min(n, 999)))});
+  const map = {};
+  (r.j.Output_0 || []).forEach(x => {
+    const d = String(x.bsop_date1 || ''); if (!/^\d{8}$/.test(d)) return;
+    map[d] = [d, +x.frgn_ntby_qty || 0, +x.gigwan || 0, +x.person || 0];
+  });
+  return Object.keys(map).sort().map(d => map[d]);
+}
+function flowsMany_(codes, n) { return many_(codes, n, flows_); }
+
+// 편집기에서 직접 실행해 보는 확인용: 종목 수와 삼성전자 최근 일봉 3개, 받은 봉 개수, 수급 일수를 로그에 남김
 function testBt() {
   const u = universe_();
   Logger.log('종목 ' + u.length + '개 · 코스피200 ' + u.filter(r => r[3]).length + ' · 코스닥150 ' + u.filter(r => r[4]).length + ' · 예: ' + JSON.stringify(u.filter(r => r[0] === '005930')));
@@ -141,4 +156,6 @@ function testBt() {
   Logger.log('최근 3개: ' + JSON.stringify(c.slice(-3)));
   const ev = c.filter(r => r[7] && r[7] !== '0');
   Logger.log('락·분할 표시가 있는 날 ' + ev.length + '개: ' + JSON.stringify(ev.slice(-5)));
+  const f = flows_('005930', '1', 999);
+  Logger.log('삼성전자 수급 ' + f.length + '일 · ' + (f[0] || [''])[0] + ' ~ ' + (f[f.length - 1] || [''])[0] + ' · 최근 3일 [날짜, 외국인, 기관, 개인]: ' + JSON.stringify(f.slice(-3)));
 }

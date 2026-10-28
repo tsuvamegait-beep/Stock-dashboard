@@ -11,6 +11,7 @@
 ## 백테스트(`backtest/`, 대시보드와 분리)
 - `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).
 - Apps Script: `?universe=1` 나무 종목 마스터 `m_new_stock.mst`(CP949 237바이트, 코스피200=off168≠0, 코스닥150=off172 Y) → `[코드, 이름, 시장, k200, q150, 정지]`. `?candles=코드:시장,…&n=` 일봉(`/krstock/quote/v1/period`, gubun 1, 응답 `Output_1`), 30종목/요청, 220ms 간격. 나무에는 순위·조건검색 API가 없음.
+- 전략(`cfg.strat`, 신호는 `signal(s, i)`): 이동평균(`ma`) / RSI(`rsi`, 와일더 평균 `rsi()`, 기간 `rp`, 매수 기준 `rlo` 아래→위 돌파, 매도 기준 `rhi` 위→아래). 종목 차트는 RSI일 때 아래에 RSI 그래프.
 - 화면: 골든크로스 다음 날 시가 매수 / 데드크로스 다음 날 시가 매도, 손절 선택, 최대 보유 종목 수(빈자리는 20일 평균 거래대금 큰 순), 비용(수수료·매도세·슬리피지), 비교 = 첫날 상장 종목 동일금액 보유. 분할·배당락은 락구분코드가 있는 날 기준가÷전일종가로 과거 가격 보정(`prep`).
 - 화면 저장: localStorage `backtest-sync` `backtest-cfg` `backtest-univ`(종목 목록, 업데이트 때만 새로), IndexedDB `backtest`(3판)/`bars` {c, gz(압축 일봉), n, last, at}. "실행"은 폰에 있는 시세로 계산하고 없거나 기간이 모자란 종목만 받음. "최신으로 업데이트"는 마지막 날짜 뒤만 받아 붙임(오늘 이미 받았으면 건너뜀, 16시 전에 받은 건 16시 뒤 한 번 더). 압축은 `CompressionStream`, 화면에 저장 용량·마지막 날짜와 "지우기". 구글 드라이브 창고 방식은 사용자 결정으로 쓰지 않음(2026-10-28).
 - 미확인: 실제 나무 응답(Output_1 필드·순서, array_cnt 상한, 수정주가 여부, 기준가 의미), Apps Script `MS949` 디코딩. 두 Apps Script가 같은 앱키로 토큰을 따로 받으면 서로의 토큰을 무효로 만드는지 모름.

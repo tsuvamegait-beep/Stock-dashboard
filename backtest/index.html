@@ -2,7 +2,7 @@
 <html lang="ko">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>이동평균 백테스트</title>
+<title>백테스트</title>
 <meta name="color-scheme" content="only light">
 <meta name="theme-color" content="#f8f4ec">
 <script>/* 대시보드에서 고른 테마를 따름: 밤의 리포트·RPG는 어두운 화면, 나머지는 리포트 */
@@ -97,8 +97,8 @@ button.li[aria-pressed=true]{background:var(--wash)}
 
 <div class="wrap">
   <header class="top">
-    <h1>이동평균 백테스트</h1>
-    <p class="meta" id="meta">단기 이평선이 장기 이평선을 위로 뚫은 다음 날 시가에 사고, 아래로 뚫은 다음 날 시가에 팝니다.</p>
+    <h1 id="title">이동평균 백테스트</h1>
+    <p class="meta" id="meta"></p>
   </header>
 
   <section class="card" id="connect">
@@ -115,9 +115,17 @@ button.li[aria-pressed=true]{background:var(--wash)}
     <div class="row"><span class="tlabel">종목</span><div class="seg" id="uni"></div></div>
     <input type="text" id="custom" placeholder="종목명이나 코드, 쉼표로 구분 (예: 삼성전자, 000660)" hidden>
     <div class="row"><span class="tlabel">기간</span><div class="seg" id="years"></div></div>
-    <div class="row">
+    <div class="row"><span class="tlabel">전략</span><div class="seg" id="strat"></div></div>
+    <div class="row" id="maRow">
       <label class="fld"><span>단기 이평(일)</span><input type="number" id="ms" min="2" max="250" inputmode="numeric"></label>
       <label class="fld"><span>장기 이평(일)</span><input type="number" id="ml" min="3" max="250" inputmode="numeric"></label>
+    </div>
+    <div class="row" id="rsiRow" hidden>
+      <label class="fld"><span>RSI 기간(일)</span><input type="number" id="rp" min="2" max="50" inputmode="numeric"></label>
+      <label class="fld"><span>매수 기준(아래→위)</span><input type="number" id="rlo" min="1" max="99" inputmode="numeric"></label>
+      <label class="fld"><span>매도 기준(위→아래)</span><input type="number" id="rhi" min="1" max="99" inputmode="numeric"></label>
+    </div>
+    <div class="row">
       <label class="fld"><span>최대 보유 종목</span><input type="number" id="slots" min="1" max="50" inputmode="numeric"></label>
       <label class="fld"><span>손절 %(0=안 함)</span><input type="number" id="sl" min="0" max="50" step="0.5" inputmode="decimal"></label>
     </div>
@@ -173,7 +181,7 @@ const $ = id => document.getElementById(id);
 const LS = {sync: 'backtest-sync', cfg: 'backtest-cfg', univ: 'backtest-univ'};
 const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
-const DEF = {uni: 'big', custom: '', years: 3, ms: 20, ml: 60, slots: 10, sl: 0, cap: 1000, fee: 0.015, tax: 0.20, slip: 0.1};
+const DEF = {strat: 'ma', uni: 'big', custom: '', years: 3, ms: 20, ml: 60, rp: 14, rlo: 30, rhi: 70, slots: 10, sl: 0, cap: 1000, fee: 0.015, tax: 0.20, slip: 0.1};
 const cfg = Object.assign({}, DEF, lsGet(LS.cfg, {}));
 const UNIS = [['big', '코스피+코스닥'], ['k200', '코스피200'], ['q150', '코스닥150'], ['custom', '직접 입력']];
 const YEARS = [[1, '1년'], [3, '3년'], [5, '5년']];
@@ -372,19 +380,47 @@ function sma(a, n) {
   for (let i = 0; i < a.length; i++) { s += a[i]; if (i >= n) s -= a[i - n]; if (i >= n - 1) out[i] = s / n; }
   return out;
 }
+// RSI(와일더 평균): 평균 상승폭 ÷ 평균 하락폭 = RS, RSI = 100 − 100 ÷ (1 + RS)
+function rsi(a, n) {
+  const out = new Float64Array(a.length).fill(NaN); let up = 0, dn = 0;
+  for (let i = 1; i < a.length; i++) {
+    const ch = a[i] - a[i - 1], u = ch > 0 ? ch : 0, d = ch < 0 ? -ch : 0;
+    if (i <= n) { up += u / n; dn += d / n; } else { up = (up * (n - 1) + u) / n; dn = (dn * (n - 1) + d) / n; }
+    if (i >= n) out[i] = dn === 0 ? (up === 0 ? 50 : 100) : 100 - 100 / (1 + up / dn);
+  }
+  return out;
+}
+const isMa = () => cfg.strat !== 'rsi';
+function badCfg() {
+  if (isMa() && cfg.ms >= cfg.ml) return '단기 이평은 장기 이평보다 짧아야 합니다.';
+  if (!isMa() && cfg.rlo >= cfg.rhi) return 'RSI 매수 기준은 매도 기준보다 낮아야 합니다.';
+  return '';
+}
+// i일 종가 기준 신호: 1 = 다음 날 매수, -1 = 다음 날 매도
+function signal(s, i) {
+  if (isMa()) {
+    const a = s.ms[i], b = s.ml[i], a0 = s.ms[i - 1], b0 = s.ml[i - 1];
+    if (!(a === a && b === b && a0 === a0 && b0 === b0)) return 0; // 이평이 아직 안 만들어짐(NaN)
+    return a > b && a0 <= b0 ? 1 : a < b && a0 >= b0 ? -1 : 0;
+  }
+  const r = s.rsi[i], r0 = s.rsi[i - 1];
+  if (!(r === r && r0 === r0)) return 0;
+  return r0 < cfg.rlo && r >= cfg.rlo ? 1 : r0 > cfg.rhi && r <= cfg.rhi ? -1 : 0;
+}
 
 /* ===== 백테스트 =====
- * 매일 순서: ① 전날 데드크로스 난 보유 종목을 오늘 시가에 팜 → 손절선 아래로 내려가면 손절선(시가가 더 낮으면 시가)에 팜
- * ② 전날 골든크로스 난 종목을 오늘 시가에 삼(빈자리만큼, 최근 20일 평균 거래대금이 큰 순). 한 종목에 전날 총자산 ÷ 최대 보유 종목 수만큼, 1주 단위
+ * 매일 순서: ① 전날 매도 신호(데드크로스 / RSI가 매도 기준 아래로) 난 보유 종목을 오늘 시가에 팜 → 손절선 아래로 내려가면 손절선(시가가 더 낮으면 시가)에 팜
+ * ② 전날 매수 신호(골든크로스 / RSI가 매수 기준 위로) 난 종목을 오늘 시가에 삼(빈자리만큼, 최근 20일 평균 거래대금이 큰 순). 한 종목에 전날 총자산 ÷ 최대 보유 종목 수만큼, 1주 단위
  * ③ 종가로 평가 ④ 오늘 종가로 다음 날 신호를 계산 */
 function backtest() {
   const start = yearsAgo(cfg.years), S = [];
   Object.keys(loaded).forEach(code => {
     const p = prep(loaded[code].rows);
-    if (p.d.length < cfg.ml + 2) return;
+    if (p.d.length < (isMa() ? cfg.ml : cfg.rp) + 2) return;
     const tv = new Float64Array(p.d.length); for (let i = 0; i < tv.length; i++) tv[i] = p.c[i] * p.v[i];
     const idx = new Map(); p.d.forEach((d, i) => idx.set(d, i));
-    S.push(Object.assign(p, {code, name: loaded[code].name, ms: sma(p.c, cfg.ms), ml: sma(p.c, cfg.ml), tv: sma(tv, 20), idx}));
+    S.push(Object.assign(p, {code, name: loaded[code].name, tv: sma(tv, 20), idx},
+      isMa() ? {ms: sma(p.c, cfg.ms), ml: sma(p.c, cfg.ml)} : {rsi: rsi(p.c, cfg.rp)}));
   });
   const dset = new Set(); S.forEach(s => s.d.forEach(d => { if (d >= start) dset.add(d); }));
   const dates = [...dset].sort();
@@ -404,7 +440,7 @@ function backtest() {
   dates.forEach(D => {
     for (const [code, p] of pos) {
       const i = p.s.idx.get(D); if (i == null) continue;
-      if (pendSell.has(code)) { pendSell.delete(code); sell(code, p, i, p.s.o[i] * (1 - slip), '데드크로스', D); continue; }
+      if (pendSell.has(code)) { pendSell.delete(code); sell(code, p, i, p.s.o[i] * (1 - slip), isMa() ? '데드크로스' : 'RSI ' + cfg.rhi + ' 하향', D); continue; }
       if (sl > 0) { const stop = p.px * (1 - sl); if (p.s.o[i] <= stop) sell(code, p, i, p.s.o[i], '손절', D); else if (p.s.l[i] <= stop) sell(code, p, i, stop, '손절', D); }
     }
     const cands = [...pendBuy.entries()].filter(([code]) => !pos.has(code) && pendBuy.get(code).s.idx.has(D)).sort((a, b) => b[1].tv - a[1].tv);
@@ -426,10 +462,9 @@ function backtest() {
     bm.push(bmN ? bs / bmN : 1);
     S.forEach(s => {
       const i = s.idx.get(D); if (i == null || i < 1) return;
-      const a = s.ms[i], b = s.ml[i], a0 = s.ms[i - 1], b0 = s.ml[i - 1];
-      if (!(a === a && b === b && a0 === a0 && b0 === b0)) return; // 이평이 아직 안 만들어짐(NaN)
-      if (pos.has(s.code)) { if (a < b && a0 >= b0) pendSell.add(s.code); }
-      else if (a > b && a0 <= b0) pendBuy.set(s.code, {s, tv: s.tv[i] || 0});
+      const g = signal(s, i);
+      if (pos.has(s.code)) { if (g < 0) pendSell.add(s.code); }
+      else if (g > 0) pendBuy.set(s.code, {s, tv: s.tv[i] || 0});
     });
   });
   const last = dates[dates.length - 1], open = [];
@@ -453,6 +488,7 @@ function lineChart(dates, series, o) {
   series.forEach(s => s.v.forEach(x => { if (x === x) { lo = Math.min(lo, x); hi = Math.max(hi, x); } }));
   if (!(hi > lo)) { hi = lo + 1; }
   const pad = (hi - lo) * 0.06; lo -= pad; hi += pad;
+  if (o.min != null) lo = o.min; if (o.max != null) hi = o.max;
   const X = i => L + (W - L - R) * (n < 2 ? 0 : i / (n - 1)), Y = x => T + (H - T - B) * (1 - (x - lo) / (hi - lo));
   let g = '';
   const step = niceStep((hi - lo) / 4);
@@ -527,8 +563,19 @@ function drawStock() {
   const a = Math.max(0, s.d.findIndex(d => d >= R.dates[0])), D = s.d.slice(a), sl = (arr) => Array.from(arr.slice(a));
   const ts = R.trades.concat(R.open).filter(t => t.code === s.code), marks = [];
   ts.forEach(t => { const i = s.idx.get(t.bd); if (i != null && i >= a) marks.push({i: i - a, y: s.l[i], kind: 'buy'}); if (t.sd) { const j = s.idx.get(t.sd); if (j != null && j >= a) marks.push({i: j - a, y: s.h[j], kind: 'sell'}); } });
-  $('stockChart').innerHTML = '<div class="legend"><span><b>' + esc(s.name) + '</b></span><span><i class="sw" style="background:var(--ink)"></i>종가</span><span><i class="sw" style="background:var(--s2)"></i>' + cfg.ms + '일선</span><span><i class="sw" style="background:var(--s3)"></i>' + cfg.ml + '일선</span><span style="color:var(--up)">▲ 매수</span><span style="color:var(--dn)">▼ 매도</span></div>' +
-    lineChart(D, [{v: sl(s.c), color: 'var(--ink)', w: 1.2}, {v: sl(s.ms), color: 'var(--s2)', w: 1.2}, {v: sl(s.ml), color: 'var(--s3)', w: 1.2}], {w: $('stockChart').clientWidth, fmt: y => y >= 1e4 ? Math.round(y / 1e3).toLocaleString('ko-KR') + 'k' : Math.round(y).toLocaleString('ko-KR'), marks, label: s.name + ' 주가와 이동평균'});
+  const w = $('stockChart').clientWidth, fmt = y => y >= 1e4 ? Math.round(y / 1e3).toLocaleString('ko-KR') + 'k' : Math.round(y).toLocaleString('ko-KR');
+  const mk = (c, t) => '<span><i class="sw" style="background:var(' + c + ')"></i>' + t + '</span>', arrows = '<span style="color:var(--up)">▲ 매수</span><span style="color:var(--dn)">▼ 매도</span>';
+  if (isMa()) {
+    $('stockChart').innerHTML = '<div class="legend"><span><b>' + esc(s.name) + '</b></span>' + mk('--ink', '종가') + mk('--s2', cfg.ms + '일선') + mk('--s3', cfg.ml + '일선') + arrows + '</div>' +
+      lineChart(D, [{v: sl(s.c), color: 'var(--ink)', w: 1.2}, {v: sl(s.ms), color: 'var(--s2)', w: 1.2}, {v: sl(s.ml), color: 'var(--s3)', w: 1.2}], {w, fmt, marks, label: s.name + ' 주가와 이동평균'});
+    return;
+  }
+  // RSI: 위는 주가와 매매 표시, 아래는 RSI와 매수·매도 기준선
+  const flat = v => D.map(() => v);
+  $('stockChart').innerHTML = '<div class="legend"><span><b>' + esc(s.name) + '</b></span>' + mk('--ink', '종가') + arrows + '</div>' +
+    lineChart(D, [{v: sl(s.c), color: 'var(--ink)', w: 1.2}], {w, fmt, marks, label: s.name + ' 주가'}) +
+    '<div class="legend">' + mk('--s2', 'RSI(' + cfg.rp + ')') + mk('--muted', '기준 ' + cfg.rlo + ' · ' + cfg.rhi) + '</div>' +
+    lineChart(D, [{v: flat(cfg.rlo), color: 'var(--up)', w: 1, dash: '4 3'}, {v: flat(cfg.rhi), color: 'var(--dn)', w: 1, dash: '4 3'}, {v: sl(s.rsi), color: 'var(--s2)', w: 1.2}], {w, h: 120, min: 0, max: 100, fmt: y => Math.round(y), label: s.name + ' RSI'});
 }
 function renderTrades() {
   const all = R.open.concat(R.trades.slice().reverse());
@@ -547,9 +594,15 @@ function progress(f) { $('prog').hidden = f >= 1; $('prog').firstElementChild.st
 function segs() {
   $('uni').innerHTML = UNIS.map(([k, l]) => '<button type="button" data-k="' + k + '" aria-pressed="' + (cfg.uni === k) + '">' + l + '</button>').join('');
   $('years').innerHTML = YEARS.map(([k, l]) => '<button type="button" data-k="' + k + '" aria-pressed="' + (cfg.years === k) + '">' + l + '</button>').join('');
+  $('strat').innerHTML = STRATS.map(([k, l]) => '<button type="button" data-k="' + k + '" aria-pressed="' + (cfg.strat === k) + '">' + l + '</button>').join('');
   $('custom').hidden = cfg.uni !== 'custom';
+  $('maRow').hidden = !isMa(); $('rsiRow').hidden = isMa();
+  $('title').textContent = (isMa() ? '이동평균' : 'RSI') + ' 백테스트';
+  $('meta').textContent = isMa() ? '단기 이평선이 장기 이평선을 위로 뚫은 다음 날 시가에 사고, 아래로 뚫은 다음 날 시가에 팝니다.'
+    : 'RSI가 매수 기준 아래에서 위로 올라온 다음 날 시가에 사고, 매도 기준 위에서 아래로 내려온 다음 날 시가에 팝니다.';
 }
-const NUMS = {ms: [2, 250, 1], ml: [3, 250, 1], slots: [1, 50, 1], sl: [0, 50], cap: [100, 1e7, 1], fee: [0, 1], tax: [0, 1], slip: [0, 5]};
+const STRATS = [['ma', '이동평균'], ['rsi', 'RSI']];
+const NUMS = {ms: [2, 250, 1], ml: [3, 250, 1], rp: [2, 50, 1], rlo: [1, 99, 1], rhi: [1, 99, 1], slots: [1, 50, 1], sl: [0, 50], cap: [100, 1e7, 1], fee: [0, 1], tax: [0, 1], slip: [0, 5]};
 function fillInputs() { Object.keys(NUMS).forEach(k => { $(k).value = cfg[k]; }); $('custom').value = cfg.custom; segs(); }
 // 받아 둔 데이터만으로 되는 변경(이평·비용 등)은 바로 다시 계산. 종목·기간처럼 더 받아야 하면 버튼 안내
 let dataKey = '';
@@ -561,13 +614,16 @@ function changed() {
   runLocal();
 }
 function runLocal() {
-  if (cfg.ms >= cfg.ml) { showWarn('단기 이평은 장기 이평보다 짧아야 합니다.'); return; }
+  const bad = badCfg();
+  if (bad) { showWarn(bad); return; }
+  if (/기준은|이평은/.test($('warn').textContent)) showWarn(''); // 고친 뒤에는 조건 경고만 지움(못 받은 종목 안내는 둠)
   const t0 = performance.now();
   R = backtest();
   if (!R) { setStatus('계산할 데이터가 없습니다.'); render(); return; }
   setStatus(R.S.length + '종목 · ' + R.dates.length + '거래일 계산 (' + Math.round(performance.now() - t0) + 'ms)');
   render();
 }
+$('strat').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; cfg.strat = b.dataset.k; segs(); changed(); };
 $('uni').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; cfg.uni = b.dataset.k; segs(); changed(); };
 $('years').onclick = e => { const b = e.target.closest('[data-k]'); if (!b) return; cfg.years = +b.dataset.k; segs(); changed(); };
 $('custom').onchange = () => { cfg.custom = $('custom').value; changed(); };
@@ -580,7 +636,7 @@ Object.keys(NUMS).forEach(k => {
   };
 });
 async function go(update) {
-  if (cfg.ms >= cfg.ml) { showWarn('단기 이평은 장기 이평보다 짧아야 합니다.'); return; }
+  const bad = badCfg(); if (bad) { showWarn(bad); return; }
   $('go').disabled = $('upd').disabled = true; showWarn('');
   try {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();

@@ -6,9 +6,9 @@
 <meta name="color-scheme" content="only light">
 <meta name="theme-color" content="#f8f4ec">
 <script>/* 저장된 테마 적용(없거나 모르는 값이면 리포트). 테마 목록은 아래 THEMES와 맞출 것: [id, 어두운가, 상단바 색] */
-/* RPG 테마만 쓰는 픽셀 글꼴(갈무리)은 그 테마일 때만 불러옴 */
-window.__themeFont=function(id){if(id!=="rpg"||document.getElementById("font-rpg"))return;var l=document.createElement("link");l.id="font-rpg";l.rel="stylesheet";l.href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css";document.head.appendChild(l)};
-(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"],["vault",1,"#0f1a17"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
+/* RPG·포켓 도트 테마만 쓰는 픽셀 글꼴(갈무리)은 그 테마일 때만 불러옴 */
+window.__themeFont=function(id){if((id!=="rpg"&&id!=="pocket")||document.getElementById("font-rpg"))return;var l=document.createElement("link");l.id="font-rpg";l.rel="stylesheet";l.href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css";document.head.appendChild(l)};
+(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"],["pocket",0,"#d23c32"],["vault",1,"#0f1a17"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
 var th=L.filter(function(x){return x[0]===t})[0]||L[0];document.documentElement.setAttribute("data-theme",th[0]);__themeFont(th[0]);
 document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]?"dark":"only light");document.querySelector('meta[name="theme-color"]').setAttribute("content",th[2])})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -85,8 +85,42 @@ document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]
 :root[data-theme="rpg"] .tabs button[aria-selected=true]{border-color:var(--wood-dk)}
 :root[data-theme="rpg"] .bar{gap:3px}
 :root[data-theme="rpg"] :is(.seg-i,.hr .b){-webkit-mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 8px);mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 8px)}
+:root[data-theme="pocket"] #toast{background:#fff;color:var(--ink);border:3px solid var(--ink);box-shadow:inset 0 0 0 2px #fff,inset 0 0 0 4px var(--line)}
 :root[data-theme="rpg"] #toast{background:var(--wood-dk);color:var(--gold-hi);border:2px solid var(--gold)}
 :root[data-theme="rpg"] svg{shape-rendering:crispEdges}
+/* 포켓 도트(휴대용 게임기 몬스터 RPG 감성): 연두 풀밭 바탕 + 하얀 대화창(굵은 남색 테두리, 안쪽 하늘색 선, 깎인 모서리), 빨간 상단 띠, 노란 선택 커서 */
+:root[data-theme="pocket"]{
+  --plane:#b8e0a0; --surface:#fcfcf4; --ink:#283048; --ink2:#404a68; --muted:#68708a;
+  --grid:#e0e4dc; --axis:#a8b0b8; --hair:rgb(40 48 72 / .18); --wash:rgb(40 48 72 / .06);
+  --s1:#3870d0; --s2:#f08030; --s3:#48b048; --s4:#f8c818; --s5:#e868a0; --s6:#38a8a8; --s7:#8058c8; --s8:#d83830;
+  --accent:#3060b8; --field:#ffffff; --warn-bg:#fff4c8; --warn-ink:#685010;
+  --up:#d83028; --dn:#2858c8;
+  --line:#78a8d8; --top:#d23c32; --top-dk:#7a1e1a; --cur:#f8d030; --grass:#a4d48c;
+  --font:"Galmuri11",monospace; --num:"GalmuriMono11","Galmuri11",monospace; --serif:"Galmuri14","Galmuri11",monospace;
+  color-scheme:only light;
+}
+:root[data-theme="pocket"] body{background-color:var(--plane);background-image:linear-gradient(45deg,var(--grass) 25%,transparent 25% 75%,var(--grass) 75%),linear-gradient(45deg,var(--grass) 25%,transparent 25% 75%,var(--grass) 75%);background-size:16px 16px;background-position:0 0,8px 8px;-webkit-font-smoothing:none}
+:root[data-theme="pocket"] *{border-radius:0!important}
+:root[data-theme="pocket"] :is(.card,.banner){background:var(--surface);border:3px solid var(--ink);box-shadow:inset 0 0 0 2px var(--surface),inset 0 0 0 4px var(--line);padding:16px;clip-path:polygon(6px 0,calc(100% - 6px) 0,100% 6px,100% calc(100% - 6px),calc(100% - 6px) 100%,6px 100%,0 calc(100% - 6px),0 6px)}
+:root[data-theme="pocket"] .card .card{box-shadow:none;border-width:2px;clip-path:none}
+:root[data-theme="pocket"] :is(h1,.hero-fig){letter-spacing:0}
+:root[data-theme="pocket"] .top{background:var(--top);border-bottom:4px solid var(--top-dk);box-shadow:0 4px 0 #fff,0 0 0 100vmax var(--top);clip-path:inset(-100vmax -100vmax -8px -100vmax);padding-top:4px;color:#fff;--ink:#fff;--ink2:#fff;--muted:#ffe4dc}
+:root[data-theme="pocket"] .top :is(button,select,input){--ink:#283048;color:#283048}
+:root[data-theme="pocket"] h1{text-shadow:2px 2px 0 var(--top-dk)}
+:root[data-theme="pocket"] .hero-fig{font-size:clamp(30px,9vw,48px)}
+:root[data-theme="pocket"] h2::before{content:"▶ ";color:var(--ink)}
+:root[data-theme="pocket"] .tile{border:2px solid var(--ink);background:#fff;box-shadow:inset 0 -4px 0 #e8ecf0;padding:8px 10px}
+:root[data-theme="pocket"] .tile .v{font-weight:400;letter-spacing:-.03em;font-size:clamp(13px,3.9vw,20px)}
+:root[data-theme="pocket"] :is(button,.btn,input[type=text],select,.seg){border-width:2px;border-color:var(--ink)}
+:root[data-theme="pocket"] :is(button.primary,.tabs button[aria-selected=true],.seg button[aria-pressed=true]){background:var(--cur);color:var(--ink);border-color:var(--ink);box-shadow:inset 0 -3px 0 #c8a010}
+:root[data-theme="pocket"] button.primary:active{box-shadow:inset 0 3px 0 #c8a010;transform:translate(0,1px)}
+:root[data-theme="pocket"] .tabs{gap:4px}
+:root[data-theme="pocket"] .tabs button{border:2px solid transparent}
+:root[data-theme="pocket"] .tabs button[aria-selected=true]{border-color:var(--ink)}
+:root[data-theme="pocket"] .bar{gap:3px}
+:root[data-theme="pocket"] :is(.seg-i,.hr .b){-webkit-mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 8px);mask:repeating-linear-gradient(90deg,#000 0 6px,transparent 6px 8px)}
+:root[data-theme="pocket"] input[type=checkbox]{accent-color:var(--accent)}
+:root[data-theme="pocket"] svg{shape-rendering:crispEdges}
 .rs-badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid var(--axis);color:var(--ink2);white-space:nowrap}
 .rs-badge.up{color:var(--up);border-color:var(--up)}
 .rs-badge.down{color:var(--dn);border-color:var(--dn)}
@@ -1842,6 +1876,7 @@ const THEMES = [
   {id: 'light', name: '리포트', tag: '기본 · 밝음', desc: '증권사 리포트처럼 크림색 종이에 남색 글씨. 총자산은 명조, 숫자는 자릿수가 맞는 고정폭 글꼴입니다.', sw: ['#f8f4ec', '#fbf9f4', '#1b2233', '#22407c'], dark: false, bar: '#f8f4ec'},
   {id: 'night', name: '밤의 리포트', tag: '어두움', desc: '리포트의 남색을 바탕으로 뒤집고 크림색 글씨, 황동색 포인트. 같은 배치로 밤에 보기 편합니다.', sw: ['#12182a', '#1a2134', '#efe9da', '#d9b36a'], dark: true, bar: '#12182a'},
   {id: 'rpg', name: 'RPG', tag: '도트 · 도스 게임 감성', desc: '짙은 나무색 바탕에 양피지 창, 금색 입체 테두리. 픽셀 글꼴과 칸칸이 끊긴 HP바 막대로 옛 RPG 화면처럼 보입니다.', sw: ['#3d2a1c', '#eadcbc', '#3a2a1c', '#d4a94a'], dark: true, bar: '#3d2a1c'},
+  {id: 'pocket', name: '포켓 도트', tag: '도트 · 휴대용 게임기 몬스터 RPG 감성', desc: '연두색 풀밭 바탕에 하얀 대화창, 굵은 남색 테두리와 깎인 모서리. 빨간 상단 띠와 노란 선택 커서, 칸칸이 끊긴 막대로 휴대용 게임기 RPG 화면처럼 보입니다.', sw: ['#b8e0a0', '#fcfcf4', '#283048', '#d23c32'], dark: false, bar: '#d23c32'},
   {id: 'vault', name: '금고', tag: '어두움 · 녹색과 황동', desc: '짙은 녹색 바탕에 크림색 글씨, 황동색 포인트. 강조색이 빨강·파랑이 아니라 손익 색과 헷갈리지 않습니다.', sw: ['#0f1a17', '#16241f', '#e8e2d0', '#c9a45c'], dark: true, bar: '#0f1a17'}
 ];
 // 고른 적이 없거나 없어진 테마면 리포트(light)

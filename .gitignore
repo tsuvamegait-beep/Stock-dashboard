@@ -1,3 +1,4 @@
 # DART 인증키와 받은 자료는 이 컴퓨터에만 둠(GitHub에 올리지 않음)
 dart/.dart_key
 dart/data/
+__pycache__/

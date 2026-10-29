@@ -77,6 +77,8 @@ document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]
 :root[data-theme="rpg"] .top{border-bottom:3px solid var(--gold);box-shadow:0 3px 0 var(--wood-dk)}
 :root[data-theme="rpg"] .tile{border:2px solid var(--axis);background:oklch(86% .05 80);box-shadow:inset 1px 1px 0 var(--gold-hi);padding:8px 10px}
 :root[data-theme="rpg"] .tile .v{font-weight:400;letter-spacing:-.03em;font-size:clamp(13px,3.9vw,20px)}
+/* 큰 숫자(총자산·칸 금액)는 읽기 쉽게 일반 고딕 */
+:root[data-theme="rpg"] :is(.hero-fig,.tile .v){font-family:"IBM Plex Sans KR",system-ui,sans-serif;font-weight:700;letter-spacing:-.02em;-webkit-font-smoothing:auto}
 :root[data-theme="rpg"] :is(button,.btn,input[type=text],select,.seg){border-width:2px}
 :root[data-theme="rpg"] :is(button.primary,.tabs button[aria-selected=true],.seg button[aria-pressed=true]){background:var(--gold);color:var(--wood-dk);border-color:var(--wood-dk);box-shadow:inset 2px 2px 0 var(--gold-hi),inset -2px -2px 0 var(--gold-lo)}
 :root[data-theme="rpg"] button.primary:active{box-shadow:inset 2px 2px 0 var(--gold-lo),inset -2px -2px 0 var(--gold-hi);transform:translate(1px,1px)}

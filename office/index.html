@@ -369,6 +369,7 @@ async function doFin(q) {
   try {
     // 재무 3년(12분기) + 일봉 약 3년(밴드 그래프용)
     const [j, c] = await Promise.all([api('dart=' + stock[0] + '&q=12'), api('candles=' + stock[0] + ':' + stock[2] + '&n=780').catch(() => null)]);
+    if (!Array.isArray(j.periods)) throw new Error('Apps Script가 예전 버전이라 재무(DART)를 모릅니다. 저장소의 backtest/apps_script.gs.txt를 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주세요.');
     const bars = c && c.data && c.data[stock[0]], b = bars && bars[bars.length - 1], px = b ? {d: b[0], c: b[4]} : null;
     me.work = false; say('찾았어요! 정리해서 드릴게요', 0);
     await walkTo('home');
@@ -380,6 +381,7 @@ async function doFin(q) {
     me.work = false; say('앗, 실패했어요', 3000);
     showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주세요.</p>' : ''));
     log(stock[1] + ' 재무 조회 실패: ' + e.message);
+    $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
     walkTo('home');
   } finally { me.busy = false; $('send').disabled = false; }
 }

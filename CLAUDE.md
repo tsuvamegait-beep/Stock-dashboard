@@ -17,6 +17,12 @@
 - 화면 저장: localStorage `backtest-sync` `backtest-cfg` `backtest-univ`(종목 목록, 업데이트 때만 새로), IndexedDB `backtest`(3판)/`bars` {c, gz(압축 일봉), n, last, at}. "실행"은 폰에 있는 시세로 계산하고 없거나 기간이 모자란 종목만 받음. "최신으로 업데이트"는 마지막 날짜 뒤만 받아 붙임(오늘 이미 받았으면 건너뜀, 16시 전에 받은 건 16시 뒤 한 번 더). 압축은 `CompressionStream`, 화면에 저장 용량·마지막 날짜와 "지우기". 구글 드라이브 창고 방식은 사용자 결정으로 쓰지 않음(2026-10-28).
 - 미확인: 실제 나무 응답(Output_1 필드·순서, array_cnt 상한, 수정주가 여부, 기준가 의미), Apps Script `MS949` 디코딩. 두 Apps Script가 같은 앱키로 토큰을 따로 받으면 서로의 토큰을 무효로 만드는지 모름.
 
+## 사무실(`office/`, 주식 작업 입구)
+- `office/index.html`(GitHub Pages `/office/`): 224×144 캔버스 도트 사무실(그림은 코드로 그림 `drawRoom`, 비서 12×16 스프라이트 `TOP`/`LEGS`). 자리 `SPOT`(dash 시세 단말기, bt 화이트보드, fin 서류함, home 비서 책상 + 한가할 때 coffee/plant/window), 길은 통로 y=100을 거쳐 감(`walkTo`).
+- 명령(`command`): 백테스트·전략 단어 → `../backtest/`, 대시보드·보유 → `../`, 그 밖은 종목 이름으로 보고 DART 재무(`doFin` → `finCard`). 작업 기록 localStorage `office-log`.
+- 연결은 백테스트와 같은 `backtest-sync`·`backtest-univ`를 씀. 재무는 백테스트 Apps Script `?dart=코드&q=8`(스크립트 속성 `DART_API_KEY`): corpCode.xml(zip)로 고유번호, `fnlttSinglAcntAll`(CFS 없으면 OFS) 계정 id 우선·이름 보조, `stockTotqySttus` 주식 수. 손익은 {a 분기, c 누적}, 4분기 = 사업보고서 a − 3분기 c. BPS = 지배주주 자본 ÷ (발행 − 자기주식), ROE·PER는 최근 4분기.
+- 미확인: 실제 DART 응답의 계정 id·이름(회사마다 다를 수 있음), 사업보고서 `thstrm_amount`가 1년 값인지, 금융업 회사.
+
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 기간 일부 파일(삼성은 제목의 조회 기간, 나무는 파일 이름의 `YYYY.MM.DD_YYYY.MM.DD`가 1월 1일이 아님 → `A.from`)은 저장 위치에서 기존 계좌를 고르면 `mergeAcct`로 이어 붙임(기존 거래는 from 전까지만 유지, 연초 수량 유지, 나무 엑셀 달러·엔 예수금은 변동분을 더함). 삼성 계좌번호는 `A.acct`로 저장해 다음 파일의 계좌 자동 선택에 씀. 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.

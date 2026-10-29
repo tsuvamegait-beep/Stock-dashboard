@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>주식 사무실</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14121f">
+<style>
+/* 도트 사무실: 짙은 남색 바탕 + 황동색 강조. 손익은 한국식(오름 빨강, 내림 파랑) */
+:root{
+  --bg:#14121f; --panel:#1e1b2e; --panel2:#262238; --line:#3a3452; --ink:#ece6d6; --ink2:#c7c0d8; --muted:#958eab;
+  --accent:#c9a45c; --up:#ff6b5e; --dn:#5b9bff; --ok:#6fcf8f;
+  --font:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --num:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 var(--font);padding-inline:16px;-webkit-text-size-adjust:100%}
+.wrap{max-width:720px;margin:0 auto;padding-block:18px 56px;display:flex;flex-direction:column;gap:14px}
+h1,h2,p{margin:0}
+h1{font-size:20px;letter-spacing:-.01em}
+h2{font-size:15px}
+.sub{color:var(--muted);font-size:12.5px}
+a{color:var(--accent)}
+.px{border:2px solid var(--line);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--line);border-radius:2px;background:var(--panel)}
+/* 무대: 캔버스(224×144)를 화면 폭에 맞춰 키움 */
+.stage{position:relative;width:100%;aspect-ratio:224/144;overflow:hidden}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+.spot{position:absolute;transform:translate(-50%,-50%);font:600 11px/1 var(--font);color:var(--ink);background:rgba(20,18,31,.82);border:1px solid var(--accent);
+  border-radius:2px;padding:4px 6px;cursor:pointer;white-space:nowrap;touch-action:manipulation}
+.spot:active{transform:translate(-50%,-50%) scale(.96)}
+.bubble{position:absolute;transform:translate(-50%,-100%);max-width:62%;background:#fbf7ec;color:#1b1726;font:600 12px/1.35 var(--font);
+  padding:5px 8px;border:2px solid #1b1726;border-radius:2px;pointer-events:none;transition:opacity 160ms;text-align:center}
+.bubble::after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-4px;border:4px solid transparent;border-top-color:#1b1726}
+[hidden]{display:none!important}
+.bubble[hidden]{display:block!important;opacity:0}
+.bar{display:flex;gap:8px}
+.bar input{flex:1;min-width:0;font:inherit;font-size:15px;color:var(--ink);background:var(--panel2);border:2px solid var(--line);border-radius:2px;padding:9px 10px}
+.bar input:focus{outline:none;border-color:var(--accent)}
+button{font:inherit;cursor:pointer;touch-action:manipulation}
+.go{font-weight:700;color:#1b1726;background:var(--accent);border:2px solid var(--accent);border-radius:2px;padding:0 16px}
+.go:disabled{opacity:.5}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font-size:12.5px;color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:2px;padding:5px 9px}
+.card{padding:14px;display:flex;flex-direction:column;gap:10px}
+.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
+@media (max-width:420px){.kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kv div{display:flex;flex-direction:column;min-width:0}
+.kv span{font-size:11.5px;color:var(--muted)}
+.kv b{font:600 16px/1.3 var(--num);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.mults{display:flex;flex-direction:column;gap:3px;font:13px/1.5 var(--num)}
+.mults div{display:flex;justify-content:space-between;gap:10px;padding:2px 6px;border-radius:2px}
+.mults .now{background:var(--panel2);outline:1px solid var(--accent)}
+.note{font-size:12px;color:var(--muted)}
+.err{color:var(--up)}
+.log{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--ink2)}
+.log time{color:var(--muted);font-family:var(--num);margin-right:6px}
+.btn{display:inline-block;text-decoration:none;color:#1b1726;background:var(--accent);font-weight:700;padding:7px 14px;border-radius:2px}
+svg.ch{width:100%;height:auto;display:block}
+svg.ch text{fill:var(--muted);font:10px var(--num)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<body>
+<main class="wrap">
+  <header>
+    <h1>주식 사무실</h1>
+    <p class="sub">비서에게 일을 시키면 해당 자리로 가서 처리해요. 장소를 눌러도 돼요.</p>
+  </header>
+
+  <div class="stage px" id="stage">
+    <canvas id="cv" width="224" height="144" role="img" aria-label="비서가 일하는 도트 사무실"></canvas>
+    <button type="button" class="spot" data-act="dash" style="left:16%;top:22%">📈 대시보드</button>
+    <button type="button" class="spot" data-act="bt" style="left:69%;top:9%">🧪 백테스트</button>
+    <button type="button" class="spot" data-act="fin" style="left:88%;top:56%">🗂 재무</button>
+    <div class="bubble" id="bubble" hidden></div>
+  </div>
+
+  <form class="bar" id="cmdForm" autocomplete="off">
+    <input id="cmd" type="text" placeholder="예: 삼성전자 재무, 백테스트, 대시보드" enterkeyhint="send">
+    <button class="go" id="send">시키기</button>
+  </form>
+  <div class="chips" id="chips">
+    <button type="button" data-q="삼성전자 재무">삼성전자 재무</button>
+    <button type="button" data-q="SK하이닉스 재무">SK하이닉스 재무</button>
+    <button type="button" data-q="백테스트">백테스트</button>
+    <button type="button" data-q="대시보드">대시보드</button>
+  </div>
+
+  <section class="card px" id="result" hidden></section>
+
+  <section class="card px">
+    <h2>작업 기록</h2>
+    <div class="log" id="log"></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+
+/* ===== Apps Script(백테스트용과 같은 연결 — 백테스트 페이지에서 연결한 주소·비밀번호를 같이 씀) ===== */
+const getSync = () => { const o = lsGet('backtest-sync', null); return o && o.url && o.key ? o : null; };
+async function api(params) {
+  const s = getSync(); if (!s) throw new Error('먼저 백테스트 페이지에서 Apps Script를 연결해 주세요');
+  const res = await fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(s.key) + '&' + params, {cache: 'no-store'});
+  let j; try { j = await res.json(); } catch (e) { throw new Error('Apps Script 응답을 읽지 못했습니다(새 버전으로 배포했는지 확인)'); }
+  if (!j.ok) throw new Error(j.error || '실패');
+  return j;
+}
+async function universe() { // 백테스트 페이지가 받아 둔 종목 목록을 같이 씀
+  const c = lsGet('backtest-univ', null);
+  if (c && c.list && c.list.length) return c.list;
+  const j = await api('universe=1');
+  lsSet('backtest-univ', {at: '', list: j.list});
+  return j.list;
+}
+async function findStock(q) {
+  const T = q.toUpperCase().replace(/\s/g, ''); if (!T) return null;
+  const list = await universe(), nm = r => r[1].replace(/\s/g, '').toUpperCase();
+  return list.find(r => r[0] === T) || list.find(r => nm(r) === T) || list.filter(r => nm(r).startsWith(T)).sort((a, b) => a[1].length - b[1].length)[0]
+    || list.filter(r => nm(r).indexOf(T) >= 0).sort((a, b) => a[1].length - b[1].length)[0] || null;
+}
+
+/* ===== 도트 그림 =====
+ * 화면 224×144 픽셀을 그린 뒤 CSS로 키움. 배경은 한 번만 그려 두고, 매 프레임 모니터 깜빡임과 비서만 다시 그림 */
+const W = 224, H = 144, cv = $('cv'), ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const R = (g, c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
+function drawRoom(g) {
+  // 벽(줄무늬 벽지)과 걸레받이
+  R(g, '#3a3350', 0, 0, W, 34);
+  for (let x = 0; x < W; x += 8) R(g, '#403858', x, 0, 4, 30);
+  R(g, '#2a2440', 0, 30, W, 4);
+  // 바닥(나무 판자)
+  for (let y = 34, k = 0; y < H; y += 8, k++) {
+    R(g, k % 2 ? '#71533a' : '#7a5a3c', 0, y, W, 8);
+    R(g, '#5e4430', 0, y + 7, W, 1);
+    for (let x = (k % 3) * 8; x < W; x += 24) R(g, '#5e4430', x, y, 1, 7);
+  }
+  // 창문(밤의 도시)
+  R(g, '#5b5470', 62, 5, 44, 23); R(g, '#1f2c4a', 64, 7, 40, 19); R(g, '#2b3d63', 64, 7, 40, 8);
+  [[66, 18, 5, 8], [72, 14, 6, 12], [79, 19, 4, 7], [84, 12, 7, 14], [92, 17, 5, 9], [98, 15, 5, 11]].forEach(b => R(g, '#15203a', ...b));
+  [[73, 16], [75, 20], [86, 15], [88, 19], [86, 22], [99, 18], [93, 20]].forEach(p => R(g, '#f3d27a', p[0], p[1], 1, 1));
+  R(g, '#5b5470', 83, 7, 2, 19); R(g, '#5b5470', 64, 16, 40, 1);
+  R(g, '#f6f0d8', 96, 9, 2, 2); // 달
+  // 시계
+  R(g, '#e8e2d0', 113, 8, 8, 8); R(g, '#2a2440', 116, 9, 1, 4); R(g, '#2a2440', 117, 12, 3, 1);
+  // 화이트보드(백테스트): 수익 곡선과 막대
+  R(g, '#9aa3b0', 130, 4, 52, 25); R(g, '#eef1f4', 132, 6, 48, 20);
+  const curve = [22, 21, 22, 19, 20, 17, 18, 15, 16, 13, 14, 11, 12, 10, 9];
+  curve.forEach((y, i) => { R(g, '#2f9e6a', 134 + i * 3, y, 3, 1); if (i) R(g, '#2f9e6a', 134 + i * 3, Math.min(y, curve[i - 1]), 1, Math.abs(y - curve[i - 1]) + 1); });
+  R(g, '#e05a4a', 170, 18, 2, 6); R(g, '#3f6fd0', 173, 21, 2, 3); R(g, '#e05a4a', 176, 16, 2, 8);
+  R(g, '#7d8796', 134, 28, 44, 2);
+  // 시세 단말기 책상 + 모니터 2대
+  R(g, '#1d1d24', 15, 37, 20, 15); R(g, '#1d1d24', 37, 37, 20, 15);
+  R(g, '#0b1a14', 17, 39, 16, 11); R(g, '#0b1a14', 39, 39, 16, 11);
+  R(g, '#1d1d24', 24, 52, 2, 2); R(g, '#1d1d24', 46, 52, 2, 2);
+  R(g, '#6b4a30', 11, 53, 50, 5); R(g, '#5a3d27', 11, 58, 50, 7); R(g, '#4a3220', 13, 65, 3, 4); R(g, '#4a3220', 56, 65, 3, 4);
+  R(g, '#d9d4c6', 22, 55, 12, 2); // 키보드
+  // 서류함(DART): 서랍 3칸과 황동 손잡이, 위에 서류 더미
+  R(g, '#7d8796', 186, 30, 26, 42); R(g, '#6a7383', 186, 30, 26, 2);
+  for (let i = 0; i < 3; i++) { R(g, '#5f6876', 188, 34 + i * 13, 22, 1); R(g, '#c9a45c', 196, 39 + i * 13, 6, 2); R(g, '#e8e2d0', 193, 36 + i * 13, 12, 2); }
+  R(g, '#f4efe0', 190, 25, 16, 5); R(g, '#d8d0bc', 191, 27, 14, 1); R(g, '#c9a45c', 203, 24, 2, 2);
+  // 깔개
+  R(g, '#2f5d50', 70, 96, 82, 38); R(g, '#c9a45c', 72, 98, 78, 1); R(g, '#c9a45c', 72, 131, 78, 1); R(g, '#c9a45c', 72, 98, 1, 34); R(g, '#c9a45c', 149, 98, 1, 34);
+  // 비서 책상 + 노트북 + 머그컵
+  R(g, '#6b4a30', 82, 70, 48, 6); R(g, '#5a3d27', 82, 76, 48, 9); R(g, '#4a3220', 84, 85, 3, 3); R(g, '#4a3220', 125, 85, 3, 3);
+  R(g, '#c9cfd8', 99, 63, 16, 8); R(g, '#2a3a50', 100, 64, 14, 6); R(g, '#c9cfd8', 97, 71, 20, 1);
+  R(g, '#e8e2d0', 121, 66, 4, 5); R(g, '#e8e2d0', 125, 67, 1, 2);
+  // 화분
+  R(g, '#8a4b35', 12, 122, 12, 10); R(g, '#7a3f2c', 12, 122, 12, 2);
+  [[10, 112, 6, 6], [16, 106, 6, 8], [20, 113, 6, 6], [13, 116, 9, 7], [18, 102, 3, 6]].forEach(b => R(g, '#3f8f5a', ...b));
+  [[12, 113], [18, 107], [22, 115]].forEach(p => R(g, '#57b27a', p[0], p[1], 2, 2));
+  // 커피 머신 + 컵
+  R(g, '#2a2a30', 200, 94, 16, 24); R(g, '#3a3a44', 202, 96, 12, 6); R(g, '#e05a4a', 212, 104, 2, 2); R(g, '#6fcf8f', 212, 108, 2, 2);
+  R(g, '#151519', 203, 110, 10, 2); R(g, '#e8e2d0', 205, 105, 5, 5);
+}
+const bg = document.createElement('canvas'); bg.width = W; bg.height = H; drawRoom(bg.getContext('2d'));
+
+// 비서 그림(12×16). 글자 하나가 픽셀 하나: h 머리 s 피부 e 눈 w 셔츠 b 정장 r 넥타이(황동) p 바지 f 신발
+const PAL = {h: '#2b2135', s: '#f2c9a0', e: '#1a1a2a', w: '#f4f1e8', b: '#2f4a7a', r: '#c9a45c', p: '#2a2a3a', f: '#141018', c: '#e88a8a'};
+const TOP = {
+  down: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hssssssh..', '..hsessesh..', '..hcssssch..', '....ssss....', '..bbwrrwbb..', '.bbbwrrwbbb.', '.bbbbrrbbbb.', '.sbbbbbbbbs.', '..bbbbbbbb..', '..pppppppp..'],
+  up: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hhhhhhhh..', '..hhhhhhhh..', '..hhhhhhhh..', '....ssss....', '..bbbbbbbb..', '.bbbbbbbbbb.', '.bbbbbbbbbb.', '.sbbbbbbbbs.', '..bbbbbbbb..', '..pppppppp..'],
+  right: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hhhhssss..', '..hhhhsses..', '..hhhhsssc..', '.....sss....', '...bbbwbb...', '...bbbwbb...', '...bbbbbb...', '...bbsbbb...', '...bbbbbb...', '...pppppp...']};
+const LEGS = {
+  down: [['..ppp..ppp..', '..ppp..ppp..', '..fff..fff..'], ['...pp..ppp..', '...pp..ppp..', '...ff..fff..'], ['..ppp..pp...', '..ppp..pp...', '..fff..ff...']],
+  right: [['....pppp....', '....pppp....', '....ffff....'], ['...pp..pp...', '...pp...pp..', '..ff....ff..'], ['....pp.pp...', '....pp.pp...', '....ff.ff...']]};
+LEGS.up = LEGS.down;
+function sprite(rows, flip) {
+  const c = document.createElement('canvas'); c.width = 12; c.height = 16;
+  const g = c.getContext('2d');
+  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) R(g, PAL[ch], flip ? 11 - x : x, y, 1, 1); }));
+  return c;
+}
+const SPR = {};
+['down', 'up', 'right'].forEach(d => { SPR[d] = LEGS[d].map(l => sprite(TOP[d].concat(l))); });
+SPR.left = LEGS.right.map(l => sprite(TOP.right.concat(l), true));
+
+/* ===== 비서 움직임 =====
+ * 자리마다 서는 위치. 길은 "아래 통로(y=100)로 내려가 → 옆으로 → 올라감" 하나라 가구에 걸리지 않음 */
+const SPOT = {
+  home: {x: 100, y: 86, face: 'up'}, dash: {x: 30, y: 62, face: 'up'}, bt: {x: 150, y: 32, face: 'up'},
+  fin: {x: 172, y: 54, face: 'right'}, coffee: {x: 186, y: 108, face: 'right'}, plant: {x: 28, y: 112, face: 'left'}, window: {x: 78, y: 34, face: 'up'}};
+const AISLE = 100;
+const me = {x: 100, y: 86, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
+function walkTo(name) {
+  const s = SPOT[name];
+  return new Promise(res => {
+    const p = [];
+    if (Math.abs(me.y - s.y) > 1 || Math.abs(me.x - s.x) > 1) {
+      if (Math.abs(me.x - s.x) > 1) { p.push({x: me.x, y: AISLE}, {x: s.x, y: AISLE}); }
+      p.push({x: s.x, y: s.y});
+    }
+    me.path = p; me.face = s.face; me.done = res; me.work = false;
+    if (!p.length) { me.dir = s.face; me.done = null; res(); }
+  });
+}
+let bubbleTimer = 0;
+function say(text, ms) {
+  const b = $('bubble');
+  b.textContent = text; b.hidden = false;
+  clearTimeout(bubbleTimer);
+  if (ms !== 0) bubbleTimer = setTimeout(() => { b.hidden = true; }, ms || 2600);
+}
+function step(dt) {
+  if (me.path.length) {
+    const t = me.path[0], dx = t.x - me.x, dy = t.y - me.y, d = Math.hypot(dx, dy), v = 46 * dt;
+    if (d <= v) { me.x = t.x; me.y = t.y; me.path.shift(); }
+    else { me.x += dx / d * v; me.y += dy / d * v; }
+    me.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    me.t += dt; if (me.t > 0.14) { me.t = 0; me.frame = me.frame === 1 ? 2 : 1; }
+    if (!me.path.length) { me.dir = me.face || 'down'; me.frame = 0; const f = me.done; me.done = null; if (f) f(); }
+  } else if (me.work) { me.t += dt; if (me.t > 0.25) { me.t = 0; me.frame = me.frame ? 0 : 1; } } // 일하는 중: 제자리에서 살짝 움직임
+  else me.frame = 0;
+}
+function draw(now) {
+  ctx.drawImage(bg, 0, 0);
+  // 모니터 속 시세 그래프(빨강·파랑이 번갈아 움직임)
+  const k = Math.floor(now / 400);
+  for (let i = 0; i < 14; i++) {
+    const a = (Math.sin((i + k) * 0.9) + 1) * 3.5, b = (Math.cos((i + k) * 0.7) + 1) * 3.5;
+    R(ctx, i % 4 === 0 ? '#ff6b5e' : '#5b9bff', 18 + i, 40 + Math.round(a), 1, 2);
+    R(ctx, '#6fcf8f', 40 + i, 40 + Math.round(b), 1, 1);
+  }
+  if (me.work && k % 2) R(ctx, '#f3d27a', me.x + 5, me.y - 4, 2, 2); // 일하는 표시
+  ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x), Math.round(me.y));
+  const b = $('bubble'); // 말풍선은 비서 머리 위
+  b.style.left = ((me.x + 6) / W * 100) + '%'; b.style.top = ((me.y - 3) / H * 100) + '%';
+}
+let last = performance.now();
+function loop(now) { step(Math.min(0.05, (now - last) / 1000)); last = now; draw(now); requestAnimationFrame(loop); }
+requestAnimationFrame(loop);
+
+// 한가할 때는 사무실을 돌아다님
+const IDLE = [['coffee', '커피 한 잔 ☕'], ['window', '오늘 시장은 어땠을까…'], ['plant', '물 주는 중 🌱'], ['home', '']];
+setInterval(() => {
+  if (me.busy || me.path.length || document.hidden) return;
+  const [s, t] = IDLE[Math.floor(Math.random() * IDLE.length)];
+  walkTo(s).then(() => { if (t && !me.busy && Math.random() < 0.6) say(t, 2200); });
+}, 9000);
+
+/* ===== 작업 기록 ===== */
+const LOG = lsGet('office-log', []);
+function log(t) {
+  const d = new Date(), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  LOG.unshift([hm, t]); LOG.length = Math.min(LOG.length, 20); lsSet('office-log', LOG); showLog();
+}
+function showLog() { $('log').innerHTML = LOG.length ? LOG.map(([t, x]) => '<div><time>' + t + '</time>' + esc(x) + '</div>').join('') : '<div class="note">아직 시킨 일이 없어요.</div>'; }
+showLog();
+
+/* ===== 숫자 표시 ===== */
+const won = x => Math.round(x).toLocaleString('ko-KR');
+function big(x) { if (x == null) return '–'; const a = Math.abs(x), s = x < 0 ? '-' : ''; return a >= 1e12 ? s + (a / 1e12).toFixed(1) + '조' : a >= 1e8 ? s + Math.round(a / 1e8).toLocaleString('ko-KR') + '억' : s + won(a); }
+const pct = x => x == null || !isFinite(x) ? '–' : (x * 100).toFixed(1) + '%';
+const showCard = html => { $('result').innerHTML = html; $('result').hidden = false; };
+
+/* ===== 재무(DART) =====
+ * 분기 손익: 1·2·3분기 보고서는 그 분기 3개월 값, 사업보고서(4분기)는 1년 값 − 3분기 누적 */
+function quarterly(periods, f) {
+  const by = {}; periods.forEach(p => { by[p.y * 10 + p.q] = p; });
+  return p => {
+    const v = p[f] || (f === 'nio' ? p.ni : null); if (!v || v.a == null) return null;
+    if (p.q !== 4) return v.a;
+    const p3 = by[p.y * 10 + 3], v3 = p3 && (p3[f] || (f === 'nio' ? p3.ni : null));
+    return v3 && v3.c != null ? v.a - v3.c : null;
+  };
+}
+function finCard(stock, j, px) {
+  const P = j.periods; if (!P.length) return '<h2>' + esc(stock[1]) + '</h2><p class="note">DART에 분기 재무가 없어요(최근 상장, 금융업 등 형식이 다른 회사일 수 있어요).</p>';
+  const p0 = P[0], lab = p => (p.y % 100) + '년 ' + p.q + '분기';
+  const eq = p0.eqo != null ? p0.eqo : p0.eq, sh = p0.shares ? p0.shares - (p0.treasury || 0) : null;
+  const bps = eq && sh ? eq / sh : null, price = px && px.c, pbr = bps && price ? price / bps : null;
+  const qn = quarterly(P, 'nio'), last4 = P.slice(0, 4).map(qn), ttm = last4.length === 4 && last4.every(x => x != null) ? last4.reduce((a, b) => a + b, 0) : null;
+  const p4 = P[4], eq4 = p4 ? (p4.eqo != null ? p4.eqo : p4.eq) : null, roe = ttm != null && eq ? ttm / (eq4 ? (eq + eq4) / 2 : eq) : null;
+  const per = ttm > 0 && price && sh ? price * sh / ttm : null;
+  const kv = (l, v) => '<div><span>' + l + '</span><b>' + v + '</b></div>';
+  let h = '<h2>' + esc(stock[1]) + ' <span class="sub">' + stock[0] + ' · ' + lab(p0) + ' 기준 · ' + (p0.fs === 'CFS' ? '연결' : '별도') + '</span></h2><div class="kv">' +
+    kv('주가' + (px ? ' (' + px.d.slice(4, 6) + '.' + px.d.slice(6) + ')' : ''), price ? won(price) + '원' : '–') + kv('BPS', bps ? won(bps) + '원' : '–') + kv('PBR', pbr ? pbr.toFixed(2) + '배' : '–') +
+    kv('ROE (최근 4분기)', pct(roe)) + kv('PER (최근 4분기)', per ? per.toFixed(1) + '배' : '–') + kv('지배주주 자본', big(eq)) +
+    kv('현금성자산', big(p0.cash)) + kv('부채비율', p0.liab != null && p0.eq ? pct(p0.liab / p0.eq) : '–') + kv('주식 수 (자사주 뺌)', sh ? (sh / 1e8).toFixed(2) + '억주' : '–') + '</div>';
+  // 분기 매출·영업이익 막대(오래된 → 최근)
+  const qr = quarterly(P, 'rev'), qo = quarterly(P, 'op'), Q = P.slice(0, 8).reverse().map(p => ({l: (p.y % 100) + '.' + p.q + 'Q', r: qr(p), o: qo(p)}));
+  const mx = Math.max(1, ...Q.map(x => Math.max(x.r || 0, Math.abs(x.o || 0))));
+  const cw = 300, ch = 120, bw = cw / Q.length, Y = v => 100 - (v / mx) * 88;
+  let g = '';
+  Q.forEach((x, i) => {
+    const x0 = i * bw + bw * 0.18, w = bw * 0.3;
+    if (x.r != null) g += '<rect x="' + x0.toFixed(1) + '" y="' + Y(Math.max(0, x.r)).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + (100 - Y(Math.max(0, x.r))).toFixed(1) + '" fill="#8a84a6"/>';
+    if (x.o != null) { const top = Y(Math.max(0, x.o)), hh = Math.abs(Y(x.o) - 100); g += '<rect x="' + (x0 + w + 1).toFixed(1) + '" y="' + (x.o >= 0 ? top : 100).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.max(1, hh).toFixed(1) + '" fill="' + (x.o >= 0 ? '#c9a45c' : '#5b9bff') + '"/>'; }
+    g += '<text x="' + (i * bw + bw / 2).toFixed(1) + '" y="114" text-anchor="middle">' + x.l + '</text>';
+  });
+  h += '<div><div class="note">분기 매출(회색)·영업이익(황동) · 최근 ' + big(Q[Q.length - 1].r) + ' / ' + big(Q[Q.length - 1].o) + '</div><svg class="ch" viewBox="0 0 ' + cw + ' ' + ch + '" role="img" aria-label="분기 매출과 영업이익"><line x1="0" x2="' + cw + '" y1="100" y2="100" stroke="#3a3452"/>' + g + '</svg></div>';
+  if (bps) {
+    h += '<div><div class="note" style="margin-bottom:4px">PBR 배수별 주가 (BPS ' + won(bps) + '원 × 배수)</div><div class="mults">';
+    for (let m = 1; m <= 4.001; m += 0.5) h += '<div class="' + (pbr && Math.abs(pbr - m) < 0.25 ? 'now' : '') + '"><span>' + m.toFixed(1) + '배</span><span>' + won(bps * m) + '원</span></div>';
+    h += '</div></div>';
+  }
+  h += '<p class="note">DART 정기보고서(분기·반기·사업) 기준. BPS = 지배주주 자본 ÷ (발행주식 − 자기주식). 배수별 주가는 "그 배수라면"이라는 계산이고 예측이 아니에요.</p>';
+  return h;
+}
+async function doFin(q) {
+  let stock = null;
+  try { stock = await findStock(q); } catch (e) { say(e.message, 4000); showCard('<p class="err">' + esc(e.message) + '</p><a class="btn" href="../backtest/">백테스트 페이지로</a>'); return; }
+  if (!stock) { say('"' + q + '" 종목을 못 찾았어요', 3000); return; }
+  me.busy = true; $('send').disabled = true;
+  say(stock[1] + ' 서류 찾으러 갈게요', 0);
+  await walkTo('fin');
+  me.work = true; say('DART에서 ' + stock[1] + ' 재무 찾는 중…', 0);
+  try {
+    const [j, c] = await Promise.all([api('dart=' + stock[0] + '&q=8'), api('candles=' + stock[0] + ':' + stock[2] + '&n=5').catch(() => null)]);
+    const bars = c && c.data && c.data[stock[0]], b = bars && bars[bars.length - 1], px = b ? {d: b[0], c: b[4]} : null;
+    me.work = false; say('찾았어요! 정리해서 드릴게요', 0);
+    await walkTo('home');
+    showCard(finCard(stock, j, px));
+    say(stock[1] + ' 재무 정리 끝 ✔', 3000);
+    log(stock[1] + ' 재무 조회 (' + (j.periods[0] ? (j.periods[0].y % 100) + '년 ' + j.periods[0].q + '분기' : '자료 없음') + ')');
+    $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
+  } catch (e) {
+    me.work = false; say('앗, 실패했어요', 3000);
+    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주세요.</p>' : ''));
+    log(stock[1] + ' 재무 조회 실패: ' + e.message);
+    walkTo('home');
+  } finally { me.busy = false; $('send').disabled = false; }
+}
+async function goPlace(spot, msg, href, label) {
+  me.busy = true;
+  say(msg, 0); await walkTo(spot);
+  me.work = true; say(label + ' 준비됐어요', 0);
+  showCard('<h2>' + label + '</h2><p class="sub">' + esc(msg) + '</p><div><a class="btn" href="' + href + '">' + label + ' 열기 →</a></div>');
+  log(label + ' 열기');
+  setTimeout(() => { me.work = false; me.busy = false; $('bubble').hidden = true; }, 2500);
+}
+
+/* ===== 명령 ===== */
+async function command(t) {
+  t = (t || '').trim(); if (!t || me.busy) return;
+  if (/백테스트|전략|이동평균|이평|RSI|MACD|볼린저|신고가|변동성|수급/i.test(t)) return goPlace('bt', '화이트보드에서 전략을 시험해요', '../backtest/', '백테스트');
+  if (/대시보드|보유|포트폴리오|자산|내\s*주식|손익/.test(t)) return goPlace('dash', '시세 단말기에서 보유 현황을 봐요', '../', '대시보드');
+  const q = t.replace(/재무제표|재무|BPS|PBR|PER|ROE|실적|분석|평가|보여\s*줘|알려\s*줘|찾아\s*줘|해\s*줘|좀|의|\?/gi, ' ').trim();
+  if (q) return doFin(q);
+  say('예: "삼성전자 재무", "백테스트", "대시보드"', 3000);
+}
+$('cmdForm').onsubmit = e => { e.preventDefault(); const v = $('cmd').value; $('cmd').value = ''; $('cmd').blur(); command(v); };
+$('chips').onclick = e => { const b = e.target.closest('[data-q]'); if (b) command(b.dataset.q); };
+document.querySelectorAll('.spot').forEach(b => { b.onclick = () => {
+  if (b.dataset.act === 'fin') { $('cmd').focus(); say('어느 종목의 재무를 볼까요?', 3000); walkTo('fin'); }
+  else command(b.dataset.act === 'bt' ? '백테스트' : '대시보드');
+}; });
+setTimeout(() => say(getSync() ? '안녕하세요! 무엇을 도와드릴까요?' : '백테스트 페이지에서 Apps Script를 먼저 연결해 주세요', 3500), 600);
+</script>
+</body>
+</html>

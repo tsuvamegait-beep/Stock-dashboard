@@ -1,12 +1,13 @@
 /**
  * 백테스트용 Apps Script (주식 대시보드 Apps Script와 별개의 새 프로젝트)
- * 나무증권 Open API(NH PLUG)에서 국내 종목 목록, 일봉, 투자자별 순매수만 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
+ * 나무증권 Open API(NH PLUG)에서 국내 종목 목록, 일봉, 투자자별 순매수를, DART에서 분기 재무를 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
  *
  * 준비(한 번만)
  * 1) script.google.com → 새 프로젝트 → 이 파일 내용을 전부 붙여넣고 저장
  * 2) 아래 SECRET_KEY를 나만 아는 긴 문자열로 바꾸기(백테스트 화면에 같은 값을 입력)
  * 3) 왼쪽 톱니바퀴(프로젝트 설정) > 스크립트 속성 > 속성 추가
  *    이름 NH_APP_KEY / 값 nhplug.com 앱키,  이름 NH_APP_SECRET / 값 앱시크릿  (키는 코드에 직접 적지 마세요)
+ *    (재무 기능) 이름 DART_API_KEY / 값 opendart.fss.or.kr 인증키 40자리
  * 4) 배포 > 새 배포 > 유형: 웹 앱 > 실행 계정: 나 > 액세스 권한: 모든 사용자 → 나온 웹 앱 주소를 백테스트 화면에 입력
  *    코드를 고친 뒤에는 "배포 관리 → 수정(연필) → 버전: 새 버전"으로 배포(주소가 그대로 유지됨)
  * 확인용: 편집기 위쪽 함수 선택에서 testBt → 실행 → 실행 로그 확인
@@ -19,6 +20,7 @@ function out_(obj) {
 // ?universe=1 : 국내 종목 목록. 한 종목 = [코드, 이름, 시장(1 코스피·4 코스닥), 코스피200(1/0), 코스닥150(1/0), 거래정지(1/0)]
 // ?candles=005930:1,035720:1&n=1400 : 종목별 일봉(오래된 날짜 → 최근). 한 요청에 최대 30종목.
 //   한 봉 = [yyyyMMdd, 시가, 고가, 저가, 종가, 거래량, 기준가, 락구분코드] — 분할·배당락 보정은 백테스트 화면에서 기준가로 함
+// ?dart=005930&q=8 : DART 분기별 재무(최근 q개 보고서) + 주식 수. 금액은 원 단위
 // ?flows=005930:1,…&n=999 : 종목별 투자자 순매수(오래된 날짜 → 최근, 최대 999일). 한 줄 = [yyyyMMdd, 외국인, 기관계, 개인] 순매수 수량(주)
 function doGet(e) {
   const q = (e && e.parameter) || {};
@@ -27,6 +29,7 @@ function doGet(e) {
     if (q.universe) return out_({ok: true, list: universe_()});
     if (q.candles) return out_(candlesMany_(String(q.candles), +q.n || 300));
     if (q.flows) return out_(flowsMany_(String(q.flows), +q.n || 300));
+    if (q.dart) return out_(dartFin_(String(q.dart), Math.max(1, Math.min(+q.q || 8, 12))));
     return out_({ok: true, hello: '백테스트 Apps Script 연결됨'});
   } catch (err) { return out_({ok: false, error: String(err && err.message || err)}); }
 }
@@ -147,6 +150,107 @@ function flows_(code, mkt, n) {
 }
 function flowsMany_(codes, n) { return many_(codes, n, flows_); }
 
+/* ===== DART(금감원 전자공시 오픈API) 재무 =====
+ * 종목코드(6자리) → DART 고유번호(8자리)는 corpCode.xml(zip)에서 찾아 6시간 캐시.
+ * 분기 재무는 fnlttSinglAcntAll(전체 재무제표, 연결 CFS 없으면 별도 OFS), 주식 수는 stockTotqySttus.
+ * 손익(매출·영업이익·순이익)은 {a: 이번 보고서 금액(분기 3개월), c: 누적}으로 줌 — 사업보고서(4분기)의 a는 1년 전체라 화면에서 3분기 누적을 빼서 4분기만 구함 */
+const DART_BASE = 'https://opendart.fss.or.kr/api/';
+function dartKey_() {
+  const key = PropertiesService.getScriptProperties().getProperty('DART_API_KEY');
+  if (!key) throw new Error('Apps Script 스크립트 속성에 DART_API_KEY가 없습니다');
+  return key;
+}
+function dartGet_(api, params) {
+  const q = Object.keys(params).map(k => k + '=' + encodeURIComponent(params[k])).join('&');
+  const res = UrlFetchApp.fetch(DART_BASE + api + '?crtfc_key=' + encodeURIComponent(dartKey_()) + '&' + q, {muteHttpExceptions: true});
+  let j; try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('DART 응답(' + res.getResponseCode() + ')을 읽지 못했습니다'); }
+  if (j.status === '013') return []; // 조회된 데이터 없음
+  if (j.status !== '000') throw new Error('DART ' + j.status + ' ' + (j.message || ''));
+  return j.list || [];
+}
+// 캐시 한 칸이 100KB 제한이라 큰 값은 나눠서 보관
+function cacheGetJson_(name) {
+  const cache = CacheService.getScriptCache(), n = +cache.get(name + '_n') || 0;
+  if (!n) return null;
+  const parts = cache.getAll(Array.from({length: n}, (_, i) => name + '_' + i));
+  return Object.keys(parts).length === n ? JSON.parse(Array.from({length: n}, (_, i) => parts[name + '_' + i]).join('')) : null;
+}
+function cachePutJson_(name, obj, sec) {
+  try {
+    const s = JSON.stringify(obj), size = 90000, put = {};
+    let i = 0; for (; i * size < s.length; i++) put[name + '_' + i] = s.substr(i * size, size);
+    put[name + '_n'] = String(i); CacheService.getScriptCache().putAll(put, sec);
+  } catch (e) {}
+}
+function corpMap_() { // {종목코드: [고유번호, 회사명]} 상장사만
+  const hit = cacheGetJson_('corp'); if (hit) return hit;
+  const res = UrlFetchApp.fetch(DART_BASE + 'corpCode.xml?crtfc_key=' + encodeURIComponent(dartKey_()), {muteHttpExceptions: true});
+  if (res.getResponseCode() !== 200) throw new Error('DART 회사 목록을 받지 못했습니다(' + res.getResponseCode() + ')');
+  let files;
+  try { files = Utilities.unzip(res.getBlob().setContentType('application/zip')); }
+  catch (e) { throw new Error('DART 회사 목록 압축을 풀지 못했습니다(인증키 확인): ' + res.getContentText().slice(0, 120)); }
+  const xml = files[0].getDataAsString('UTF-8'), map = {};
+  xml.split('</list>').forEach(part => { // 한 회사 = <list> … </list>. 상장사만 stock_code가 있음
+    const sc = /<stock_code>\s*([0-9A-Z]{6})\s*<\/stock_code>/.exec(part); if (!sc) return;
+    const cc = /<corp_code>(\d{8})<\/corp_code>/.exec(part), nm = /<corp_name>([^<]*)<\/corp_name>/.exec(part);
+    if (cc) map[sc[1]] = [cc[1], nm ? nm[1].trim() : ''];
+  });
+  cachePutJson_('corp', map, 21600);
+  return map;
+}
+const DART_RPT = {'11013': 1, '11012': 2, '11014': 3, '11011': 4}; // 보고서 코드 → 분기(1분기·반기·3분기·사업)
+function dartNum_(v) { const s = String(v == null ? '' : v).replace(/,/g, '').trim(); return /^-?\d+(\.\d+)?$/.test(s) ? +s : null; }
+function dartPeriod_(corp, y, r) {
+  const ck = 'df_' + corp + '_' + y + r, cache = CacheService.getScriptCache(), hit = cache.get(ck);
+  if (hit) return JSON.parse(hit);
+  let fs = 'CFS', list = dartGet_('fnlttSinglAcntAll.json', {corp_code: corp, bsns_year: y, reprt_code: r, fs_div: 'CFS'});
+  if (!list.length) { fs = 'OFS'; list = dartGet_('fnlttSinglAcntAll.json', {corp_code: corp, bsns_year: y, reprt_code: r, fs_div: 'OFS'}); }
+  if (!list.length) { cache.put(ck, 'null', 3600); return null; }
+  const norm = s => String(s || '').replace(/[\s·ㆍ()（）]/g, '');
+  const find = (sjs, ids, names) => { // 계정 id로 먼저, 없으면 계정 이름으로
+    for (const sj of sjs) for (const x of list) if (x.sj_div === sj && ids.indexOf(x.account_id) >= 0) return x;
+    for (const sj of sjs) for (const x of list) if (x.sj_div === sj && names.indexOf(norm(x.account_nm)) >= 0) return x;
+    return null;
+  };
+  const bs = (ids, names) => { const x = find(['BS'], ids, names); return x ? dartNum_(x.thstrm_amount) : null; };
+  const is = (ids, names) => { const x = find(['IS', 'CIS'], ids, names); return x ? {a: dartNum_(x.thstrm_amount), c: dartNum_(x.thstrm_add_amount)} : null; };
+  const out = {y: +y, q: DART_RPT[r], fs,
+    eq: bs(['ifrs-full_Equity'], ['자본총계']),
+    eqo: bs(['ifrs-full_EquityAttributableToOwnersOfParent'], ['지배기업의소유주에게귀속되는자본', '지배기업소유주지분', '지배기업의소유지분']),
+    cash: bs(['ifrs-full_CashAndCashEquivalents'], ['현금및현금성자산']),
+    assets: bs(['ifrs-full_Assets'], ['자산총계']),
+    liab: bs(['ifrs-full_Liabilities'], ['부채총계']),
+    rev: is(['ifrs-full_Revenue'], ['매출액', '수익매출액', '영업수익', '매출']),
+    op: is(['dart_OperatingIncomeLoss'], ['영업이익', '영업이익손실']),
+    ni: is(['ifrs-full_ProfitLoss'], ['당기순이익', '당기순이익손실', '분기순이익', '반기순이익']),
+    nio: is(['ifrs-full_ProfitLossAttributableToOwnersOfParent'], ['지배기업의소유주에게귀속되는당기순이익', '지배기업소유주지분순이익'])};
+  try { // 주식 수(발행 − 자기주식). 합계 줄이 없으면 보통주+우선주
+    const st = dartGet_('stockTotqySttus.json', {corp_code: corp, bsns_year: y, reprt_code: r});
+    const row = st.find(x => /합계/.test(x.se));
+    const sum = k => row ? dartNum_(row[k]) : st.filter(x => /보통|우선/.test(x.se)).reduce((t, x) => t + (dartNum_(x[k]) || 0), 0);
+    out.shares = sum('istc_totqy'); out.treasury = sum('tesstk_co');
+  } catch (e) {}
+  cache.put(ck, JSON.stringify(out), 21600);
+  return out;
+}
+function dartFin_(code, n) {
+  if (!/^[0-9A-Z]{6}$/.test(code)) return {ok: false, error: '종목코드 6자리를 넣어 주세요'};
+  const hit = corpMap_()[code];
+  if (!hit) return {ok: false, error: 'DART에서 이 종목을 찾지 못했습니다(' + code + ')'};
+  const corp = hit[0], y0 = +Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy'), out = [];
+  let tried = 0;
+  for (let y = y0; y >= y0 - 4 && out.length < n; y--) {
+    for (const r of ['11011', '11014', '11012', '11013']) { // 최근 보고서부터: 사업(4Q)·3Q·반기·1Q
+      if (out.length >= n) break;
+      if (y === y0 && r === '11011') continue; // 올해 사업보고서는 아직 없음
+      const p = dartPeriod_(corp, String(y), r); tried++;
+      if (p) out.push(p);
+      else if (!out.length && tried >= 6) return {ok: true, code, corp, name: hit[1], periods: []}; // 최근 1년 반 동안 아무것도 없음
+    }
+  }
+  return {ok: true, code, corp, name: hit[1], periods: out};
+}
+
 // 편집기에서 직접 실행해 보는 확인용: 종목 수와 삼성전자 최근 일봉 3개, 받은 봉 개수, 수급 일수를 로그에 남김
 function testBt() {
   const u = universe_();
@@ -157,5 +261,9 @@ function testBt() {
   const ev = c.filter(r => r[7] && r[7] !== '0');
   Logger.log('락·분할 표시가 있는 날 ' + ev.length + '개: ' + JSON.stringify(ev.slice(-5)));
   const f = flows_('005930', '1', 999);
+  if (PropertiesService.getScriptProperties().getProperty('DART_API_KEY')) {
+    const d = dartFin_('005930', 2);
+    Logger.log('DART 삼성전자 ' + (d.error || d.periods.map(p => p.y + '년 ' + p.q + '분기: 지배자본 ' + p.eqo + ' · 자본 ' + p.eq + ' · 현금 ' + p.cash + ' · 주식 ' + p.shares + '(자사주 ' + p.treasury + ') · 매출 ' + JSON.stringify(p.rev) + ' · 지배순이익 ' + JSON.stringify(p.nio)).join(' / ')));
+  }
   Logger.log('삼성전자 수급 ' + f.length + '일 · ' + (f[0] || [''])[0] + ' ~ ' + (f[f.length - 1] || [''])[0] + ' · 최근 3일 [날짜, 외국인, 기관, 개인]: ' + JSON.stringify(f.slice(-3)));
 }

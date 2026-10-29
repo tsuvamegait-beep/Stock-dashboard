@@ -8,7 +8,7 @@
 <script>/* 저장된 테마 적용(없거나 모르는 값이면 리포트). 테마 목록은 아래 THEMES와 맞출 것: [id, 어두운가, 상단바 색] */
 /* RPG 테마만 쓰는 픽셀 글꼴(갈무리)은 그 테마일 때만 불러옴 */
 window.__themeFont=function(id){if(id!=="rpg"||document.getElementById("font-rpg"))return;var l=document.createElement("link");l.id="font-rpg";l.rel="stylesheet";l.href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css";document.head.appendChild(l)};
-(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"],["vault",1,"#0f1a17"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
+(function(){var L=[["light",0,"#f8f4ec"],["night",1,"#12182a"],["rpg",1,"#3d2a1c"],["vault",1,"#0f1a17"],["ember",1,"#1c1612"],["study",1,"#1e1316"],["mocha",0,"#6e4a30"]],t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}
 var th=L.filter(function(x){return x[0]===t})[0]||L[0];document.documentElement.setAttribute("data-theme",th[0]);__themeFont(th[0]);
 document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]?"dark":"only light");document.querySelector('meta[name="theme-color"]').setAttribute("content",th[2])})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -52,6 +52,44 @@ document.querySelector('meta[name="color-scheme"]').setAttribute("content",th[1]
 :root[data-theme="vault"] .top{border-bottom-color:var(--accent)}
 :root[data-theme="vault"] button.primary{color:#0f1a17}
 :root[data-theme="vault"] input[type=checkbox]{accent-color:var(--accent)}
+
+/* 모카(밝음): 크림 베이지 바탕 + 짙은 갈색 머리띠, 진갈색 글씨. 리서치 자료 느낌 */
+:root[data-theme="mocha"]{
+  --plane:#f1e8d8; --surface:#fbf6ec; --ink:#3a2a1e; --ink2:#5e4a3a; --muted:#8a7562;
+  --grid:#e6dac6; --axis:#cdb99c; --hair:rgb(58 42 30 / .13); --wash:rgb(58 42 30 / .05);
+  --s1:#6b4026; --s2:#2e8b8b; --s3:#4f7a2a; --s4:#c7781e; --s5:#9b2246; --s6:#2d48a8; --s7:#8a6bb8; --s8:#b5523a;
+  --accent:#6b4026; --field:#fffdf8; --warn-bg:#f3e2c2; --warn-ink:#6b4a1e;
+  --up:#c0392b; --dn:#2d5bb5; --brown:#6e4a30; color-scheme:only light;
+}
+:root[data-theme="mocha"] .top{background:var(--brown);border:0;border-radius:10px;padding:14px 16px;color:#fbf2e2}
+:root[data-theme="mocha"] .top h1{color:#fbf2e2}
+:root[data-theme="mocha"] .top .meta{color:#e6d3b8}
+:root[data-theme="mocha"] .top button{color:#fbf2e2;border-color:#c9a985}
+:root[data-theme="mocha"] .top button.primary{background:#f1e2c8;color:var(--brown);border-color:#f1e2c8}
+:root[data-theme="mocha"] button.primary{color:#fbf6ec}
+:root[data-theme="mocha"] input[type=checkbox]{accent-color:var(--accent)}
+/* 모닥불(어두움): 숯 갈색 바탕 + 호박색 포인트, 제목·큰 숫자는 명조 */
+:root[data-theme="ember"]{
+  --plane:#1c1612; --surface:#261e18; --ink:#f3e6d3; --ink2:#d6c4ad; --muted:#a8957f;
+  --grid:#30261e; --axis:#4a3a2c; --hair:rgb(243 230 211 / .14); --wash:rgb(243 230 211 / .06);
+  --s1:#e8a04a; --s2:#7fb8a4; --s3:#d9735a; --s4:#b9a3e0; --s5:#d96f95; --s6:#9cc46a; --s7:#7fb3d5; --s8:#f2d27a;
+  --accent:#e8a04a; --field:#15100d; --warn-bg:#33281a; --warn-ink:#f0cf94;
+  --up:#ff7a5c; --dn:#6fa4ff; color-scheme:dark;
+}
+/* 서재(어두움): 짙은 와인 바탕 + 금색 포인트, 제목·큰 숫자는 명조 */
+:root[data-theme="study"]{
+  --plane:#1e1316; --surface:#2a1a1e; --ink:#efe3d6; --ink2:#d9c7bd; --muted:#a08a8e;
+  --grid:#36232a; --axis:#4a2f35; --hair:rgb(239 227 214 / .14); --wash:rgb(239 227 214 / .06);
+  --s1:#c9a45c; --s2:#7fb8a4; --s3:#e08a6a; --s4:#b6a7e8; --s5:#e07a9a; --s6:#9cc46a; --s7:#7fb3d5; --s8:#e3c88a;
+  --accent:#c9a45c; --field:#160d10; --warn-bg:#33251c; --warn-ink:#ead09a;
+  --up:#ff8a7a; --dn:#6fa4ff; color-scheme:dark;
+}
+:root:is([data-theme="ember"],[data-theme="study"]) .top{border-bottom-color:var(--accent)}
+:root[data-theme="ember"] button.primary{color:#1c1612}
+:root[data-theme="study"] button.primary{color:#1e1316}
+:root:is([data-theme="ember"],[data-theme="study"]) input[type=checkbox]{accent-color:var(--accent)}
+:root:is([data-theme="ember"],[data-theme="study"]) :is(h2,.tile .v){font-family:var(--serif);letter-spacing:-.01em}
+:root:is([data-theme="ember"],[data-theme="study"]) .tile .v{font-weight:700}
 
 /* RPG(도스 게임 감성): 짙은 나무색 바탕 + 양피지 창 + 금색 입체 테두리, 갈무리 픽셀 글꼴 */
 :root[data-theme="rpg"]{
@@ -1844,7 +1882,10 @@ const THEMES = [
   {id: 'light', name: '리포트', tag: '기본 · 밝음', desc: '증권사 리포트처럼 크림색 종이에 남색 글씨. 총자산은 명조, 숫자는 자릿수가 맞는 고정폭 글꼴입니다.', sw: ['#f8f4ec', '#fbf9f4', '#1b2233', '#22407c'], dark: false, bar: '#f8f4ec'},
   {id: 'night', name: '밤의 리포트', tag: '어두움', desc: '리포트의 남색을 바탕으로 뒤집고 크림색 글씨, 황동색 포인트. 같은 배치로 밤에 보기 편합니다.', sw: ['#12182a', '#1a2134', '#efe9da', '#d9b36a'], dark: true, bar: '#12182a'},
   {id: 'rpg', name: 'RPG', tag: '도트 · 도스 게임 감성', desc: '짙은 나무색 바탕에 양피지 창, 금색 입체 테두리. 픽셀 글꼴과 칸칸이 끊긴 HP바 막대로 옛 RPG 화면처럼 보입니다.', sw: ['#3d2a1c', '#eadcbc', '#3a2a1c', '#d4a94a'], dark: true, bar: '#3d2a1c'},
-  {id: 'vault', name: '금고', tag: '어두움 · 녹색과 황동', desc: '짙은 녹색 바탕에 크림색 글씨, 황동색 포인트. 강조색이 빨강·파랑이 아니라 손익 색과 헷갈리지 않습니다.', sw: ['#0f1a17', '#16241f', '#e8e2d0', '#c9a45c'], dark: true, bar: '#0f1a17'}
+  {id: 'vault', name: '금고', tag: '어두움 · 녹색과 황동', desc: '짙은 녹색 바탕에 크림색 글씨, 황동색 포인트. 강조색이 빨강·파랑이 아니라 손익 색과 헷갈리지 않습니다.', sw: ['#0f1a17', '#16241f', '#e8e2d0', '#c9a45c'], dark: true, bar: '#0f1a17'},
+  {id: 'ember', name: '모닥불', tag: '어두움 · 따뜻한 갈색', desc: '숯처럼 짙은 갈색 바탕에 크림색 글씨, 호박색 포인트. 제목과 큰 숫자는 명조로, 벽난로 앞처럼 따뜻합니다.', sw: ['#1c1612', '#261e18', '#f3e6d3', '#e8a04a'], dark: true, bar: '#1c1612'},
+  {id: 'study', name: '서재', tag: '어두움 · 와인과 금색', desc: '짙은 와인색 바탕에 크림색 글씨, 금색 포인트. 제목과 큰 숫자는 명조로, 오래된 서재처럼 차분합니다.', sw: ['#1e1316', '#2a1a1e', '#efe3d6', '#c9a45c'], dark: true, bar: '#1e1316'},
+  {id: 'mocha', name: '모카', tag: '밝음 · 크림과 갈색', desc: '크림 베이지 바탕에 진갈색 글씨, 맨 위는 짙은 갈색 띠. 그래프는 갈색·청록·올리브로 리서치 자료처럼 보입니다.', sw: ['#f1e8d8', '#fbf6ec', '#6e4a30', '#2e8b8b'], dark: false, bar: '#6e4a30'}
 ];
 // 고른 적이 없거나 없어진 테마면 리포트(light)
 function getTheme() { try { const t = localStorage.getItem('portfolio-theme'); return THEMES.some(x => x.id === t) ? t : 'light'; } catch (e) { return 'light'; } }

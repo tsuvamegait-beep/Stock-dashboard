@@ -24,6 +24,9 @@
 - 연결은 백테스트와 같은 `backtest-sync`·`backtest-univ`를 씀. 재무는 백테스트 Apps Script `?dart=코드&q=8`(스크립트 속성 `DART_API_KEY`): corpCode.xml(zip)로 고유번호, `fnlttSinglAcntAll`(CFS 없으면 OFS) 계정 id 우선·이름 보조, `stockTotqySttus` 주식 수. 손익은 {a 분기, c 누적}, 4분기 = 사업보고서 a − 3분기 c. BPS = 지배주주 자본 ÷ (발행 − 자기주식), ROE·PER는 최근 4분기.
 - 미확인: 실제 DART 응답의 계정 id·이름(회사마다 다를 수 있음), 사업보고서 `thstrm_amount`가 1년 값인지, 금융업 회사.
 
+## DART 로컬 저장소(`dart/`)
+- `dart/dart_fetch.py 종목…  [--years N]`: 이 컴퓨터에서 DART를 직접 불러 `dart/data/<코드>_<회사명>/`에 저장(보고서별 원본 `reports/<연도>_<분기>Q_<CFS|OFS>.json`·`_shares.json`, 분기 요약 `summary.csv`, 최근 1년 공시 `disclosures.json`, 상장사 목록 `data/corp_codes.json` 하루 보관). 키는 `--setkey`로 `dart/.dart_key`에. `.gitignore`로 키와 data는 GitHub에 안 올림. 이미 받은 보고서는 재사용(최근 6분기만 다시 받음).
+
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 기간 일부 파일(삼성은 제목의 조회 기간, 나무는 파일 이름의 `YYYY.MM.DD_YYYY.MM.DD`가 1월 1일이 아님 → `A.from`)은 저장 위치에서 기존 계좌를 고르면 `mergeAcct`로 이어 붙임(기존 거래는 from 전까지만 유지, 연초 수량 유지, 나무 엑셀 달러·엔 예수금은 변동분을 더함). 삼성 계좌번호는 `A.acct`로 저장해 다음 파일의 계좌 자동 선택에 씀. 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.

@@ -2,3 +2,6 @@
 dart/.dart_key
 dart/data/
 __pycache__/
+# 공공데이터포털 인증키와 받은 수출 자료
+trade/.data_key
+trade/data/

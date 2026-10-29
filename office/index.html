@@ -52,6 +52,7 @@ button{font:inherit;cursor:pointer;touch-action:manipulation}
 .mults div{display:flex;justify-content:space-between;gap:10px;padding:2px 6px;border-radius:2px}
 .mults .now{background:var(--panel2);outline:1px solid var(--accent)}
 .note{font-size:12px;color:var(--muted)}
+.up{color:var(--up)} .dn{color:var(--dn)}
 .err{color:var(--up)}
 .log{display:flex;flex-direction:column;gap:4px;font-size:12.5px;color:var(--ink2)}
 .log time{color:var(--muted);font-family:var(--num);margin-right:6px}
@@ -81,7 +82,7 @@ svg.ch text{fill:var(--muted);font:10px var(--num)}
   </form>
   <div class="chips" id="chips">
     <button type="button" data-q="삼성전자 재무">삼성전자 재무</button>
-    <button type="button" data-q="SK하이닉스 재무">SK하이닉스 재무</button>
+    <button type="button" data-q="SK하이닉스 PBR 밴드">SK하이닉스 PBR 밴드</button>
     <button type="button" data-q="백테스트">백테스트</button>
     <button type="button" data-q="대시보드">대시보드</button>
   </div>
@@ -178,12 +179,13 @@ function drawRoom(g) {
 }
 const bg = document.createElement('canvas'); bg.width = W; bg.height = H; drawRoom(bg.getContext('2d'));
 
-// 비서 그림(12×16). 글자 하나가 픽셀 하나: h 머리 s 피부 e 눈 w 셔츠 b 정장 r 넥타이(황동) p 바지 f 신발
-const PAL = {h: '#2b2135', s: '#f2c9a0', e: '#1a1a2a', w: '#f4f1e8', b: '#2f4a7a', r: '#c9a45c', p: '#2a2a3a', f: '#141018', c: '#e88a8a'};
+// 비서 그림(12×16): 정장 입은 킹찰스 스파니엘 남자 강아지. 글자 하나가 픽셀 하나:
+// o 밤색 털 d 귀(진한 밤색) w 흰 털 e 눈 n 코 t 혀 W 셔츠 b 정장 r 넥타이 p 바지 f 구두
+const PAL = {o: '#b5652e', d: '#7a3f1c', w: '#f6efe2', e: '#1a1418', n: '#2a1a1a', t: '#e8787a', W: '#dfe8f5', b: '#2f4a7a', r: '#c94a4a', p: '#2a2a3a', f: '#5a3420'};
 const TOP = {
-  down: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hssssssh..', '..hsessesh..', '..hcssssch..', '....ssss....', '..bbwrrwbb..', '.bbbwrrwbbb.', '.bbbbrrbbbb.', '.sbbbbbbbbs.', '..bbbbbbbb..', '..pppppppp..'],
-  up: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hhhhhhhh..', '..hhhhhhhh..', '..hhhhhhhh..', '....ssss....', '..bbbbbbbb..', '.bbbbbbbbbb.', '.bbbbbbbbbb.', '.sbbbbbbbbs.', '..bbbbbbbb..', '..pppppppp..'],
-  right: ['....hhhh....', '...hhhhhh...', '..hhhhhhhh..', '..hhhhssss..', '..hhhhsses..', '..hhhhsssc..', '.....sss....', '...bbbwbb...', '...bbbwbb...', '...bbbbbb...', '...bbsbbb...', '...bbbbbb...', '...pppppp...']};
+  down: ['...oowwoo...', '..ooowwooo..', '.oooowwoooo.', '.ooewwwweoo.', 'dooewwwweood', 'ooowwnnwwooo', 'doowwttwwood', 'oo..wwww..oo', 'dobbWrrWbbod', 'oobbbrrbbboo', '.wbbbbbbbbw.', '..bbbbbbbb..', '..pppppppp..'],
+  up: ['...oooooo...', '..oooooooo..', '.oooooooooo.', '.oooooooooo.', 'dooooooooood', 'oooooooooooo', 'dooooooooood', 'oo..oooo..oo', 'dobbbbbbbbod', 'oobbbbbbbboo', '.wbbbbbbbbw.', '..bbbbbbbb..', '..pppppppp..'],
+  right: ['....oooo....', '...oooooo...', '..oooooooo..', '..oooooowe..', '..ddooowwwwn', '..ddoowwwww.', '..ddd.www...', '..ddd.ww....', '..dddbbWbb..', '...ddbbWbb..', '..obbbbbb...', '...bbwbbb...', '...pppppp...']};
 const LEGS = {
   down: [['..ppp..ppp..', '..ppp..ppp..', '..fff..fff..'], ['...pp..ppp..', '...pp..ppp..', '...ff..fff..'], ['..ppp..pp...', '..ppp..pp...', '..fff..ff...']],
   right: [['....pppp....', '....pppp....', '....ffff....'], ['...pp..pp...', '...pp...pp..', '..ff....ff..'], ['....pp.pp...', '....pp.pp...', '....ff.ff...']]};
@@ -214,7 +216,9 @@ function walkTo(name) {
       p.push({x: s.x, y: s.y});
     }
     me.path = p; me.face = s.face; me.done = res; me.work = false;
-    if (!p.length) { me.dir = s.face; me.done = null; res(); }
+    if (!p.length) { me.dir = s.face; me.done = null; res(); return; }
+    // 화면이 멈춰 있으면(다른 앱으로 전환 등) 그림이 안 움직이므로, 오래 걸리면 바로 도착 처리해 일은 계속 진행
+    setTimeout(() => { if (me.done === res) { me.x = s.x; me.y = s.y; me.path = []; me.dir = s.face; me.frame = 0; me.done = null; res(); } }, 7000);
   });
 }
 let bubbleTimer = 0;
@@ -287,7 +291,45 @@ function quarterly(periods, f) {
     return v3 && v3.c != null ? v.a - v3.c : null;
   };
 }
-function finCard(stock, j, px) {
+/* PBR 밴드: 분기마다의 BPS(분기 말 기준, 다음 분기 말까지 그대로) × 1·2·3·4배 선과 실제 종가를 함께 그림.
+ * 가이드라인 = 지금 BPS × 배수, 그리고 지난 기간 실제 PBR의 최저·평균·최고를 지금 BPS에 곱한 값 */
+const BAND = [[1, '#7f8fb3'], [2, '#6fcf8f'], [3, '#c9a45c'], [4, '#e88a5a']];
+function bandCard(P, bars, bps, price) {
+  const QE = ['0331', '0630', '0930', '1231'];
+  const bp = P.map(p => { const eq = p.eqo != null ? p.eqo : p.eq, sh = p.shares ? p.shares - (p.treasury || 0) : null; return {d: p.y + QE[p.q - 1], b: eq && sh ? eq / sh : null}; })
+    .filter(x => x.b > 0).sort((a, b) => a.d < b.d ? -1 : 1);
+  let chart = '', st = null;
+  if (bp.length >= 2 && bars && bars.length > 20) {
+    let k = 0;
+    const pts = bars.filter(r => r[0] >= bp[0].d && r[4] > 0).map(r => { while (k + 1 < bp.length && bp[k + 1].d <= r[0]) k++; return {d: r[0], c: r[4], b: bp[k].b}; });
+    if (pts.length > 20) {
+      const pb = pts.map(x => x.c / x.b);
+      st = {min: Math.min(...pb), max: Math.max(...pb), avg: pb.reduce((a, b) => a + b, 0) / pb.length, from: pts[0].d};
+      const cw = 320, chh = 190, L = 38, Rr = 30, T = 8, B = 20, n = pts.length;
+      const hi = Math.max(...pts.map(x => Math.max(x.c, x.b * 4))) * 1.04;
+      const X = i => L + (cw - L - Rr) * i / (n - 1), Y = v => T + (chh - T - B) * (1 - v / hi);
+      const path = f => pts.map((x, i) => (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(f(x)).toFixed(1)).join('');
+      const fmt = v => v >= 1e4 ? Math.round(v / 1e4).toLocaleString('ko-KR') + '만' : Math.round(v).toLocaleString('ko-KR');
+      let g = '';
+      for (let i = 1; i <= 4; i++) { const v = hi / 4 * i; g += '<line x1="' + L + '" x2="' + (cw - Rr) + '" y1="' + Y(v).toFixed(1) + '" y2="' + Y(v).toFixed(1) + '" stroke="#2c2840"/><text x="' + (L - 4) + '" y="' + (Y(v) + 3).toFixed(1) + '" text-anchor="end">' + fmt(v) + '</text>'; }
+      let py = '';
+      pts.forEach((x, i) => { const y = x.d.slice(0, 4); if (py && y !== py) g += '<line x1="' + X(i).toFixed(1) + '" x2="' + X(i).toFixed(1) + '" y1="' + T + '" y2="' + (chh - B) + '" stroke="#2c2840"/><text x="' + X(i).toFixed(1) + '" y="' + (chh - 6) + '" text-anchor="middle">' + y + '</text>'; py = y; });
+      BAND.forEach(([m, col]) => { g += '<path d="' + path(x => x.b * m) + '" fill="none" stroke="' + col + '" stroke-width="1.2" stroke-dasharray="4 3"/><text x="' + (cw - Rr + 3) + '" y="' + (Y(pts[n - 1].b * m) + 3).toFixed(1) + '" style="fill:' + col + '">' + m + '배</text>'; });
+      g += '<path d="' + path(x => x.c) + '" fill="none" stroke="#ece6d6" stroke-width="1.6" stroke-linejoin="round"/>';
+      chart = '<svg class="ch" viewBox="0 0 ' + cw + ' ' + chh + '" role="img" aria-label="PBR 밴드 차트">' + g + '</svg>';
+    }
+  }
+  const diff = v => price ? ' <span class="' + (v >= price ? 'up' : 'dn') + '">(' + (v >= price ? '+' : '') + ((v / price - 1) * 100).toFixed(0) + '%)</span>' : '';
+  const row = (l, v, now) => '<div class="' + (now ? 'now' : '') + '"><span>' + l + '</span><span>' + won(v) + '원' + diff(v) + '</span></div>';
+  const pbr = price ? price / bps : null;
+  let h = '<div><div class="note" style="margin-bottom:4px">PBR 밴드' + (st ? ' (' + st.from.slice(2, 4) + '.' + st.from.slice(4, 6) + '부터, 흰 선 = 종가)' : '') + '</div>' + (chart || '<p class="note">주가나 분기 BPS가 모자라 밴드 그래프는 생략했어요.</p>') + '</div>';
+  h += '<div><div class="note" style="margin-bottom:4px">목표 가이드라인 (지금 BPS ' + won(bps) + '원 기준, 괄호는 현재가 대비)</div><div class="mults">';
+  BAND.forEach(([m]) => { h += row('PBR ' + m + '배', bps * m, pbr && Math.abs(pbr - m) < 0.5); });
+  if (st) h += row('지난 기간 최저 ' + st.min.toFixed(2) + '배', bps * st.min) + row('지난 기간 평균 ' + st.avg.toFixed(2) + '배', bps * st.avg) + row('지난 기간 최고 ' + st.max.toFixed(2) + '배', bps * st.max);
+  h += '</div></div>';
+  return h;
+}
+function finCard(stock, j, px, bars) {
   const P = j.periods; if (!P.length) return '<h2>' + esc(stock[1]) + '</h2><p class="note">DART에 분기 재무가 없어요(최근 상장, 금융업 등 형식이 다른 회사일 수 있어요).</p>';
   const p0 = P[0], lab = p => (p.y % 100) + '년 ' + p.q + '분기';
   const eq = p0.eqo != null ? p0.eqo : p0.eq, sh = p0.shares ? p0.shares - (p0.treasury || 0) : null;
@@ -312,11 +354,7 @@ function finCard(stock, j, px) {
     g += '<text x="' + (i * bw + bw / 2).toFixed(1) + '" y="114" text-anchor="middle">' + x.l + '</text>';
   });
   h += '<div><div class="note">분기 매출(회색)·영업이익(황동) · 최근 ' + big(Q[Q.length - 1].r) + ' / ' + big(Q[Q.length - 1].o) + '</div><svg class="ch" viewBox="0 0 ' + cw + ' ' + ch + '" role="img" aria-label="분기 매출과 영업이익"><line x1="0" x2="' + cw + '" y1="100" y2="100" stroke="#3a3452"/>' + g + '</svg></div>';
-  if (bps) {
-    h += '<div><div class="note" style="margin-bottom:4px">PBR 배수별 주가 (BPS ' + won(bps) + '원 × 배수)</div><div class="mults">';
-    for (let m = 1; m <= 4.001; m += 0.5) h += '<div class="' + (pbr && Math.abs(pbr - m) < 0.25 ? 'now' : '') + '"><span>' + m.toFixed(1) + '배</span><span>' + won(bps * m) + '원</span></div>';
-    h += '</div></div>';
-  }
+  if (bps) h += bandCard(P, bars, bps, price);
   h += '<p class="note">DART 정기보고서(분기·반기·사업) 기준. BPS = 지배주주 자본 ÷ (발행주식 − 자기주식). 배수별 주가는 "그 배수라면"이라는 계산이고 예측이 아니에요.</p>';
   return h;
 }
@@ -329,11 +367,12 @@ async function doFin(q) {
   await walkTo('fin');
   me.work = true; say('DART에서 ' + stock[1] + ' 재무 찾는 중…', 0);
   try {
-    const [j, c] = await Promise.all([api('dart=' + stock[0] + '&q=8'), api('candles=' + stock[0] + ':' + stock[2] + '&n=5').catch(() => null)]);
+    // 재무 3년(12분기) + 일봉 약 3년(밴드 그래프용)
+    const [j, c] = await Promise.all([api('dart=' + stock[0] + '&q=12'), api('candles=' + stock[0] + ':' + stock[2] + '&n=780').catch(() => null)]);
     const bars = c && c.data && c.data[stock[0]], b = bars && bars[bars.length - 1], px = b ? {d: b[0], c: b[4]} : null;
     me.work = false; say('찾았어요! 정리해서 드릴게요', 0);
     await walkTo('home');
-    showCard(finCard(stock, j, px));
+    showCard(finCard(stock, j, px, bars));
     say(stock[1] + ' 재무 정리 끝 ✔', 3000);
     log(stock[1] + ' 재무 조회 (' + (j.periods[0] ? (j.periods[0].y % 100) + '년 ' + j.periods[0].q + '분기' : '자료 없음') + ')');
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
@@ -358,7 +397,7 @@ async function command(t) {
   t = (t || '').trim(); if (!t || me.busy) return;
   if (/백테스트|전략|이동평균|이평|RSI|MACD|볼린저|신고가|변동성|수급/i.test(t)) return goPlace('bt', '화이트보드에서 전략을 시험해요', '../backtest/', '백테스트');
   if (/대시보드|보유|포트폴리오|자산|내\s*주식|손익/.test(t)) return goPlace('dash', '시세 단말기에서 보유 현황을 봐요', '../', '대시보드');
-  const q = t.replace(/재무제표|재무|BPS|PBR|PER|ROE|실적|분석|평가|보여\s*줘|알려\s*줘|찾아\s*줘|해\s*줘|좀|의|\?/gi, ' ').trim();
+  const q = t.replace(/재무제표|재무|BPS|PBR|PER|ROE|밴드|목표|가이드\s*라인|가이드|실적|분석|평가|가져\s*와|보여\s*줘|알려\s*줘|찾아\s*줘|해\s*줘|줘|좀|의|\?/gi, ' ').trim();
   if (q) return doFin(q);
   say('예: "삼성전자 재무", "백테스트", "대시보드"', 3000);
 }

@@ -6,7 +6,8 @@
     python trade/trade_fetch.py               메모리(HS 854232) 월별 수출을 최근 36개월 받아 저장
     python trade/trade_fetch.py --months 60   기간 바꾸기
 
-저장: trade/data/memory_exports_sido.csv (월, 시도, 메모리 수출 천 달러, 건수) — 관세청_시도별 품목별 수출입실적(GW)
+저장: trade/data/memory_items.csv (월, 세부 품목, 수출 달러·중량·kg당 단가) — 관세청_품목별 수출입실적(GW)
+      trade/data/memory_exports_sido.csv (월, 시도, 메모리 수출 천 달러, 건수) — 관세청_시도별 품목별 수출입실적(GW)
 인증키는 trade/.data_key에만 저장되고 GitHub에 올라가지 않습니다.
 """
 import csv
@@ -144,6 +145,33 @@ def fetch(n):
         print('  %s  메모리 수출 %.1f억 달러' % (m, by[m] / 1e5))
 
 
+
+ITEM_API = 'https://apis.data.go.kr/1220000/Itemtrade/getItemtradeList'  # 관세청_품목별 수출입실적(GW): 10자리 세부 품목, 금액(달러)·중량(kg), 여러 달이면 달마다 나옴
+
+
+def fetch_items(n):
+    """메모리 세부 품목(디램·플래시·복합구조칩 등) 월별 수출 금액·중량·kg당 단가 → trade/data/memory_items.csv"""
+    ms = months_back(n)
+    rows = []
+    for i in range(0, len(ms), 12):  # 한 번에 1년까지
+        a, b = ms[i], ms[min(i + 11, len(ms) - 1)]
+        code, msg, items, _ = call(ITEM_API, strtYymm=a, endYymm=b, hsSgn=MEMORY)
+        for it in items:
+            ym = re.sub(r'\D', '', it.get('year', ''))
+            if len(ym) != 6 or not it.get('hsCode', '').isdigit():
+                continue  # 총계 줄
+            e, w = num(it.get('expDlr')), num(it.get('expWgt'))
+            rows.append({'월': ym, 'HS': it['hsCode'], '품목': it.get('statKor', ''), '수출(달러)': '%d' % e, '수출중량(kg)': '%d' % w,
+                         'kg당 단가(달러)': '%.0f' % (e / w) if w else ''})
+        print('  품목별 %s~%s %d줄' % (a, b, len(items)))
+    os.makedirs(DATA, exist_ok=True)
+    p = os.path.join(DATA, 'memory_items.csv')
+    with open(p, 'w', encoding='utf-8-sig', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=['월', 'HS', '품목', '수출(달러)', '수출중량(kg)', 'kg당 단가(달러)'])
+        w.writeheader(); w.writerows(sorted(rows, key=lambda r: (r['월'], r['HS'])))
+    print('저장: %s (%d줄)' % (os.path.relpath(p, os.path.dirname(HERE)), len(rows)))
+
+
 if __name__ == '__main__':
     if '--setkey' in sys.argv:
         import getpass
@@ -156,4 +184,5 @@ if __name__ == '__main__':
         probe()
     else:
         n = int(sys.argv[sys.argv.index('--months') + 1]) if '--months' in sys.argv else 36
+        fetch_items(n)
         fetch(n)

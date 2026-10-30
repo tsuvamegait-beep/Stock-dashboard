@@ -6,7 +6,7 @@
     python trade/trade_fetch.py               메모리(HS 854232) 월별 수출을 최근 36개월 받아 저장
     python trade/trade_fetch.py --months 60   기간 바꾸기
 
-저장: trade/data/memory_exports.csv (월, 국가, 수출금액 달러, 중량 kg, kg당 단가)
+저장: trade/data/memory_exports_sido.csv (월, 시도, 메모리 수출 천 달러, 건수) — 관세청_시도별 품목별 수출입실적(GW)
 인증키는 trade/.data_key에만 저장되고 GitHub에 올라가지 않습니다.
 """
 import csv
@@ -94,36 +94,54 @@ def probe():
             print('\n--', name, '| 실패:', e)
 
 
+SIDO_API = 'https://apis.data.go.kr/1220000/sidoitemtrade/getSidoitemtradeList'  # 관세청_시도별 품목별 수출입실적(GW)
+SIDO = {'11': '서울', '26': '부산', '27': '대구', '28': '인천', '29': '광주', '30': '대전', '31': '울산', '36': '세종', '41': '경기', '42': '강원', '51': '강원',
+        '43': '충북', '44': '충남', '45': '전북', '52': '전북', '46': '전남', '47': '경북', '48': '경남', '50': '제주'}
+num = lambda v: float(str(v or '0').replace(',', '').strip() or 0)
+
+
+def sido_exp(a, b, sd):
+    """시도·기간의 메모리 수출(천 달러), 수출 건수. 여러 달을 물으면 합계만 옴"""
+    code, msg, items, _ = call(SIDO_API, strtYymm=a, endYymm=b, hsSgn=MEMORY, sidoCd=sd)
+    it = next((x for x in items if x.get('hsSgn')), None)
+    return (num(it.get('expUsdAmt')), num(it.get('expLnCnt'))) if it else (0.0, 0.0)
+
+
 def fetch(n):
+    """시도별 메모리 수출을 달마다 받아 trade/data/memory_exports_sido.csv에 저장(이미 받은 달은 다시 받지 않음, 최근 2개월은 다시 받음)"""
     ms = months_back(n)
-    rows = []
-    for i in range(0, len(ms), 12):  # 한 번에 1년까지
-        a, b = ms[i], ms[min(i + 11, len(ms) - 1)]
-        for c in COUNTRIES:
-            code, msg, items, _ = call(NITEM, strtYymm=a, endYymm=b, hsSgn=MEMORY, cntyCd=c)
-            if code not in ('', '00', '0', '000'):
-                print('  %s %s~%s 실패: %s %s' % (c, a, b, code, msg))
-                continue
-            for it in items:
-                ym = re.sub(r'\D', '', it.get('year', ''))
-                if len(ym) != 6:
-                    continue  # '총계' 같은 줄은 건너뜀
-                rows.append({'월': ym, '국가': it.get('statCd') or c, '수출금액(달러)': float(it.get('expDlr') or 0), '수출중량(kg)': float(it.get('expWgt') or 0)})
-        print('  %s~%s 받음' % (a, b))
+    p = os.path.join(DATA, 'memory_exports_sido.csv')
+    have = {}
+    if os.path.exists(p):
+        for r in csv.DictReader(open(p, encoding='utf-8-sig')):
+            have[(r['월'], r['시도코드'])] = r
+    # 메모리 수출이 있는 시도만 고름(최근 1년 합계로 판단)
+    print('메모리 수출이 있는 시도 찾는 중…')
+    tot, keep = {}, []
+    for sd in SIDO:
+        tot[sd] = sido_exp(ms[-12], ms[-1], sd)[0]
+    allv = sum(tot.values()) or 1
+    keep = [sd for sd, v in tot.items() if v / allv > 0.001]
+    print('  ' + ', '.join('%s %.1f%%' % (SIDO[sd], tot[sd] / allv * 100) for sd in sorted(keep, key=lambda x: -tot[x])))
+    rows, fresh = [], 0
+    for m in ms:
+        for sd in keep:
+            r = have.get((m, sd))
+            if r and m not in ms[-2:]:
+                rows.append(r); continue
+            e, c = sido_exp(m, m, sd); fresh += 1
+            rows.append({'월': m, '시도코드': sd, '시도': SIDO[sd], '수출(천달러)': '%d' % e, '수출건수': '%d' % c})
+        print('  %s 완료' % m)
     os.makedirs(DATA, exist_ok=True)
-    rows.sort(key=lambda r: (r['월'], r['국가']))
-    for r in rows:
-        r['kg당 단가(달러)'] = round(r['수출금액(달러)'] / r['수출중량(kg)'], 1) if r['수출중량(kg)'] else ''
-    p = os.path.join(DATA, 'memory_exports.csv')
     with open(p, 'w', encoding='utf-8-sig', newline='') as f:
-        w = csv.DictWriter(f, fieldnames=['월', '국가', '수출금액(달러)', '수출중량(kg)', 'kg당 단가(달러)'])
+        w = csv.DictWriter(f, fieldnames=['월', '시도코드', '시도', '수출(천달러)', '수출건수'])
         w.writeheader(); w.writerows(rows)
-    tot = {}
+    print('저장: %s (%d줄, 새로 받은 것 %d건)' % (os.path.relpath(p, os.path.dirname(HERE)), len(rows), fresh))
+    by = {}
     for r in rows:
-        t = tot.setdefault(r['월'], [0, 0]); t[0] += r['수출금액(달러)']; t[1] += r['수출중량(kg)']
-    print('저장:', os.path.relpath(p, os.path.dirname(HERE)), '%d줄' % len(rows))
-    for m in sorted(tot)[-6:]:
-        print('  %s  메모리 수출 %.2f억 달러 · kg당 %.0f달러' % (m, tot[m][0] / 1e8, tot[m][0] / tot[m][1] if tot[m][1] else 0))
+        by[r['월']] = by.get(r['월'], 0) + float(r['수출(천달러)'])
+    for m in sorted(by)[-6:]:
+        print('  %s  메모리 수출 %.1f억 달러' % (m, by[m] / 1e5))
 
 
 if __name__ == '__main__':

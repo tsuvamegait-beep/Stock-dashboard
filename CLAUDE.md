@@ -27,6 +27,10 @@
 ## DART 로컬 저장소(`dart/`)
 - `dart/dart_fetch.py 종목…  [--years N]`: 이 컴퓨터에서 DART를 직접 불러 `dart/data/<코드>_<회사명>/`에 저장(보고서별 원본 `reports/<연도>_<분기>Q_<CFS|OFS>.json`·`_shares.json`, 분기 요약 `summary.csv`, 최근 1년 공시 `disclosures.json`, 상장사 목록 `data/corp_codes.json` 하루 보관). 키는 `--setkey`로 `dart/.dart_key`에. `.gitignore`로 키와 data는 GitHub에 안 올림. 이미 받은 보고서는 재사용(최근 6분기만 다시 받음).
 
+## 메모리 수출 저장소(`trade/`)
+- `trade/trade_fetch.py [--months N]`: 공공데이터포털 "관세청_시도별 품목별 수출입실적(GW)"(`https://apis.data.go.kr/1220000/sidoitemtrade/getSidoitemtradeList`, 인자 strtYymm·endYymm·hsSgn·sidoCd, 응답 expUsdAmt(천 달러)·expLnCnt, 여러 달을 물으면 합계만 와서 달마다 따로 부름, sidoCd 없으면 오류 99)로 HS 854232(메모리) 시도별 월 수출을 `trade/data/memory_exports_sido.csv`에 저장. 키는 `--setkey` → `trade/.data_key`(GitHub 제외). 메모리 수출 시도: 경기·충남·충북(합계 99%).
+- "품목별 국가별 수출입실적(GW)"(`nitemtrade`, 중량·국가 포함)과 "시군구별"은 아직 활용신청이 안 돼 쓰지 않음(등록되지 않은 키 / 주소 미확인).
+
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 기간 일부 파일(삼성은 제목의 조회 기간, 나무는 파일 이름의 `YYYY.MM.DD_YYYY.MM.DD`가 1월 1일이 아님 → `A.from`)은 저장 위치에서 기존 계좌를 고르면 `mergeAcct`로 이어 붙임(기존 거래는 from 전까지만 유지, 연초 수량 유지, 나무 엑셀 달러·엔 예수금은 변동분을 더함). 삼성 계좌번호는 `A.acct`로 저장해 다음 파일의 계좌 자동 선택에 씀. 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.
 - 시세: 구글 시트 `StockCode` 게시 CSV(GOOGLEFINANCE). 종목코드/종목명/현재가/현지가/분류 열.

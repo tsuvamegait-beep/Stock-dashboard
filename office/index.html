@@ -65,7 +65,7 @@ svg.ch text{fill:var(--muted);font:10px var(--num)}
 <main class="wrap">
   <header>
     <h1>주식 사무실</h1>
-    <p class="sub">비서에게 일을 시키면 해당 자리로 가서 처리해요. 장소를 눌러도 돼요.</p>
+    <p class="sub">비서에게 일을 시키면 해당 자리로 가서 처리합니다. 장소를 눌러도 됩니다.</p>
   </header>
 
   <div class="stage px" id="stage">
@@ -103,7 +103,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 /* ===== Apps Script(백테스트용과 같은 연결 — 백테스트 페이지에서 연결한 주소·비밀번호를 같이 씀) ===== */
 const getSync = () => { const o = lsGet('backtest-sync', null); return o && o.url && o.key ? o : null; };
 async function api(params) {
-  const s = getSync(); if (!s) throw new Error('먼저 백테스트 페이지에서 Apps Script를 연결해 주세요');
+  const s = getSync(); if (!s) throw new Error('먼저 백테스트 페이지에서 Apps Script를 연결해 주십시오');
   const res = await fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(s.key) + '&' + params, {cache: 'no-store'});
   let j; try { j = await res.json(); } catch (e) { throw new Error('Apps Script 응답을 읽지 못했습니다(새 버전으로 배포했는지 확인)'); }
   if (!j.ok) throw new Error(j.error || '실패');
@@ -451,7 +451,7 @@ function loop(now) { step(Math.min(0.05, (now - last) / 1000)); last = now; draw
 requestAnimationFrame(loop);
 
 // 한가할 때는 사무실을 돌아다님
-const IDLE = [['coffee', '커피 한 잔 ☕'], ['window', '창밖 날씨 좋다… 오늘 시장은 어떨까'], ['plant', '물 주는 중 🌱'], ['home', '']];
+const IDLE = [['coffee', '커피 한 잔 마십니다 ☕'], ['window', '창밖 날씨가 좋습니다… 오늘 시장은 어떨지 궁금합니다'], ['plant', '화분에 물을 줍니다 🌱'], ['home', '']];
 setInterval(() => {
   if (me.busy || me.path.length || document.hidden) return;
   const [s, t] = IDLE[Math.floor(Math.random() * IDLE.length)];
@@ -464,7 +464,7 @@ function log(t) {
   const d = new Date(), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
   LOG.unshift([hm, t]); LOG.length = Math.min(LOG.length, 20); lsSet('office-log', LOG); showLog();
 }
-function showLog() { $('log').innerHTML = LOG.length ? LOG.map(([t, x]) => '<div><time>' + t + '</time>' + esc(x) + '</div>').join('') : '<div class="note">아직 시킨 일이 없어요.</div>'; }
+function showLog() { $('log').innerHTML = LOG.length ? LOG.map(([t, x]) => '<div><time>' + t + '</time>' + esc(x) + '</div>').join('') : '<div class="note">아직 시킨 일이 없습니다.</div>'; }
 showLog();
 
 /* ===== 숫자 표시 ===== */
@@ -515,7 +515,7 @@ function bandCard(P, bars, bps, price) {
   const diff = v => price ? ' <span class="' + (v >= price ? 'up' : 'dn') + '">(' + (v >= price ? '+' : '') + ((v / price - 1) * 100).toFixed(0) + '%)</span>' : '';
   const row = (l, v, now) => '<div class="' + (now ? 'now' : '') + '"><span>' + l + '</span><span>' + won(v) + '원' + diff(v) + '</span></div>';
   const pbr = price ? price / bps : null;
-  let h = '<div><div class="note" style="margin-bottom:4px">PBR 밴드' + (st ? ' (' + st.from.slice(2, 4) + '.' + st.from.slice(4, 6) + '부터, 흰 선 = 종가)' : '') + '</div>' + (chart || '<p class="note">주가나 분기 BPS가 모자라 밴드 그래프는 생략했어요.</p>') + '</div>';
+  let h = '<div><div class="note" style="margin-bottom:4px">PBR 밴드' + (st ? ' (' + st.from.slice(2, 4) + '.' + st.from.slice(4, 6) + '부터, 흰 선 = 종가)' : '') + '</div>' + (chart || '<p class="note">주가나 분기 BPS가 모자라 밴드 그래프는 생략했습니다.</p>') + '</div>';
   h += '<div><div class="note" style="margin-bottom:4px">목표 가이드라인 (지금 BPS ' + won(bps) + '원 기준, 괄호는 현재가 대비)</div><div class="mults">';
   BAND.forEach(([m]) => { h += row('PBR ' + m + '배', bps * m, pbr && Math.abs(pbr - m) < 0.5); });
   if (st) h += row('지난 기간 최저 ' + st.min.toFixed(2) + '배', bps * st.min) + row('지난 기간 평균 ' + st.avg.toFixed(2) + '배', bps * st.avg) + row('지난 기간 최고 ' + st.max.toFixed(2) + '배', bps * st.max);
@@ -548,31 +548,31 @@ function finCard(stock, j, px, bars) {
   });
   h += '<div><div class="note">분기 매출(회색)·영업이익(황동) · 최근 ' + big(Q[Q.length - 1].r) + ' / ' + big(Q[Q.length - 1].o) + '</div><svg class="ch" viewBox="0 0 ' + cw + ' ' + ch + '" role="img" aria-label="분기 매출과 영업이익"><line x1="0" x2="' + cw + '" y1="100" y2="100" stroke="#3a3452"/>' + g + '</svg></div>';
   if (bps) h += bandCard(P, bars, bps, price);
-  h += '<p class="note">DART 정기보고서(분기·반기·사업) 기준. BPS = 지배주주 자본 ÷ (발행주식 − 자기주식). 배수별 주가는 "그 배수라면"이라는 계산이고 예측이 아니에요.</p>';
+  h += '<p class="note">DART 정기보고서(분기·반기·사업) 기준. BPS = 지배주주 자본 ÷ (발행주식 − 자기주식). 배수별 주가는 "그 배수라면"이라는 계산이고 예측이 아닙니다.</p>';
   return h;
 }
 async function doFin(q) {
   let stock = null;
   try { stock = await findStock(q); } catch (e) { say(e.message, 4000); showCard('<p class="err">' + esc(e.message) + '</p><a class="btn" href="../backtest/">백테스트 페이지로</a>'); return; }
-  if (!stock) { say('"' + q + '" 종목을 못 찾았어요', 3000); return; }
+  if (!stock) { say('"' + q + '" 종목을 찾지 못했습니다', 3000); return; }
   me.busy = true; $('send').disabled = true;
-  say(stock[1] + ' 서류 찾으러 갈게요', 0);
+  say(stock[1] + ' 서류를 찾으러 가겠습니다', 0);
   await walkTo('fin');
-  me.work = true; say('DART에서 ' + stock[1] + ' 재무 찾는 중…', 0);
+  me.work = true; say('DART에서 ' + stock[1] + ' 재무를 찾고 있습니다…', 0);
   try {
     // 재무 3년(12분기) + 일봉 약 3년(밴드 그래프용)
     const [j, c] = await Promise.all([api('dart=' + stock[0] + '&q=12'), api('candles=' + stock[0] + ':' + stock[2] + '&n=780').catch(() => null)]);
-    if (!Array.isArray(j.periods)) throw new Error('Apps Script가 예전 버전이라 재무(DART)를 모릅니다. 저장소의 backtest/apps_script.gs.txt를 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주세요.');
+    if (!Array.isArray(j.periods)) throw new Error('Apps Script가 예전 버전이라 재무(DART)를 모릅니다. 저장소의 backtest/apps_script.gs.txt를 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오.');
     const bars = c && c.data && c.data[stock[0]], b = bars && bars[bars.length - 1], px = b ? {d: b[0], c: b[4]} : null;
-    me.work = false; say('찾았어요! 정리해서 드릴게요', 0);
+    me.work = false; say('찾았습니다! 정리해서 드리겠습니다', 0);
     await walkTo('home');
     showCard(finCard(stock, j, px, bars));
-    say(stock[1] + ' 재무 정리 끝 ✔', 3000);
+    say(stock[1] + ' 재무 정리를 마쳤습니다 ✔', 3000);
     log(stock[1] + ' 재무 조회 (' + (j.periods[0] ? (j.periods[0].y % 100) + '년 ' + j.periods[0].q + '분기' : '자료 없음') + ')');
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
   } catch (e) {
-    me.work = false; say('앗, 실패했어요', 3000);
-    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주세요.</p>' : ''));
+    me.work = false; say('죄송합니다, 실패했습니다', 3000);
+    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주십시오.</p>' : ''));
     log(stock[1] + ' 재무 조회 실패: ' + e.message);
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
     walkTo('home');
@@ -581,7 +581,7 @@ async function doFin(q) {
 async function goPlace(spot, msg, href, label) {
   me.busy = true;
   say(msg, 0); await walkTo(spot);
-  me.work = true; say(label + ' 준비됐어요', 0);
+  me.work = true; say(label + ' 준비되었습니다', 0);
   showCard('<h2>' + label + '</h2><p class="sub">' + esc(msg) + '</p><div><a class="btn" href="' + href + '">' + label + ' 열기 →</a></div>');
   log(label + ' 열기');
   setTimeout(() => { me.work = false; me.busy = false; $('bubble').hidden = true; }, 2500);
@@ -590,19 +590,19 @@ async function goPlace(spot, msg, href, label) {
 /* ===== 명령 ===== */
 async function command(t) {
   t = (t || '').trim(); if (!t || me.busy) return;
-  if (/백테스트|전략|이동평균|이평|RSI|MACD|볼린저|신고가|변동성|수급/i.test(t)) return goPlace('bt', '화이트보드에서 전략을 시험해요', '../backtest/', '백테스트');
-  if (/대시보드|보유|포트폴리오|자산|내\s*주식|손익/.test(t)) return goPlace('dash', '시세 단말기에서 보유 현황을 봐요', '../', '대시보드');
+  if (/백테스트|전략|이동평균|이평|RSI|MACD|볼린저|신고가|변동성|수급/i.test(t)) return goPlace('bt', '화이트보드에서 전략을 시험합니다', '../backtest/', '백테스트');
+  if (/대시보드|보유|포트폴리오|자산|내\s*주식|손익/.test(t)) return goPlace('dash', '시세 단말기에서 보유 현황을 봅니다', '../', '대시보드');
   const q = t.replace(/재무제표|재무|BPS|PBR|PER|ROE|밴드|목표|가이드\s*라인|가이드|실적|분석|평가|가져\s*와|보여\s*줘|알려\s*줘|찾아\s*줘|해\s*줘|줘|좀|의|\?/gi, ' ').trim();
   if (q) return doFin(q);
-  say('예: "삼성전자 재무", "백테스트", "대시보드"', 3000);
+  say('예: "삼성전자 재무", "백테스트", "대시보드"처럼 말씀해 주십시오', 3000);
 }
 $('cmdForm').onsubmit = e => { e.preventDefault(); const v = $('cmd').value; $('cmd').value = ''; $('cmd').blur(); command(v); };
 $('chips').onclick = e => { const b = e.target.closest('[data-q]'); if (b) command(b.dataset.q); };
 document.querySelectorAll('.spot').forEach(b => { b.onclick = () => {
-  if (b.dataset.act === 'fin') { $('cmd').focus(); say('어느 종목의 재무를 볼까요?', 3000); walkTo('fin'); }
+  if (b.dataset.act === 'fin') { $('cmd').focus(); say('어느 종목의 재무를 볼까요? 말씀해 주십시오', 3000); walkTo('fin'); }
   else command(b.dataset.act === 'bt' ? '백테스트' : '대시보드');
 }; });
-setTimeout(() => say(getSync() ? '안녕하세요! 무엇을 도와드릴까요?' : '백테스트 페이지에서 Apps Script를 먼저 연결해 주세요', 3500), 600);
+setTimeout(() => say(getSync() ? '안녕하십니까! 무엇을 도와드릴까요?' : '백테스트 페이지에서 Apps Script를 먼저 연결해 주십시오', 3500), 600);
 </script>
 </body>
 </html>

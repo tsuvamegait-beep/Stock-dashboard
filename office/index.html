@@ -23,8 +23,8 @@ h2{font-size:15px}
 .sub{color:var(--muted);font-size:12.5px}
 a{color:var(--accent)}
 .px{border:2px solid var(--line);box-shadow:0 0 0 2px var(--bg),0 0 0 4px var(--line);border-radius:2px;background:var(--panel)}
-/* 무대: 캔버스(224×144)를 화면 폭에 맞춰 키움 */
-.stage{position:relative;width:100%;aspect-ratio:224/144;overflow:hidden}
+/* 무대: 캔버스(288×176)를 화면 폭에 맞춰 키움 */
+.stage{position:relative;width:100%;aspect-ratio:288/176;overflow:hidden}
 .stage canvas{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
 .spot{position:absolute;transform:translate(-50%,-50%);font:600 11px/1 var(--font);color:var(--ink);background:rgba(20,18,31,.82);border:1px solid var(--accent);
   border-radius:2px;padding:4px 6px;cursor:pointer;white-space:nowrap;touch-action:manipulation}
@@ -69,10 +69,10 @@ svg.ch text{fill:var(--muted);font:10px var(--num)}
   </header>
 
   <div class="stage px" id="stage">
-    <canvas id="cv" width="224" height="144" role="img" aria-label="비서가 일하는 도트 사무실"></canvas>
-    <button type="button" class="spot" data-act="dash" style="left:16%;top:22%">📈 대시보드</button>
-    <button type="button" class="spot" data-act="bt" style="left:69%;top:9%">🧪 백테스트</button>
-    <button type="button" class="spot" data-act="fin" style="left:88%;top:56%">🗂 재무</button>
+    <canvas id="cv" width="576" height="352" role="img" aria-label="큰 창문 너머로 도시가 보이는 밝은 실내 사무실에서 비서가 일하는 도트 그림"></canvas>
+    <button type="button" class="spot" data-act="dash" style="left:21%;top:24%">📈 대시보드</button>
+    <button type="button" class="spot" data-act="bt" style="left:61%;top:8%">🧪 백테스트</button>
+    <button type="button" class="spot" data-act="fin" style="left:89%;top:31%">🗂 재무</button>
     <div class="bubble" id="bubble" hidden></div>
   </div>
 
@@ -124,89 +124,268 @@ async function findStock(q) {
 }
 
 /* ===== 도트 그림 =====
- * 화면 224×144 픽셀을 그린 뒤 CSS로 키움. 배경은 한 번만 그려 두고, 매 프레임 모니터 깜빡임과 비서만 다시 그림 */
-const W = 224, H = 144, cv = $('cv'), ctx = cv.getContext('2d');
-ctx.imageSmoothingEnabled = false;
+ * 좌표는 288×176 칸 기준이고 실제 캔버스는 2배(576×352)라, 0.5 단위로 잔무늬를 넣을 수 있음. CSS로 화면 폭에 맞춰 키움.
+ * 위에서 비스듬히 내려다본 밝은 실내 사무실. 위쪽 벽의 큰 창문 너머로 낮의 도시가 보임(고층 사무실).
+ * 배경은 한 번만 그려 두고, 매 프레임 창밖 구름·모니터·시계와 비서만 다시 그림 */
+const W = 288, H = 176, S = 2, cv = $('cv'), ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false; ctx.setTransform(S, 0, 0, S, 0, 0);
 const R = (g, c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x, y, w, h); };
-function drawRoom(g) {
-  // 벽(줄무늬 벽지)과 걸레받이
-  R(g, '#3a3350', 0, 0, W, 34);
-  for (let x = 0; x < W; x += 8) R(g, '#403858', x, 0, 4, 30);
-  R(g, '#2a2440', 0, 30, W, 4);
-  // 바닥(나무 판자)
-  for (let y = 34, k = 0; y < H; y += 8, k++) {
-    R(g, k % 2 ? '#71533a' : '#7a5a3c', 0, y, W, 8);
-    R(g, '#5e4430', 0, y + 7, W, 1);
-    for (let x = (k % 3) * 8; x < W; x += 24) R(g, '#5e4430', x, y, 1, 7);
-  }
-  // 창문(밤의 도시)
-  R(g, '#5b5470', 62, 5, 44, 23); R(g, '#1f2c4a', 64, 7, 40, 19); R(g, '#2b3d63', 64, 7, 40, 8);
-  [[66, 18, 5, 8], [72, 14, 6, 12], [79, 19, 4, 7], [84, 12, 7, 14], [92, 17, 5, 9], [98, 15, 5, 11]].forEach(b => R(g, '#15203a', ...b));
-  [[73, 16], [75, 20], [86, 15], [88, 19], [86, 22], [99, 18], [93, 20]].forEach(p => R(g, '#f3d27a', p[0], p[1], 1, 1));
-  R(g, '#5b5470', 83, 7, 2, 19); R(g, '#5b5470', 64, 16, 40, 1);
-  R(g, '#f6f0d8', 96, 9, 2, 2); // 달
-  // 시계
-  R(g, '#e8e2d0', 113, 8, 8, 8); R(g, '#2a2440', 116, 9, 1, 4); R(g, '#2a2440', 117, 12, 3, 1);
-  // 화이트보드(백테스트): 수익 곡선과 막대
-  R(g, '#9aa3b0', 130, 4, 52, 25); R(g, '#eef1f4', 132, 6, 48, 20);
-  const curve = [22, 21, 22, 19, 20, 17, 18, 15, 16, 13, 14, 11, 12, 10, 9];
-  curve.forEach((y, i) => { R(g, '#2f9e6a', 134 + i * 3, y, 3, 1); if (i) R(g, '#2f9e6a', 134 + i * 3, Math.min(y, curve[i - 1]), 1, Math.abs(y - curve[i - 1]) + 1); });
-  R(g, '#e05a4a', 170, 18, 2, 6); R(g, '#3f6fd0', 173, 21, 2, 3); R(g, '#e05a4a', 176, 16, 2, 8);
-  R(g, '#7d8796', 134, 28, 44, 2);
-  // 시세 단말기 책상 + 모니터 2대
-  R(g, '#1d1d24', 15, 37, 20, 15); R(g, '#1d1d24', 37, 37, 20, 15);
-  R(g, '#0b1a14', 17, 39, 16, 11); R(g, '#0b1a14', 39, 39, 16, 11);
-  R(g, '#1d1d24', 24, 52, 2, 2); R(g, '#1d1d24', 46, 52, 2, 2);
-  R(g, '#6b4a30', 11, 53, 50, 5); R(g, '#5a3d27', 11, 58, 50, 7); R(g, '#4a3220', 13, 65, 3, 4); R(g, '#4a3220', 56, 65, 3, 4);
-  R(g, '#d9d4c6', 22, 55, 12, 2); // 키보드
-  // 서류함(DART): 서랍 3칸과 황동 손잡이, 위에 서류 더미
-  R(g, '#7d8796', 186, 30, 26, 42); R(g, '#6a7383', 186, 30, 26, 2);
-  for (let i = 0; i < 3; i++) { R(g, '#5f6876', 188, 34 + i * 13, 22, 1); R(g, '#c9a45c', 196, 39 + i * 13, 6, 2); R(g, '#e8e2d0', 193, 36 + i * 13, 12, 2); }
-  R(g, '#f4efe0', 190, 25, 16, 5); R(g, '#d8d0bc', 191, 27, 14, 1); R(g, '#c9a45c', 203, 24, 2, 2);
-  // 깔개
-  R(g, '#2f5d50', 70, 96, 82, 38); R(g, '#c9a45c', 72, 98, 78, 1); R(g, '#c9a45c', 72, 131, 78, 1); R(g, '#c9a45c', 72, 98, 1, 34); R(g, '#c9a45c', 149, 98, 1, 34);
-  // 비서 책상 + 노트북 + 머그컵
-  R(g, '#6b4a30', 82, 70, 48, 6); R(g, '#5a3d27', 82, 76, 48, 9); R(g, '#4a3220', 84, 85, 3, 3); R(g, '#4a3220', 125, 85, 3, 3);
-  R(g, '#c9cfd8', 99, 63, 16, 8); R(g, '#2a3a50', 100, 64, 14, 6); R(g, '#c9cfd8', 97, 71, 20, 1);
-  R(g, '#e8e2d0', 121, 66, 4, 5); R(g, '#e8e2d0', 125, 67, 1, 2);
-  // 화분
-  R(g, '#8a4b35', 12, 122, 12, 10); R(g, '#7a3f2c', 12, 122, 12, 2);
-  [[10, 112, 6, 6], [16, 106, 6, 8], [20, 113, 6, 6], [13, 116, 9, 7], [18, 102, 3, 6]].forEach(b => R(g, '#3f8f5a', ...b));
-  [[12, 113], [18, 107], [22, 115]].forEach(p => R(g, '#57b27a', p[0], p[1], 2, 2));
-  // 커피 머신 + 컵
-  R(g, '#2a2a30', 200, 94, 16, 24); R(g, '#3a3a44', 202, 96, 12, 6); R(g, '#e05a4a', 212, 104, 2, 2); R(g, '#6fcf8f', 212, 108, 2, 2);
-  R(g, '#151519', 203, 110, 10, 2); R(g, '#e8e2d0', 205, 105, 5, 5);
+const FLOOR = 43;                              // 벽과 바닥의 경계
+const WIN = [[6, 58], [84, 60], [210, 72]];    // 창문 [x, 폭] — 유리는 y 4~34
+const MON = [26, 46, 66];                      // 시세 모니터 3대의 x
+const SHADOW = 'rgba(120,90,50,.16)';
+function frames(g) { // 창틀(구름 위에 다시 그려야 해서 따로 둠)
+  const F = '#8d98a8';
+  WIN.forEach(([x, w]) => {
+    R(g, F, x - 2, 2, w + 4, 2); R(g, F, x - 2, 34, w + 4, 2); R(g, F, x - 2, 4, 2, 30); R(g, F, x + w, 4, 2, 30);
+    R(g, F, x, 18, w, 1);
+    const n = Math.round(w / 20); for (let i = 1; i < n; i++) R(g, F, x + Math.round(w * i / n) - 1, 4, 2, 30);
+    R(g, '#b7c0cc', x - 2, 2, w + 4, .5);
+  });
 }
-const bg = document.createElement('canvas'); bg.width = W; bg.height = H; drawRoom(bg.getContext('2d'));
+function drawRoom(g) {
+  let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647; // 매번 같은 도시가 나오게 고정된 난수
+  // 창밖: 낮 하늘 + 먼 빌딩 + 가까운 빌딩(벽을 덮기 전에 가로 전체에 그림)
+  ['#9ccbef', '#a9d3f2', '#b7daf4', '#c5e2f6', '#d3e9f8', '#e0eff9'].forEach((c, i) => R(g, c, 0, i * 6, W, 6));
+  for (let x = 0; x < W;) {
+    const w = 8 + Math.floor(rnd() * 10), top = 12 + Math.floor(rnd() * 10);
+    R(g, '#b4c6da', x, top, w, 36 - top);
+    for (let y = top + 2; y < 34; y += 3) for (let wx = x + 1; wx < x + w - 1; wx += 2) if (rnd() < 0.35) R(g, '#cfdcea', wx, y, 1, 1);
+    x += w;
+  }
+  for (let x = -4; x < W;) {
+    const w = 12 + Math.floor(rnd() * 12), top = 19 + Math.floor(rnd() * 10);
+    R(g, rnd() < 0.5 ? '#8ea6c2' : '#9bb1ca', x, top, w, 36 - top); R(g, '#c2d3e6', x, top, w, 1);
+    for (let y = top + 3; y < 34; y += 4) for (let wx = x + 2; wx < x + w - 2; wx += 3) R(g, rnd() < 0.3 ? '#eef5fb' : '#7890ae', wx, y, 2, 2);
+    if (rnd() < 0.3) { R(g, '#8ea6c2', x + (w >> 1), top - 4, 1, 4); R(g, '#e05a4a', x + (w >> 1), top - 5, 1, 1); } // 안테나
+    x += w + 1;
+  }
+  // 벽(창문 자리만 비움) + 걸레받이
+  const wall = (x, y, w, h) => R(g, '#ece5d8', x, y, w, h);
+  wall(0, 0, W, 4); wall(0, 34, W, 6);
+  let px = 0; WIN.forEach(([x, w]) => { wall(px, 4, x - px, 30); px = x + w; }); wall(px, 4, W - px, 30);
+  R(g, '#e3dacb', 0, 37, W, 3);
+  R(g, '#b7a68b', 0, 40, W, 3); R(g, '#cbbca2', 0, 40, W, 1);
+  frames(g);
+  WIN.forEach(([x, w]) => R(g, '#dfe3e8', x - 3, 36, w + 6, 2)); // 창턱
+  // 벽시계(바늘은 draw에서)
+  R(g, '#5a5f6a', 70, 8, 8, 10); R(g, '#5a5f6a', 69, 9, 10, 8); R(g, '#fbfaf6', 71, 9, 6, 8); R(g, '#fbfaf6', 70, 10, 8, 6);
+  // 벽걸이 화이트보드(백테스트): 수익 곡선과 막대
+  R(g, '#9aa3b0', 152, 5, 50, 30); R(g, '#f7f9fb', 154, 7, 46, 25); R(g, '#7d8796', 154, 32, 46, 2);
+  const curve = [27, 26, 27, 24, 25, 22, 23, 20, 21, 18, 17, 15, 16, 13];
+  curve.forEach((y, i) => { R(g, '#2f9e6a', 157 + i * 2, y, 2, 1); if (i) R(g, '#2f9e6a', 157 + i * 2, Math.min(y, curve[i - 1]), 1, Math.abs(y - curve[i - 1]) + 1); });
+  R(g, '#e05a4a', 188, 21, 2, 8); R(g, '#3f6fd0', 191, 25, 2, 4); R(g, '#e05a4a', 194, 17, 2, 12);
+  // 바닥: 따뜻한 베이지 타일 + 창으로 들어오는 햇빛
+  R(g, '#e8d8bb', 0, FLOOR, W, H - FLOOR);
+  for (let x = 12; x < W; x += 24) R(g, '#ddcaa8', x, FLOOR, .5, H - FLOOR);
+  for (let y = FLOOR + 16; y < H; y += 16) R(g, '#ddcaa8', 0, y, W, .5);
+  WIN.forEach(([x, w]) => { for (let i = 0; i < 34; i++) { g.fillStyle = 'rgba(255,251,238,' + (0.42 * (1 - i / 34)).toFixed(3) + ')'; g.fillRect(x + i * .5, FLOOR + i, w, 1); } });
+  // ── 가구(뒤에서 앞으로) ──
+  // 화이트보드 옆 큰 화분
+  R(g, SHADOW, 199, 58, 14, 2);
+  R(g, '#c98a5a', 201, 50, 10, 8); R(g, '#d9a070', 200, 49, 12, 2);
+  [[198, 40, 6, 8], [206, 38, 7, 9], [202, 33, 5, 9], [196, 46, 6, 4], [208, 45, 6, 5]].forEach(b => R(g, '#4f9a4a', ...b));
+  [[199, 41], [207, 39], [203, 34]].forEach(([x, y]) => R(g, '#6dbb5c', x, y, 2, 2));
+  // 시세 단말기 책상(밝은 회색) + 모니터 3대 + 키보드·마우스·빨간 머그
+  R(g, SHADOW, 24, 78, 76, 3);
+  R(g, '#d9dbe0', 22, 58, 78, 12); R(g, '#b4b8c0', 22, 70, 78, 8); R(g, '#9ea3ac', 22, 70, 78, 1);
+  R(g, '#a6aab3', 80, 71, 18, 7); R(g, '#e8eaee', 86, 73, 6, 1); R(g, '#e8eaee', 86, 76, 6, 1);
+  MON.forEach(x => {
+    R(g, '#3a3d46', x + 7, 60, 4, 4); R(g, '#3a3d46', x + 5, 63, 8, 1);
+    R(g, '#2b2e37', x, 48, 18, 13); R(g, '#13202e', x + 1, 49, 16, 10);
+  });
+  R(g, '#f2f3f5', 46, 65, 16, 3); R(g, '#c8ccd3', 46, 67, 16, 1); R(g, '#f2f3f5', 66, 65, 3, 3);
+  R(g, '#e05a4a', 88, 62, 4, 4); R(g, '#e05a4a', 92, 63, 1, 2);
+  R(g, '#ffffff', 24, 62, 10, 6); R(g, '#f4efe0', 25, 63, 10, 6);
+  // 남색 사무 의자(책상 왼쪽에 빼 둠)
+  R(g, SHADOW, 6, 79, 15, 2);
+  R(g, '#3e4b6e', 6, 60, 14, 8); R(g, '#4b5a82', 6, 68, 14, 7); R(g, '#2d3650', 11, 75, 4, 4); R(g, '#20263a', 7, 78, 12, 1);
+  // 복합기(낮은 수납장 위) + 스탠드 조명
+  R(g, SHADOW, 142, 100, 28, 2);
+  R(g, '#cfd3d9', 142, 88, 28, 4); R(g, '#b1b6be', 142, 92, 28, 8); R(g, '#9ea3ac', 155, 94, 2, 4);
+  R(g, '#eef0f3', 145, 78, 22, 10); R(g, '#d5d9df', 145, 85, 22, 3); R(g, '#3a3d46', 160, 80, 5, 2); R(g, '#6fcf8f', 163, 80.5, 1, 1);
+  R(g, '#ffffff', 148, 76, 12, 3); R(g, '#2a2d36', 147, 86, 18, 1);
+  R(g, SHADOW, 6, 104, 10, 2);
+  R(g, '#5a5f6a', 10, 90, 2, 14); R(g, '#5a5f6a', 7, 103, 8, 1); R(g, '#f5e6c0', 6, 84, 10, 6); R(g, '#e8d4a4', 6, 88, 10, 2);
+  // 서류함 2개(DART): 서랍 3칸, 위에 바인더와 서류
+  R(g, SHADOW, 248, 86, 38, 3);
+  [248, 268].forEach(x => {
+    R(g, '#c3c9d0', x, 46, 18, 4); R(g, '#9ea6b0', x, 50, 18, 36);
+    for (let i = 0; i < 3; i++) { R(g, '#8a929d', x, 50 + i * 12, 18, 1); R(g, '#f4efe0', x + 5, 53 + i * 12, 8, 3); R(g, '#e8ebef', x + 6, 58 + i * 12, 6, 1); }
+  });
+  R(g, '#fbf8ef', 251, 42, 12, 5); R(g, '#e9e2d0', 252, 44, 10, 1);
+  [[271, '#3f6fd0'], [275, '#e05a4a'], [279, '#2f9e6a'], [283, '#e0a84a']].forEach(([x, c]) => R(g, c, x, 39, 3, 8));
+  // 비서 책상(짙은 회색) + 노트북 + 검은 머그 + 작은 화분·책
+  R(g, SHADOW, 188, 96, 58, 3);
+  R(g, '#555864', 186, 78, 58, 12); R(g, '#3f414b', 186, 90, 58, 6); R(g, '#33353e', 186, 90, 58, 1);
+  R(g, '#c9cfd8', 207, 70, 18, 10); R(g, '#2a3a50', 208, 71, 16, 8); R(g, '#c9cfd8', 205, 80, 22, 4); R(g, '#a9b0ba', 205, 83, 22, 1);
+  R(g, '#1a1a1e', 232, 80, 4, 5); R(g, '#1a1a1e', 236, 81, 1, 2);
+  R(g, '#c98a5a', 190, 81, 6, 5); [[188, 76, 4, 5], [192, 74, 4, 6], [195, 77, 4, 4]].forEach(b => R(g, '#4f9a4a', ...b));
+  R(g, '#3f6fd0', 197, 85, 8, 2); R(g, '#e0a84a', 198, 83, 7, 2);
+  // 커피 바(오른쪽 벽): 나무 상판, 커피 머신, 컵 / 아래에 정수기
+  R(g, SHADOW, 268, 154, 18, 2);
+  R(g, '#c49a6c', 270, 100, 16, 48); R(g, '#a07a52', 270, 148, 16, 6); R(g, '#b08660', 270, 100, 1, 48);
+  R(g, '#3a3a42', 272, 104, 12, 12); R(g, '#4a4a54', 272, 104, 12, 3); R(g, '#1c1c22', 275, 109, 6, 5); R(g, '#f4efe6', 276, 111, 4, 3);
+  R(g, '#f4efe6', 273, 120, 4, 4); R(g, '#f4efe6', 279, 121, 4, 4); R(g, '#6b3a24', 274, 120, 2, 1);
+  R(g, '#e0e6ec', 273, 130, 10, 12); R(g, '#c9d1da', 273, 130, 10, 2); // 쿠키 통
+  R(g, SHADOW, 270, 173, 16, 2);
+  R(g, '#9fd0f0', 273, 152, 9, 9); R(g, '#5b9bff', 276, 151, 3, 2); R(g, '#eef1f4', 271, 160, 13, 13); R(g, '#d2d8df', 271, 170, 13, 3);
+  R(g, '#e05a4a', 274, 164, 2, 2); R(g, '#3f6fd0', 279, 164, 2, 2);
+  // 큰 화분(물 주는 자리)
+  R(g, SHADOW, 126, 152, 18, 2);
+  R(g, '#c98a5a', 128, 142, 14, 10); R(g, '#d9a070', 127, 141, 16, 2); R(g, '#b07648', 128, 150, 14, 2);
+  [[124, 128, 8, 10], [136, 126, 10, 10], [130, 121, 8, 11], [124, 135, 7, 6], [140, 134, 9, 6], [133, 116, 5, 8]].forEach(b => R(g, '#4f9a4a', ...b));
+  [[126, 129], [138, 127], [131, 122], [134, 117]].forEach(([x, y]) => R(g, '#6dbb5c', x, y, 3, 2));
+  [[128, 136], [141, 133], [132, 131]].forEach(([x, y]) => R(g, '#3b7a38', x, y, 2, 2));
+  // 휴게 공간: 파란 러그 + 남색 소파 + 나무 탁자 + 화분
+  R(g, '#5b74aa', 6, 132, 94, 40); R(g, '#4a6194', 9, 135, 88, 1); R(g, '#4a6194', 9, 168, 88, 1); R(g, '#4a6194', 9, 135, 1, 34); R(g, '#4a6194', 96, 135, 1, 34);
+  R(g, SHADOW, 14, 151, 58, 2);
+  R(g, '#3d4a6e', 14, 136, 56, 6); R(g, '#4f5f8c', 14, 142, 56, 9); R(g, '#3d4a6e', 12, 138, 4, 13); R(g, '#3d4a6e', 68, 138, 4, 13);
+  R(g, SHADOW, 27, 164, 32, 2);
+  R(g, '#c49a6c', 26, 156, 32, 6); R(g, '#a07a52', 26, 162, 32, 2);
+  R(g, '#ffffff', 30, 157, 3, 3); R(g, '#ffffff', 50, 158, 3, 3); R(g, '#e0a84a', 38, 157, 8, 4); R(g, '#3f6fd0', 39, 158, 6, 2);
+  R(g, '#c98a5a', 82, 150, 10, 8); [[79, 140, 6, 9], [86, 137, 7, 10], [83, 134, 5, 7]].forEach(b => R(g, '#4f9a4a', ...b)); R(g, '#6dbb5c', 87, 138, 2, 2);
+  // 회의 테이블 + 의자 8개
+  const chair = (x, y, up) => { R(g, '#4b5a82', x, y + (up ? 4 : 0), 10, 6); R(g, '#3e4b6e', x, up ? y : y + 6, 10, 4); };
+  [164, 184, 204, 224].forEach(x => chair(x, 130, true));
+  R(g, SHADOW, 158, 158, 84, 2);
+  R(g, '#d4b48a', 156, 140, 84, 14); R(g, '#b8956a', 156, 154, 84, 4);
+  [164, 184, 204, 224].forEach(x => chair(x, 160, false));
+  R(g, '#fbf8ef', 166, 144, 10, 7); R(g, '#c9cfd8', 196, 143, 14, 8); R(g, '#2a3a50', 197, 144, 12, 5); R(g, '#fbf8ef', 222, 146, 9, 6);
+}
+// 0.5칸(실제 1픽셀) 단위 잔무늬: 윤곽 밝은 선, 유리 반사, 키보드 키, 소품 글자 등
+function drawDetail(g) {
+  const h = .5;
+  // 창문 유리의 비스듬한 반사, 창턱 빛, 벽 위쪽 몰딩
+  WIN.forEach(([x, w]) => {
+    for (let j = 8; j < w - 6; j += 26) for (let i = 0; i < 6; i++) R(g, 'rgba(255,255,255,.35)', x + j + i * h, 32 - i * 2, h, 2);
+    R(g, '#f6f8fa', x - 3, 36, w + 6, h);
+  });
+  R(g, '#f5f0e6', 0, 0, W, h); R(g, '#dcd2c1', 0, 36.5, W, h);
+  // 시계 테두리 빛, 숫자 자리
+  R(g, '#7a808c', 70, 8, 8, h); [[73.75, 9.5], [73.75, 16], [70.5, 12.75], [77, 12.75]].forEach(([x, y]) => R(g, '#5a5f6a', x, y, h, h));
+  // 화이트보드: 테두리 빛, 펜, 자석, 제목 줄
+  R(g, '#b9c1cc', 152, 5, 50, h);
+  R(g, '#e05a4a', 158, 32, 3, h); R(g, '#3f6fd0', 162, 32, 3, h); R(g, '#1d1d24', 166, 32, 3, h);
+  R(g, '#e05a4a', 155.5, 7.5, 1, 1); R(g, '#c9a45c', 198, 7.5, 1, 1);
+  R(g, '#9aa3b0', 157, 9, 14, h); R(g, '#c8ced6', 157, 10.5, 9, h);
+  // 시세 책상: 모서리 빛, 모니터 테두리 빛과 전원등, 키보드 키
+  R(g, '#eceef1', 22, 58, 78, h);
+  MON.forEach(x => { R(g, '#454955', x, 48, 18, h); R(g, '#6fcf8f', x + 16.5, 59.5, h, h); });
+  for (let i = 0; i < 8; i++) { R(g, '#c8ccd3', 46.5 + i * 2, 65.5, 1, h); R(g, '#c8ccd3', 47 + i * 2, 66.5, 1, h); }
+  R(g, '#c8ccd3', 67, 66, 1, h); R(g, '#ff8a7e', 88, 62, 4, h);
+  [[26, 64.5, 6], [26, 66, 8]].forEach(([x, y, w]) => R(g, '#c8c0aa', x, y, w, h));
+  // 의자 쿠션 빛
+  R(g, '#56668f', 6, 60, 14, h); R(g, '#6070a0', 6, 68, 14, h);
+  // 서류함: 서랍 위 빛, 윗면 모서리
+  [248, 268].forEach(x => { R(g, '#d6dbe0', x, 46, 18, h); for (let i = 0; i < 3; i++) R(g, '#b4bbc4', x, 51 + i * 12, 18, h); });
+  // 비서 책상 모서리, 노트북 화면 글줄·키보드, 검은 머그(BUY HOLD GROW)
+  R(g, '#6b6e7a', 186, 78, 58, h);
+  [[209, 72.5, 8], [209, 74, 11], [209, 75.5, 6], [209, 77, 9]].forEach(([x, y, w]) => R(g, '#6fa8ff', x, y, w, h)); R(g, '#ff6b5e', 218, 75.5, 3, h);
+  R(g, '#e8ecf2', 207, 70, 18, h);
+  for (let i = 0; i < 9; i++) R(g, '#a9b0ba', 206.5 + i * 2.25, 81, 1, h);
+  [81, 82.5, 84].forEach(y => R(g, '#e8e2d0', 232.5, y, 3, h));
+  // 커피 바: 상판 결, 머신 버튼, 컵 김
+  for (let y = 106; y < 148; y += 9) R(g, '#b88d60', 271, y, 15, h);
+  R(g, '#6fcf8f', 282, 106, 1, 1); R(g, '#e05a4a', 282, 108, 1, 1); R(g, '#5a5a66', 272, 104, 12, h);
+  // 화분 잎맥, 화분 테 빛
+  [[127, 131, 4], [139, 129, 4], [132, 125, 3], [143, 136, 3]].forEach(([x, y, w]) => R(g, '#86d27a', x, y, w, h));
+  R(g, '#e8b384', 127, 141, 16, h); R(g, '#e8b384', 200, 49, 12, h);
+  // 러그 무늬(작은 마름모), 소파 쿠션 솔기와 빛, 탁자 결
+  for (let x = 16; x < 92; x += 10) { R(g, '#7f97c9', x, 167, 1.5, h); R(g, '#7f97c9', x + h, 166.5, h, 1.5); }
+  R(g, '#5a6890', 14, 136, 56, h); R(g, '#6676a3', 14, 142, 56, h); R(g, '#3d4a6e', 32.5, 142.5, h, 8.5); R(g, '#3d4a6e', 51, 142.5, h, 8.5);
+  R(g, '#d6b088', 26, 156, 32, h); R(g, '#b88d60', 28, 159, 12, h);
+  // 회의 테이블: 상판 결·모서리 빛, 서류 글줄, 노트북
+  R(g, '#e6cba4', 156, 140, 84, h); [[160, 146, 30], [200, 150, 34], [176, 152, 20]].forEach(([x, y, w]) => R(g, '#c8a67c', x, y, w, h));
+  [[167, 145.5, 7], [167, 147, 5], [223, 147.5, 6]].forEach(([x, y, w]) => R(g, '#b9b3a6', x, y, w, h));
+  R(g, '#6fa8ff', 198, 145, 7, h); R(g, '#6fa8ff', 198, 146.5, 9, h);
+  // 정수기 물병 빛
+  R(g, '#d4ecfb', 274, 153, 1, 6);
+}
+const bg = document.createElement('canvas'); bg.width = W * S; bg.height = H * S;
+{ const g = bg.getContext('2d'); g.scale(S, S); drawRoom(g); drawDetail(g); }
+// 창밖 구름 [시작 위치, y, 폭, 속도]
+const CLOUDS = [[0, 6, 16, 3], [120, 9, 12, 2], [200, 5, 20, 2.5], [300, 8, 10, 3.5]];
 
-// 비서 그림(12×16): 정장 입은 킹찰스 스파니엘 남자 강아지. 글자 하나가 픽셀 하나:
-// o 밤색 털 d 귀(진한 밤색) w 흰 털 e 눈 n 코 t 혀 W 셔츠 b 정장 r 넥타이 p 바지 f 구두
-const PAL = {o: '#b5652e', d: '#7a3f1c', w: '#f6efe2', e: '#1a1418', n: '#2a1a1a', t: '#e8787a', W: '#dfe8f5', b: '#2f4a7a', r: '#c94a4a', p: '#2a2a3a', f: '#5a3420'};
+// 비서 그림(28×36 점): '주야' — 옆으로 넘긴 검은 머리, 다크 그레이 정장 + 검은 셔츠의 2등신 캐릭터.
+// 한 줄은 "개수+글자" 묶음(예: 3h = 머리 3점, 2. = 빈칸 2점). 글자 뜻:
+// o 윤곽 h 머리 H 머리 윤기 s 피부 S 피부 그늘 b 눈썹 e 눈 E 눈 빛 c 볼 m 입 k 정장 K 정장 그늘·솔기 l 옷깃 n 검은 셔츠 p 바지 f 구두 F 구두 광
+// 화면에는 14×18칸 크기로 그림(칸 하나에 점 2×2). 자리 좌표(SPOT)는 예전 12×16칸 기준이라 왼쪽 1·위 2칸 당겨서 발 위치를 맞춤
+// 참고 시안처럼: 둥근 큰 머리(20줄) + 작은 몸, 큰 눈(빛 점·눈동자), 부드러운 피부색, 발밑 그림자 x
+const PAL = {o: '#1b1418', h: '#2b2024', H: '#5a4648', G: '#140e11', s: '#fde3cc', S: '#f0c4a4', b: '#2b2024', e: '#2a1e22', E: '#ffffff', i: '#6a4a3e', c: '#f7b0a8', m: '#c06a5a',
+  k: '#454552', K: '#34343f', l: '#6a6a78', n: '#141418', p: '#34343f', f: '#121216', F: '#4a4a56', x: 'rgba(80,55,25,.2)'};
+const SW = 28, SH = 36;
+const rle = s => s.split(' ').map(t => t.replace(/^\d+/, '').repeat(parseInt(t, 10) || 1)).join('');
+// 시안 머리: 짙은 갈색 흑발, 가르마에서 이마로 내려온 커튼 앞머리(사이로 이마가 보임), 귀를 덮는 옆머리, 갈색 윤기(H)와 결(G).
+// 눈은 가로로 긴 차분한 눈 + 진한 눈썹
+const HAIR_TOP = ['10. 8o 10.', '7. 3o 8h 3o 7.', '5. 2o 14h 2o 5.', '4. 1o 4h 2H 5h 2H 5h 1o 4.', '3. 1o 3h 1H 6h 1G 3h 1H 5h 1o 3.', '2. 1o 14h 1G 7h 1o 2.'];
 const TOP = {
-  down: ['...oowwoo...', '..ooowwooo..', '.oooowwoooo.', '.ooewwwweoo.', 'dooewwwweood', 'ooowwnnwwooo', 'doowwttwwood', 'oo..wwww..oo', 'dobbWrrWbbod', 'oobbbrrbbboo', '.wbbbbbbbbw.', '..bbbbbbbb..', '..pppppppp..'],
-  up: ['...oooooo...', '..oooooooo..', '.oooooooooo.', '.oooooooooo.', 'dooooooooood', 'oooooooooooo', 'dooooooooood', 'oo..oooo..oo', 'dobbbbbbbbod', 'oobbbbbbbboo', '.wbbbbbbbbw.', '..bbbbbbbb..', '..pppppppp..'],
-  right: ['....oooo....', '...oooooo...', '..oooooooo..', '..oooooowe..', '..ddooowwwwn', '..ddoowwwww.', '..ddd.www...', '..ddd.ww....', '..dddbbWbb..', '...ddbbWbb..', '..obbbbbb...', '...bbwbbb...', '...pppppp...']};
+  down: HAIR_TOP.concat(['2. 1o 22h 1o 2.', '2. 1o 4h 1G 6h 1s 5h 1G 4h 1o 2.', '2. 1o 3h 1s 4h 3s 4h 3s 4h 1o 2.', '2. 1o 2h 6s 2h 1s 2h 7s 2h 1o 2.',
+    '2. 1o 2h 3s 3b 6s 3b 3s 2h 1o 2.', '2. 1o 2h 18s 2h 1o 2.', '2. 1o 2h 3s 3e 6s 3e 3s 2h 1o 2.', '2. 1o 2h 3s 1E 1i 1e 6s 1E 1i 1e 3s 2h 1o 2.',
+    '2. 1o 2h 1s 2c 5s 1S 6s 2c 1s 2h 1o 2.', '3. 1o 1h 8s 2m 8s 1h 1o 3.', '4. 1o 18s 1o 4.', '5. 1o 16s 1o 5.', '7. 2o 10s 2o 7.', '9. 10o 9.',
+    '11. 1o 4S 1o 11.', '7. 1o 4k 1l 2n 1l 4k 1o 7.', '6. 1o 5k 1l 2n 1l 5k 1o 6.', '5. 1o 1k 1K 4k 1l 2n 1l 4k 1K 1k 1o 5.', '5. 1o 1k 1K 5k 2n 5k 1K 1k 1o 5.',
+    '5. 1o 1k 1K 6k 1F 5k 1K 1k 1o 5.', '5. 1o 2s 12k 2s 1o 5.', '5. 1o 2s 1o 10K 1o 2s 1o 5.', '6. 3o 10K 3o 6.']),
+  up: HAIR_TOP.concat(['2. 1o 22h 1o 2.', '2. 1o 22h 1o 2.', '2. 1o 22h 1o 2.', '2. 1o 5h 1G 10h 1G 5h 1o 2.', '2. 1o 22h 1o 2.', '2. 1o 3h 2H 12h 2H 3h 1o 2.',
+    '2. 1o 22h 1o 2.', '2. 1o 22h 1o 2.', '2. 1o 6h 1G 8h 1G 6h 1o 2.', '3. 1o 20h 1o 3.', '4. 1o 18h 1o 4.', '5. 1o 3h 1G 8h 1G 3h 1o 5.', '7. 2o 10h 2o 7.', '9. 10o 9.',
+    '11. 1o 4S 1o 11.', '7. 1o 12k 1o 7.', '6. 1o 14k 1o 6.', '5. 1o 1k 1K 12k 1K 1k 1o 5.', '5. 1o 1k 1K 12k 1K 1k 1o 5.',
+    '5. 1o 1k 1K 5k 2K 5k 1K 1k 1o 5.', '5. 1o 2s 5k 2K 5k 2s 1o 5.', '5. 1o 2s 1o 10K 1o 2s 1o 5.', '6. 3o 10K 3o 6.']),
+  right: HAIR_TOP.concat(['2. 1o 22h 1o 2.', '2. 1o 22h 1o 2.', '2. 1o 14h 1G 4h 3s 1o 2.', '2. 1o 13h 2s 3h 4s 1o 2.', '2. 1o 12h 4s 2h 4s 1o 2.',
+    '2. 1o 11h 6s 3b 2s 1o 2.', '2. 1o 11h 7s 2e 2s 1o 2.', '2. 1o 11h 7s 1E 1e 2s 1o 2.', '2. 1o 10h 6s 2c 4s 1o 2.',
+    '3. 1o 8h 8s 1m 3s 1o 3.', '4. 1o 6h 12s 1o 4.', '5. 1o 4h 12s 1o 5.', '7. 2o 2h 8s 2o 7.', '9. 10o 9.', '12. 1o 4S 1o 10.',
+    '9. 1o 6k 1l 2n 1o 8.', '8. 1o 8k 1l 1n 1o 8.', '8. 1o 10k 1o 8.', '8. 1o 3k 1K 6k 1o 8.', '8. 1o 3k 1K 6k 1o 8.', '8. 1o 3k 1K 6k 1o 8.',
+    '8. 1o 3k 2s 5k 1o 8.', '8. 1o 10K 1o 8.'])};
+const STEP = ['8. 1o 10p 1o 8.', '8. 1o 4p 2o 4p 1o 8.', '8. 1o 4p 2. 4p 1o 8.', '7. 1o 1F 4f 2. 4p 1o 8.', '7. 6o 2. 1F 4f 1o 7.', '15. 6o 7.', '7. 14x 7.'];
 const LEGS = {
-  down: [['..ppp..ppp..', '..ppp..ppp..', '..fff..fff..'], ['...pp..ppp..', '...pp..ppp..', '...ff..fff..'], ['..ppp..pp...', '..ppp..pp...', '..fff..ff...']],
-  right: [['....pppp....', '....pppp....', '....ffff....'], ['...pp..pp...', '...pp...pp..', '..ff....ff..'], ['....pp.pp...', '....pp.pp...', '....ff.ff...']]};
+  down: [['8. 1o 10p 1o 8.', '8. 1o 4p 2o 4p 1o 8.', '8. 1o 4p 2. 4p 1o 8.', '8. 1o 4p 2. 4p 1o 8.', '7. 1o 1F 4f 2. 1F 4f 1o 7.', '7. 6o 2. 6o 7.', '7. 14x 7.'],
+    STEP, STEP.map(r => [...rle(r)].reverse().join(''))], // 걸음 2는 걸음 1을 좌우로 뒤집은 것
+  right: [['9. 1o 8p 1o 9.', '9. 1o 8p 1o 9.', '10. 1o 6p 1o 10.', '10. 1o 6p 1o 10.', '10. 1o 1F 7f 1o 8.', '10. 10o 8.', '7. 14x 7.'],
+    ['9. 1o 8p 1o 9.', '8. 1o 3p 1o 2. 1o 3p 1o 8.', '7. 1o 3p 1o 4. 1o 3p 1o 7.', '6. 1o 3p 1o 6. 1o 3p 1o 6.', '5. 1o 4f 1o 6. 1o 1F 4f 1o 4.', '5. 6o 6. 7o 4.', '7. 14x 7.'],
+    ['9. 1o 8p 1o 9.', '10. 1o 6p 1o 10.', '10. 1o 2p 1o 3p 1o 10.', '10. 1o 2p 1o 3p 1o 10.', '10. 1o 1F 3f 1o 3f 1o 8.', '10. 10o 8.', '7. 14x 7.']]};
 LEGS.up = LEGS.down;
 function sprite(rows, flip) {
-  const c = document.createElement('canvas'); c.width = 12; c.height = 16;
+  const c = document.createElement('canvas'); c.width = SW; c.height = SH;
   const g = c.getContext('2d');
-  rows.forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) R(g, PAL[ch], flip ? 11 - x : x, y, 1, 1); }));
+  rows.map(r => r.indexOf(' ') < 0 && r.length === SW ? r : rle(r)).forEach((row, y) => [...row].forEach((ch, x) => { if (PAL[ch]) R(g, PAL[ch], flip ? SW - 1 - x : x, y, 1, 1); }));
   return c;
 }
 const SPR = {};
 ['down', 'up', 'right'].forEach(d => { SPR[d] = LEGS[d].map(l => sprite(TOP[d].concat(l))); });
 SPR.left = LEGS.right.map(l => sprite(TOP.right.concat(l), true));
+// 시안 그림(정면 얼굴 79×84 PNG, 파일 하나로 쓰려고 base64로 넣음)을 머리로 씀: 도트 몸(목 아래 16줄) 위에 34×36점으로 줄여 얹음.
+// 뒤를 볼 때는 같은 머리 모양에서 얼굴 쪽을 머리색으로 덮고, 왼쪽을 볼 때는 좌우로 뒤집음. 그림을 못 읽으면 도트 머리 그대로
+const HW = 34, HH = 36, PW = 36, PH = 50, BODY = 20; // 머리 크기, 합친 그림 크기(실제 점), 몸이 시작하는 줄
+let imgHead = false;
+const HEAD = new Image();
+HEAD.onload = () => {
+  const head = back => {
+    const c = document.createElement('canvas'); c.width = HW; c.height = HH;
+    const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(HEAD, 0, 0, HW, HH);
+    if (back) { g.globalCompositeOperation = 'source-atop'; g.fillStyle = '#2b2024'; g.fillRect(0, HH * .42, HW, HH); }
+    return c;
+  };
+  const front = head(false), back = head(true);
+  Object.keys(SPR).forEach(d => {
+    SPR[d] = SPR[d].map(s => {
+      const c = document.createElement('canvas'); c.width = PW; c.height = PH;
+      const g = c.getContext('2d');
+      g.drawImage(s, 0, BODY, SW, SH - BODY, 4, PH - (SH - BODY), SW, SH - BODY);
+      if (d === 'left') { g.translate(PW, 0); g.scale(-1, 1); }
+      g.drawImage(d === 'up' ? back : front, 1, 0);
+      return c;
+    });
+  });
+  imgHead = true;
+};
+HEAD.src = 'data:image/png;base64,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';
 
 /* ===== 비서 움직임 =====
- * 자리마다 서는 위치. 길은 "아래 통로(y=100)로 내려가 → 옆으로 → 올라감" 하나라 가구에 걸리지 않음 */
+ * 자리마다 서는 위치. 길은 "가운데 통로(y=108)로 내려가 → 옆으로 → 올라가거나 내려감" 하나라 가구에 걸리지 않음.
+ * window는 위쪽 큰 창문 앞에서 도시를 보는 자리 */
 const SPOT = {
-  home: {x: 100, y: 86, face: 'up'}, dash: {x: 30, y: 62, face: 'up'}, bt: {x: 150, y: 32, face: 'up'},
-  fin: {x: 172, y: 54, face: 'right'}, coffee: {x: 186, y: 108, face: 'right'}, plant: {x: 28, y: 112, face: 'left'}, window: {x: 78, y: 34, face: 'up'}};
-const AISLE = 100;
-const me = {x: 100, y: 86, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
+  home: {x: 208, y: 96, face: 'down'}, dash: {x: 54, y: 78, face: 'up'}, bt: {x: 170, y: 44, face: 'up'},
+  fin: {x: 254, y: 88, face: 'up'}, coffee: {x: 254, y: 112, face: 'right'}, plant: {x: 108, y: 130, face: 'right'}, window: {x: 106, y: 46, face: 'up'}};
+const AISLE = 108;
+const me = {x: 208, y: 96, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
 function walkTo(name) {
   const s = SPOT[name];
   return new Promise(res => {
@@ -240,25 +419,39 @@ function step(dt) {
   else me.frame = 0;
 }
 function draw(now) {
-  ctx.drawImage(bg, 0, 0);
-  // 모니터 속 시세 그래프(빨강·파랑이 번갈아 움직임)
+  ctx.drawImage(bg, 0, 0, W, H);
+  // 창밖 구름이 천천히 흘러감(유리 안에서만 보이게 잘라 그린 뒤 창틀을 다시 덮음)
+  ctx.save(); ctx.beginPath(); WIN.forEach(([x, w]) => ctx.rect(x, 4, w, 30)); ctx.clip();
+  CLOUDS.forEach(([o, y, w, v]) => {
+    const x = Math.round(((now / 1000 * v + o) % (W + 40) - 30) * 2) / 2;
+    R(ctx, '#ffffff', x, y, w, 2); R(ctx, '#ffffff', x + w * .25, y - 1.5, w * .5, 1.5); R(ctx, '#e4f1fb', x, y + 2, w, .5);
+  });
+  ctx.restore(); frames(ctx);
+  // 모니터 3대: 봉 차트 / 선 차트 / 봉 차트가 흘러감
   const k = Math.floor(now / 400);
-  for (let i = 0; i < 14; i++) {
-    const a = (Math.sin((i + k) * 0.9) + 1) * 3.5, b = (Math.cos((i + k) * 0.7) + 1) * 3.5;
-    R(ctx, i % 4 === 0 ? '#ff6b5e' : '#5b9bff', 18 + i, 40 + Math.round(a), 1, 2);
-    R(ctx, '#6fcf8f', 40 + i, 40 + Math.round(b), 1, 1);
-  }
-  if (me.work && k % 2) R(ctx, '#f3d27a', me.x + 5, me.y - 4, 2, 2); // 일하는 표시
-  ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x), Math.round(me.y));
+  MON.forEach((mx, m) => {
+    for (let i = 0; i < 30; i++) {
+      const t = i / 2 + k + m * 5, a = (Math.sin(t * .9) + Math.sin(t * .37) + 2) * 1.6, y = 50 + Math.round(a * 2) / 2;
+      if (m === 1) R(ctx, '#6fcf8f', mx + 1.5 + i / 2, y, .5, .5);
+      else if (i % 2 === 0) R(ctx, Math.sin(t * 1.3) > 0 ? '#ff6b5e' : '#5b9bff', mx + 1.5 + i / 2, y, .5, 2);
+    }
+  });
+  // 벽시계 바늘(지금 시각)
+  const d = new Date(), hand = (ang, len, c) => { for (let r = .5; r <= len; r += .5) R(ctx, c, Math.round((74 + Math.sin(ang) * r) * 2) / 2 - .25, Math.round((13 - Math.cos(ang) * r) * 2) / 2 - .25, .5, .5); };
+  hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
+  const up = imgHead ? (PH - SH) / S : 0; // 그림 머리를 쓰면 키가 커져서 위로 더 올라감(발 위치는 같음)
+  if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2); // 일하는 표시
+  ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x * S) / S - 1 - (imgHead ? 2 : 0), Math.round(me.y * S) / S - 2 - up,
+    (imgHead ? PW : SW) / S, (imgHead ? PH : SH) / S);
   const b = $('bubble'); // 말풍선은 비서 머리 위
-  b.style.left = ((me.x + 6) / W * 100) + '%'; b.style.top = ((me.y - 3) / H * 100) + '%';
+  b.style.left = ((me.x + 6) / W * 100) + '%'; b.style.top = ((me.y - 5 - up) / H * 100) + '%';
 }
 let last = performance.now();
 function loop(now) { step(Math.min(0.05, (now - last) / 1000)); last = now; draw(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
 
 // 한가할 때는 사무실을 돌아다님
-const IDLE = [['coffee', '커피 한 잔 ☕'], ['window', '오늘 시장은 어땠을까…'], ['plant', '물 주는 중 🌱'], ['home', '']];
+const IDLE = [['coffee', '커피 한 잔 ☕'], ['window', '창밖 날씨 좋다… 오늘 시장은 어떨까'], ['plant', '물 주는 중 🌱'], ['home', '']];
 setInterval(() => {
   if (me.busy || me.path.length || document.hidden) return;
   const [s, t] = IDLE[Math.floor(Math.random() * IDLE.length)];

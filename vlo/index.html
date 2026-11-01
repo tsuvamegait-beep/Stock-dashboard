@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VLO 정제마진 모니터</title>
+<meta name="color-scheme" content="only light">
+<meta name="theme-color" content="#f8f4ec">
+<script>/* 대시보드에서 고른 테마를 따름 */
+(function(){var t=null;try{t=localStorage.getItem("portfolio-theme")}catch(e){}var dk=t==="night"||t==="rpg"||t==="vault"||t==="ember"||t==="study";
+document.documentElement.setAttribute("data-theme",dk?"night":"light");
+document.querySelector('meta[name="color-scheme"]').setAttribute("content",dk?"dark":"only light");document.querySelector('meta[name="theme-color"]').setAttribute("content",dk?"#12182a":"#f8f4ec")})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&family=Noto+Serif+KR:wght@700&display=swap" rel="stylesheet">
+<style>
+/* 백테스트와 같은 리포트 디자인. 경고는 빨강(오름색), 기준선은 점선. */
+:root{
+  --plane:oklch(97% .012 85); --surface:oklch(98.5% .008 85); --ink:oklch(24% .04 260); --ink2:oklch(42% .03 260); --muted:oklch(55% .02 260);
+  --grid:oklch(90% .015 85); --axis:oklch(80% .02 85); --hair:oklch(24% .04 260 / .12); --wash:oklch(24% .04 260 / .05);
+  --s1:oklch(38% .12 260); --s2:oklch(62% .15 45); --s3:oklch(55% .1 165); --s4:oklch(58% .02 260);
+  --accent:oklch(38% .12 260); --field:oklch(99.5% .004 85); --warn-bg:oklch(94% .04 85); --warn-ink:oklch(40% .08 70);
+  --up:oklch(52% .2 25); --dn:oklch(48% .17 255);
+  --font:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --num:"IBM Plex Mono","IBM Plex Sans KR",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --serif:"Noto Serif KR","Apple SD Gothic Neo",serif;
+  --ease-out:cubic-bezier(.23,1,.32,1);
+  color-scheme:only light;
+}
+:root[data-theme="night"]{
+  --plane:oklch(17% .025 260); --surface:oklch(20.5% .028 260); --ink:oklch(93% .015 85); --ink2:oklch(80% .02 85); --muted:oklch(65% .02 260);
+  --grid:oklch(28% .03 260); --axis:oklch(38% .03 260); --hair:oklch(93% .015 85 / .14); --wash:oklch(93% .015 85 / .06);
+  --s1:oklch(72% .12 250); --s2:oklch(74% .14 50); --s3:oklch(72% .11 165); --s4:oklch(62% .02 260);
+  --accent:oklch(80% .11 80); --field:oklch(15% .02 260); --warn-bg:oklch(27% .04 80); --warn-ink:oklch(86% .09 85);
+  --up:oklch(70% .19 25); --dn:oklch(72% .14 245); color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--plane);color:var(--ink);font:14px/1.6 var(--font);padding-inline:16px;-webkit-text-size-adjust:100%}
+.wrap{max-width:1120px;margin:0 auto;padding-block:24px 64px;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3,p{margin:0}
+h1{font-family:var(--serif);font-size:24px;font-weight:700;letter-spacing:-.02em}
+h2{font-size:17px;font-weight:700;letter-spacing:-.01em}
+h3{font-size:14px;font-weight:700}
+a{color:var(--accent)}
+.meta,.sub{color:var(--ink2);font-size:13px}
+.note{color:var(--muted);font-size:12px}
+button{font:inherit;font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--axis);border-radius:6px;padding:6px 12px;cursor:pointer;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;transition:background-color 120ms var(--ease-out),transform 120ms var(--ease-out)}
+@media (hover:hover){button:hover{background:var(--wash)}}
+button:active:not(:disabled){transform:scale(.97)}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:500;border-radius:2px}
+button.x{border:0;padding:2px 8px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--field);border:1px solid var(--axis);border-radius:6px;padding:6px 9px;min-width:0;font-variant-numeric:tabular-nums}
+input[type=number]{width:110px;font-family:var(--num)}
+input[type=date]{width:150px}
+textarea{width:100%;min-height:90px;font:13px/1.5 var(--num)}
+input::placeholder,textarea::placeholder{color:var(--muted)}
+.banner{background:var(--warn-bg);color:var(--warn-ink);border-radius:6px;padding:8px 12px;font-size:13px}
+.alert{border-left:3px solid var(--up);background:var(--wash);padding:10px 12px;font-size:14px}
+.calm{border-left:3px solid var(--s3);background:var(--wash);padding:10px 12px;font-size:14px}
+[hidden]{display:none!important}
+.card{border-top:1px solid var(--ink);padding:14px 0;min-width:0;display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+.fld{display:flex;flex-direction:column;gap:4px}
+.fld>span{font-size:12px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--axis);border-radius:6px;overflow:hidden;max-width:100%}
+.seg button{border:0;border-radius:0;padding:5px 12px;color:var(--ink2);white-space:nowrap}
+.seg button+button{border-left:1px solid var(--axis)}
+.seg button[aria-pressed=true]{background:var(--wash);color:var(--ink);font-weight:500}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:0 32px}
+.score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.score b{font:600 46px/1 var(--num);letter-spacing:-.03em}
+.score small{font:500 18px var(--num);color:var(--muted)}
+.bar{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;max-width:360px}
+.bar i{height:8px;border-radius:2px;background:var(--grid)}
+.bar i.on{background:var(--up)}
+.ind{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-top:1px solid var(--hair)}
+.ind .pts{font:600 15px var(--num);align-self:start}
+.ind .d{grid-column:1/-1;font-size:13px;color:var(--ink2)}
+.badge{display:inline-block;font-size:11px;line-height:18px;padding:0 7px;border-radius:999px;border:1px solid currentColor;white-space:nowrap;margin-left:6px;vertical-align:1px}
+.b-ok{color:var(--s3)} .b-est{color:var(--s2)} .b-stale{color:var(--warn-ink);background:var(--warn-bg);border-color:transparent} .b-na{color:var(--muted)}
+.hit{color:var(--up);font-weight:500}
+.kv{display:flex;flex-wrap:wrap;gap:6px 22px}
+.kv div{display:flex;flex-direction:column}
+.kv span{font-size:12px;color:var(--muted)}
+.kv b{font:600 17px var(--num)}
+.up{color:var(--up)} .dn{color:var(--dn)}
+.chart svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.chart svg text{font:13px var(--num);fill:var(--muted)}
+.leg{display:flex;flex-wrap:wrap;gap:2px 14px;font-size:12px;color:var(--ink2)}
+.leg i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:5px;vertical-align:3px}
+.read{font:12px var(--num);color:var(--ink2);min-height:18px}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+td,th{padding:5px 6px;border-bottom:1px solid var(--hair);text-align:right;white-space:nowrap}
+td:first-child,th:first-child{text-align:left}
+th{font-weight:500;color:var(--muted);font-size:12px}
+td{font-family:var(--num)}
+tr.cur td{background:var(--wash);font-weight:600}
+details{border:1px solid var(--hair);border-radius:6px;padding:8px 12px}
+details[open]{padding-bottom:12px}
+summary{cursor:pointer;color:var(--ink2);font-size:13px}
+details>*+*{margin-top:10px}
+.links{font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:2px 12px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--plane);padding:8px 14px;border-radius:6px;font-size:13px;max-width:calc(100% - 32px);z-index:9;opacity:0;pointer-events:none;transition:opacity 200ms var(--ease-out)}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="toast"></div>
+<input type="file" id="importFile" accept=".json,application/json" hidden>
+<script>
+/* ===== 저장 =====
+   localStorage vlo-monitor: {set, th, crack[], inv[], ru[], vlo[], px[], sells[], ui}
+   EIA API 키는 vlo-eia-key(이 기기에만). */
+const KEY='vlo-monitor',EKEY='vlo-eia-key';
+const TH0={crackDrop:20,crackHi:13,crackAvg:4,crackPersist:2,invWin:4,invUp:3,invGap:-5,ruLevel:400,ruWeeks:3,margin:30,ddWarn:12,ddHard:15,defScore:4,ageCrack:10,ageInv:14,ageRu:21,ageVlo:140};
+const STAGES=[[2,15],[4,40],[6,75],[8,100]];
+function blank(){return{set:{buy:322,qty:0,cycleFrom:'',crackType:'spot'},th:{...TH0},crack:[],inv:[],ru:[],vlo:[],px:[],sells:[],ui:{range:'1y',det:{},open:{}}}}
+function load(){let s=null;try{s=JSON.parse(localStorage.getItem(KEY))}catch(e){}const b=blank();if(!s||typeof s!=='object')return b;
+  for(const k in b)if(s[k]==null)s[k]=b[k];s.set={...b.set,...s.set};s.th={...TH0,...s.th};s.ui={...b.ui,...s.ui};return s}
+let S=load();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('저장하지 못했습니다: '+e.message)}}
+function eiaKey(){try{return localStorage.getItem(EKEY)||''}catch(e){return''}}
+
+/* ===== 날짜·숫자 ===== */
+const pad=n=>String(n).padStart(2,'0');
+function iso(t){const d=new Date(t);return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function tm(s){const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d,12).getTime()}
+const addD=(s,n)=>iso(tm(s)+n*864e5);
+const days=(a,b)=>Math.round((tm(b)-tm(a))/864e5);
+const TODAY=iso(Date.now());
+function qEnd(q){const m=/^(\d{4})Q([1-4])$/.exec(q||'');return m?iso(new Date(+m[1],3*m[2],0,12).getTime()):null}
+function qDays(q){const e=qEnd(q);if(!e)return null;const m=/^(\d{4})Q([1-4])$/.exec(q);return days(iso(new Date(+m[1],3*m[2]-3,1,12).getTime()),e)+1}
+function normQ(s){s=String(s||'').trim().toUpperCase().replace(/\s+/g,'');let m=/^(\d{4})\D*Q?([1-4])Q?$/.exec(s);if(m)return m[1]+'Q'+m[2];m=/^Q([1-4])\D*(\d{4})$/.exec(s);return m?m[2]+'Q'+m[1]:null}
+function parseDate(s){s=String(s||'').trim();let m=/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})/.exec(s);if(m)return m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
+  m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);if(m)return m[3]+'-'+pad(+m[1])+'-'+pad(+m[2]);
+  if(!/[a-z]/i.test(s))return null;const t=Date.parse(s);return isNaN(t)?null:iso(t)}
+function num(v){if(v==null)return null;v=String(v).replace(/[,$\s]/g,'');if(v==='')return null;const n=+v;return isFinite(n)?n:null}
+const fx=(v,d)=>v==null||!isFinite(v)?'—':v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const f0=v=>fx(v,0),f1=v=>fx(v,1),f2=v=>fx(v,2);
+const pct=v=>v==null||!isFinite(v)?'—':(v>0?'+':'')+v.toFixed(1)+'%';
+const usd=v=>v==null||!isFinite(v)?'—':'$'+f2(v);
+const sd=s=>s?s.slice(2).replace(/-/g,'.'):'—';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=q=>document.querySelector(q);
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),2600)}
+const byD=(a,b)=>a.d<b.d?-1:a.d>b.d?1:0;
+function sortAll(){for(const k of['crack','inv','ru','px','sells'])S[k].sort(byD);S.vlo.sort((a,b)=>a.q<b.q?-1:a.q>b.q?1:0)}
+
+/* ===== 지표 판정 (기준일 D까지의 자료만 씀) =====
+   상태: CONFIRMED 확인 / ESTIMATED 추정 / STALE 오래됨 / UNAVAILABLE 자료 없음.
+   오래됐거나 없으면 0점 + 판정 보류. 추정치는 점수에 넣되 표시. */
+const ST={CONFIRMED:['확인','ok'],ESTIMATED:['추정','est'],STALE:['오래됨','stale'],UNAVAILABLE:['자료 없음','na']};
+const ok=st=>st==='CONFIRMED'||st==='ESTIMATED';
+
+// ULSD-WTI 크랙(기본). 현물(EIA)과 선물 연속물은 섞지 않음 — 고른 종류만 씀.
+function crackRows(D,brent){const o=[];for(const r of S.crack){if(r.d>D)break;if(r.t!==S.set.crackType||r.u==null)continue;const c=brent?r.b:r.w;if(c==null)continue;o.push({d:r.d,v:r.u*42-c,e:r.e})}return o}
+function crackAt(rs,T){const th=S.th,hf=addD(T,-7*th.crackHi),af=addD(T,-7*th.crackAvg);
+  if(!rs.length||rs[0].d>addD(hf,7))return null;
+  let hi=-Infinity,s=0,n=0,e=false,last=null;
+  for(const r of rs){if(r.d>T)break;if(r.d>hf){if(r.v>hi)hi=r.v;if(r.e)e=true}if(r.d>af){s+=r.v;n++}last=r}
+  if(!n||!last||days(last.d,T)>7)return null;
+  const avg=s/n,drop=hi>0?(avg/hi-1)*100:null;
+  return{T,hi,avg,drop,hit:drop!=null&&drop<=-th.crackDrop,e}}
+function evalCrack(D){const rs=crackRows(D);
+  if(!rs.length)return{st:'UNAVAILABLE',score:0,why:'크랙 자료가 없습니다.'};
+  const last=rs[rs.length-1],pts=[],n=Math.max(1,S.th.crackPersist);
+  for(let k=0;k<n;k++){const p=crackAt(rs,addD(last.d,-7*k));
+    if(!p)return{st:'UNAVAILABLE',score:0,asOf:last.d,val:last.v,why:`판정하려면 ${S.th.crackHi+n-1}주 넘는 자료가 있어야 합니다.`};pts.push(p)}
+  const hit=pts.every(p=>p.hit),age=days(last.d,D);
+  const st=age>S.th.ageCrack?'STALE':pts.some(p=>p.e)?'ESTIMATED':'CONFIRMED';
+  const b=crackRows(D,true);
+  return{st,hit,score:hit&&ok(st)?2:0,asOf:last.d,val:last.v,brent:b.length?b[b.length-1].v:null,pts,age}}
+
+// 재고 5년 평균: 직접 넣은 값이 없으면 같은 요일 52주×1~5년 전 값의 평균(±3일).
+let INV=new Map();
+function fiveYr(d){let s=0;for(let y=1;y<=5;y++){const t=tm(d)-364*y*864e5;let v=null;
+  for(let o=0;o<=3&&v==null;o++)v=INV.get(iso(t+o*864e5))??INV.get(iso(t-o*864e5))??null;
+  if(v==null)return null;s+=v}return s/5}
+const invAvg=r=>r.a!=null?r.a:fiveYr(r.d);
+function evalInv(D){const th=S.th,rs=S.inv.filter(r=>r.d<=D&&r.s!=null);
+  if(rs.length<th.invWin+1)return{st:'UNAVAILABLE',score:0,asOf:rs.length?rs[rs.length-1].d:null,why:`주간 재고가 ${th.invWin+1}주 이상 있어야 합니다.`};
+  const last=rs[rs.length-1];let ups=0,e=false;
+  for(let i=rs.length-th.invWin;i<rs.length;i++){if(rs[i].s>rs[i-1].s)ups++;if(rs[i].e)e=true}
+  const avg=invAvg(last);
+  if(avg==null)return{st:'UNAVAILABLE',score:0,asOf:last.d,s:last.s,ups,why:'5년 평균이 없습니다. 직접 넣거나 EIA에서 5년 넘는 자료를 받아 주세요.'};
+  const gap=(last.s/avg-1)*100,hit=ups>=th.invUp&&gap>=th.invGap,age=days(last.d,D);
+  const st=age>th.ageInv?'STALE':e?'ESTIMATED':'CONFIRMED';
+  return{st,hit,score:hit&&ok(st)?2:0,asOf:last.d,s:last.s,avg,gap,ups,age}}
+
+// 러시아: 실제 수출(선적)만 판정. 쿼터 칸(q)은 참고용으로만 보여 줌. 주간 자료 기준.
+function evalRu(D){const th=S.th,rs=S.ru.filter(r=>r.d<=D&&r.x!=null);
+  if(!rs.length)return{st:'UNAVAILABLE',score:0,why:'실제 수출(선적) 자료가 없습니다. 수출 쿼터는 판정에 쓰지 않습니다.'};
+  const last=rs[rs.length-1];let i=rs.length;while(i>0&&rs[i-1].x>=th.ruLevel)i--;
+  const streak=rs.slice(i),wk=streak.length?Math.floor((days(streak[0].d,last.d)+7)/7):0;
+  const hit=wk>=th.ruWeeks,age=days(last.d,D),e=(streak.length?streak:[last]).some(r=>r.e);
+  const st=age>th.ageRu?'STALE':e?'ESTIMATED':'CONFIRMED';
+  return{st,hit,score:hit&&ok(st)?2:0,asOf:last.d,x:last.x,wk,age}}
+
+// VLO: 발표일(없으면 분기 끝+30일)부터 쓸 수 있는 분기 값으로 판정.
+function vloRows(){return S.vlo.map(r=>{const end=qEnd(r.q);return end?{...r,end,rel:r.r||addD(end,30)}:null}).filter(Boolean)}
+function evalVlo(D){const rs=vloRows().filter(r=>r.rel<=D&&r.m!=null);
+  if(!rs.length)return{st:'UNAVAILABLE',score:0,why:'발표된 분기 실현 정제마진이 없습니다.'};
+  const last=rs[rs.length-1],hit=last.m<S.th.margin,age=days(last.end,D);
+  const st=age>S.th.ageVlo?'STALE':last.e?'ESTIMATED':'CONFIRMED';
+  return{st,hit,score:hit&&ok(st)?2:0,asOf:last.end,q:last.q,m:last.m,prev:rs.length>1?rs[rs.length-2]:null,age}}
+
+// 주가: 사이클 시작일 이후 최고 종가 = 관찰 고점. 매입가는 수익률에만.
+function evalPx(D){const rs=S.px.filter(r=>r.d<=D&&r.c!=null);if(!rs.length)return null;
+  const last=rs[rs.length-1],from=S.set.cycleFrom||rs[0].d;let hi=null;
+  for(const r of rs)if(r.d>=from&&(!hi||r.c>hi.c))hi=r;if(!hi)hi=last;
+  return{d:last.d,c:last.c,hi:hi.c,hiD:hi.d,dd:(last.c/hi.c-1)*100,ret:(last.c/S.set.buy-1)*100,from}}
+
+const IND=[['c','ULSD 크랙',evalCrack],['i','미국 디스틸레이트 재고',evalInv],['r','러시아 디젤 수출',evalRu],['v','VLO 실현 정제마진',evalVlo]];
+function evaluate(D){const E={D,score:0,held:[]};for(const[k,n,f]of IND){const e=f(D);E[k]=e;E.score+=e.score;if(!ok(e.st))E.held.push(n)}E.p=evalPx(D);return E}
+
+/* ===== 매도 단계: 이미 실행한 단계는 다시 적용하지 않음 ===== */
+const cumOf=s=>{let c=0;for(const[t,p]of STAGES)if(s>=t)c=p;return c};
+const stageOf=sc=>{let s=0;for(const[t]of STAGES)if(sc>=t)s=t;return s};
+const doneStage=()=>S.sells.reduce((m,x)=>Math.max(m,x.stage||0),0);
+const nextStage=d=>{const n=STAGES.find(([t])=>t>d);return n?n[0]:null};
+function defense(E){const p=E.p;if(!p)return{on:false,txt:'주가 자료가 없어 방어 조건을 볼 수 없습니다.'};
+  const deep=p.dd<=-S.th.ddWarn,sc=E.score>=S.th.defScore;
+  if(deep&&sc)return{on:true,txt:`방어적 매도 검토: 관찰 고점 ${usd(p.hi)}(${sd(p.hiD)}) 대비 ${pct(p.dd)}이고 Exit Score가 ${E.score}점입니다.${p.dd<=-S.th.ddHard?` 하락이 ${S.th.ddHard}%를 넘었습니다.`:''}`};
+  return{on:false,txt:`방어 조건 해당 없음 — 고점 대비 ${pct(p.dd)}(기준 −${S.th.ddWarn}~${S.th.ddHard}%), 점수 ${E.score}점(기준 ${S.th.defScore}점 이상).`}}
+
+/* ===== 지표 설명 ===== */
+function desc(k,e){if(e.st==='UNAVAILABLE')return e.why;const th=S.th;
+  if(k==='c'){const a=e.pts[0],b=e.pts[1];return`WTI 크랙 ${usd(e.val)} · 4주 평균 ${usd(a.avg)} · 13주 최고 ${usd(a.hi)} 대비 ${pct(a.drop)}`+(b?` (한 주 전 ${pct(b.drop)})`:'')+
+    (e.brent!=null?` · Brent 크랙 ${usd(e.brent)}`:'')+(e.hit?` → <span class="hit">${th.crackPersist}주 연속 ${th.crackDrop}% 이상 하락</span>`:'')}
+  if(k==='i')return`재고 ${f1(e.s)}백만 bbl · 5년 평균 대비 ${pct(e.gap)}(기준 ${th.invGap}% 이내) · 최근 ${th.invWin}주 중 ${e.ups}주 증가`+(e.hit?' → <span class="hit">조건 충족</span>':'');
+  if(k==='r')return`실제 수출 ${f0(e.x)}천 b/d · ${f0(th.ruLevel)}천 b/d 이상 ${e.wk}주 지속(기준 ${th.ruWeeks}주)`+(e.hit?' → <span class="hit">조건 충족</span>':'');
+  if(k==='v')return`${e.q} 걸프코스트 실현 마진 ${usd(e.m)}/bbl(경보선 ${usd(th.margin)})`+(e.prev&&e.prev.m!=null?` · 전 분기 ${usd(e.prev.m)}`:'')+(e.hit?' → <span class="hit">경보선 아래</span>':'')}
+const badge=st=>`<span class="badge b-${ST[st][1]}">${ST[st][0]} ${st}</span>`;
+const ageTxt=e=>e.asOf?`기준일 ${e.asOf}${e.age!=null?` · ${e.age}일 전`:''}`:'';
+
+/* ===== 그래프 (SVG, 누르면 그날 값) ===== */
+const CH={};let chN=0;
+const RANGES={'6m':182,'1y':365,'3y':1095};
+const rangeFrom=()=>addD(TODAY,-(RANGES[S.ui.range]||365));
+function niceStep(r){if(!(r>0))return 1;const p=Math.pow(10,Math.floor(Math.log10(r))),n=r/p;return(n<1.5?1:n<3?2:n<7?5:10)*p}
+function chart(o){const W=520,H=o.h||230,L=50,R=10,T=12,B=26,from=o.all?'0000':rangeFrom();
+  const lines=o.lines.map(l=>({...l,pts:l.pts.filter(p=>p[0]>=from&&p[1]!=null&&isFinite(p[1]))})).filter(l=>l.pts.length);
+  if(!lines.length)return'<p class="note">이 기간에 그릴 자료가 없습니다.</p>';
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
+  for(const l of lines)for(const[d,v]of l.pts){const t=tm(d);x0=Math.min(x0,t);x1=Math.max(x1,t);y0=Math.min(y0,v);y1=Math.max(y1,v)}
+  const hl=(o.hl||[]).filter(h=>h.v!=null&&isFinite(h.v));
+  for(const h of hl){y0=Math.min(y0,h.v);y1=Math.max(y1,h.v)}
+  if(o.ymin!=null)y0=o.ymin;if(o.ymax!=null)y1=o.ymax;
+  if(x1===x0){x0-=3*864e5;x1+=3*864e5}
+  if(y1===y0){y0-=1;y1+=1}else{const pd=(y1-y0)*.08;if(o.ymin==null)y0-=pd;if(o.ymax==null)y1+=pd}
+  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=v=>T+(1-(v-y0)/(y1-y0))*(H-T-B),fmt=o.fmt||f1;
+  const st=o.step0||niceStep((y1-y0)/4);let g='';
+  for(let v=Math.ceil(y0/st-1e-9)*st;v<=y1+1e-9;v+=st){const y=Y(v).toFixed(1);g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:var(--grid)"/><text x="${L-6}" y="${+y+4}" text-anchor="end">${fmt(v)}</text>`}
+  [x0,(x0+x1)/2,x1].forEach((t,i)=>{g+=`<text x="${X(t).toFixed(1)}" y="${H-6}" text-anchor="${['start','middle','end'][i]}">${sd(iso(t))}</text>`});
+  for(const h of hl){const y=Y(h.v).toFixed(1),c=h.color||'var(--up)';g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:${c};stroke-dasharray:5 4"/><text x="${W-R}" y="${y-5}" text-anchor="end" style="fill:${c}">${esc(h.label)}</text>`}
+  for(const l of lines){let d='';l.pts.forEach((p,i)=>{const x=X(tm(p[0])).toFixed(1),y=Y(p[1]).toFixed(1);d+=!i?`M${x},${y}`:l.step?`H${x}V${y}`:`L${x},${y}`});
+    if(l.step)d+=`H${(W-R).toFixed(1)}`;
+    g+=`<path d="${d}" fill="none" stroke-linejoin="round" style="stroke:${l.color};stroke-width:${l.w||1.8};${l.dash?'stroke-dasharray:'+l.dash:''}"/>`;
+    if(l.dots)for(const p of l.pts)g+=`<circle cx="${X(tm(p[0])).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3.5" style="fill:${l.color}"/>`}
+  const id='ch'+(++chN);CH[id]={lines,fmt,x0,x1,L,R,W};
+  const leg=lines.filter(l=>l.label).map(l=>`<span><i style="background:${l.color}"></i>${esc(l.label)}</span>`).join('')+hl.map(h=>`<span><i style="background:${h.color||'var(--up)'};height:1px"></i>${esc(h.label)}</span>`).join('');
+  return`<div class="chart"><div class="leg">${leg}</div><svg viewBox="0 0 ${W} ${H}" data-ch="${id}" role="img" aria-label="${esc(o.title||'그래프')}">${g}<line class="cur" x1="0" x2="0" y1="${T}" y2="${H-B}" style="stroke:var(--ink2);display:none"/></svg><div class="read" id="${id}r">그래프를 누르면 그날 값이 보입니다.</div></div>`}
+function onChart(ev){const svg=ev.target.closest&&ev.target.closest('svg[data-ch]');if(!svg)return;const c=CH[svg.dataset.ch];if(!c)return;
+  const r=svg.getBoundingClientRect(),px=(ev.clientX-r.left)/r.width*c.W,t=c.x0+(px-c.L)/(c.W-c.L-c.R)*(c.x1-c.x0);
+  let best=null,bd=Infinity;for(const l of c.lines)for(const p of l.pts){const d=Math.abs(tm(p[0])-t);if(d<bd){bd=d;best=p[0]}}
+  if(!best)return;const parts=[];
+  for(const l of c.lines){let v=null;for(const p of l.pts){if(p[0]>best)break;v=p}if(v&&(l.step||days(v[0],best)<=10))parts.push(`${l.label||''} ${c.fmt(v[1])}`)}
+  $('#'+svg.dataset.ch+'r').textContent=best+' · '+parts.join(' · ');
+  const x=c.L+(tm(best)-c.x0)/(c.x1-c.x0)*(c.W-c.L-c.R),cur=svg.querySelector('.cur');cur.setAttribute('x1',x);cur.setAttribute('x2',x);cur.style.display=''}
+document.addEventListener('pointerdown',onChart);document.addEventListener('pointermove',e=>{if(e.pointerType==='mouse')onChart(e)});
+function rolling(rs,dd,mx){const o=[];let j=0;for(let i=0;i<rs.length;i++){const from=addD(rs[i].d,-dd);while(rs[j].d<=from)j++;
+  let v=mx?-Infinity:0;for(let k=j;k<=i;k++)v=mx?Math.max(v,rs[k].v):v+rs[k].v;o.push([rs[i].d,mx?v:v/(i-j+1)])}return o}
+
+/* ===== 자료 입력 칸 정의 (첫 칸이 열쇠: 같은 날짜·분기는 덮어씀) ===== */
+const SCH={
+  crack:{f:[{k:'d',t:'date',l:'날짜'},{k:'u',t:'num',l:'ULSD ($/gal)'},{k:'w',t:'num',l:'WTI ($/bbl)'},{k:'b',t:'num',l:'Brent ($/bbl)'}],est:1},
+  inv:{f:[{k:'d',t:'date',l:'주 마지막 날'},{k:'s',t:'num',l:'재고 (백만 bbl)'},{k:'a',t:'num',l:'5년 평균 (선택)'}],est:1},
+  ru:{f:[{k:'d',t:'date',l:'주 마지막 날'},{k:'x',t:'num',l:'실제 수출·선적 (천 b/d)'},{k:'q',t:'num',l:'수출 쿼터 (참고)'},{k:'r',t:'num',l:'정유 처리량 (천 b/d)'},{k:'p',t:'num',l:'디젤 생산 (천 b/d)'}],est:1},
+  vlo:{f:[{k:'q',t:'q',l:'분기 (예: 2026Q3)'},{k:'m',t:'num',l:'걸프코스트 실현 마진 ($/bbl)'},{k:'o',t:'num',l:'정제 영업이익 (백만 $)'},{k:'t',t:'num',l:'정제 처리량 (천 b/d)'},{k:'r',t:'date',l:'실적 발표일 (선택)'}],est:1},
+  px:{f:[{k:'d',t:'date',l:'날짜'},{k:'c',t:'num',l:'VLO 종가 ($)'}]}
+};
+function upsert(key,rows){const kf=SCH[key].f[0].k;let n=0;
+  for(const r of rows){for(const k in r)if(r[k]==null)delete r[k];
+    const i=S[key].findIndex(x=>x[kf]===r[kf]&&(key!=='crack'||x.t===r.t));
+    if(i>=0)S[key][i]={...S[key][i],...r};else S[key].push(r);n++}
+  sortAll();save();return n}
+function readField(f,v){return f.t==='num'?num(v):f.t==='date'?(v?parseDate(v):null):f.t==='q'?normQ(v):v}
+function formHtml(key){const sc=SCH[key];
+  return`<div class="row">${sc.f.map(f=>`<label class="fld"><span>${f.l}</span><input id="f_${key}_${f.k}" ${f.t==='date'?`type="date" ${f===sc.f[0]?`value="${TODAY}"`:''}`:f.t==='num'?'type="number" step="any" inputmode="decimal"':'type="text" style="width:110px"'}></label>`).join('')}
+  ${sc.est?`<label class="row" style="gap:6px"><input type="checkbox" id="f_${key}_e"> 추정치</label>`:''}
+  <button class="primary" data-act="add" data-k="${key}">추가</button></div>
+  <details data-id="p_${key}"${S.ui.det['p_'+key]?' open':''}><summary>여러 줄 붙여넣기</summary>
+  <p class="note">한 줄에 하나씩, 칸은 쉼표나 탭으로 나눕니다: ${sc.f.map(f=>f.l.replace(/ \(.*\)/,'')).join(', ')}${sc.est?', 추정(1이면 추정치)':''}. 빈 칸은 비워 둡니다. 엑셀에서 열을 그대로 복사해도 됩니다.</p>
+  <textarea id="t_${key}" placeholder="${key==='vlo'?'2026Q3, 31.5, 2100, 3000, 2026-10-23':key==='crack'?'2026-10-30, 2.35, 61.2, 65.0':'2026-10-24, 112.3'}"></textarea>
+  <button data-act="paste" data-k="${key}">붙여넣은 내용 넣기</button></details>`}
+function rowsTable(key,cols){const rs=S[key].map((r,i)=>({r,i}));if(key==='crack')rs.forEach(o=>o.dim=o.r.t!==S.set.crackType);
+  rs.reverse();const open=S.ui.open[key],show=open?rs:rs.slice(0,6);
+  if(!rs.length)return'<p class="note">아직 넣은 자료가 없습니다.</p>';
+  return`<div class="tbl"><table><thead><tr>${cols.map(c=>`<th>${c[0]}</th>`).join('')}<th></th></tr></thead><tbody>${show.map(({r,i,dim})=>`<tr${dim?' style="opacity:.45"':''}>${cols.map(c=>`<td>${c[1](r)}</td>`).join('')}<td><button class="x" data-act="del" data-k="${key}" data-i="${i}" aria-label="지우기">×</button></td></tr>`).join('')}</tbody></table></div>
+  ${rs.length>6?`<button data-act="open" data-k="${key}">${open?'최근 6개만 보기':`전체 ${rs.length}개 보기`}</button>`:''}`}
+const est=r=>r.e?'추정':'';
+
+/* ===== 화면 ===== */
+function rTop(E,Ey,Ew){const s=E.score,stg=stageOf(s),done=doneStage(),nx=nextStage(done),q=S.set.qty;let act;
+  if(stg>done){const add=cumOf(stg)-cumOf(done);act=`<b>${stg}점 단계 검토</b> — 최초 보유수량의 ${add}%를 추가로 파는 것을 검토할 때입니다(누적 ${cumOf(stg)}%).${q?` 약 ${f0(Math.floor(q*add/100))}주입니다.`:''}`}
+  else if(done>0&&stg===done)act=nx?`이미 ${done}점 단계(누적 ${cumOf(done)}%)를 실행했습니다. 같은 신호가 이어진다고 다시 팔지 않습니다. 다음 단계는 새 악화 신호로 ${nx}점이 될 때 검토합니다.`:'전량 매도 단계까지 실행했습니다.';
+  else if(stg<done)act=`점수가 이미 실행한 ${done}점 단계보다 낮습니다. 추가 매도는 없습니다.`;
+  else act='보유 — 아직 매도 단계에 해당하지 않습니다.';
+  const ch=[];for(const[k,n]of IND){const a=Ey[k],b=E[k];if(a.score!==b.score)ch.push(`${n} ${a.score}→${b.score}점`);else if(a.st!==b.st)ch.push(`${n} ${ST[a.st][0]}→${ST[b.st][0]}`)}
+  const df=defense(E),p=E.p;
+  return`<section class="card"><div class="row" style="justify-content:space-between"><h2>오늘의 판정</h2><span class="meta">${E.D} 기준</span></div>
+  <div class="score"><b>${s}</b><small>/ 8</small><span class="meta">어제 ${Ey.score}점 · 한 주 전 ${Ew.score}점</span></div>
+  <div class="bar">${IND.map(([k])=>`<i class="${E[k].score?'on':''}"></i>`).join('')}</div>
+  <div class="${stg>done?'alert':'calm'}">${act}</div>
+  ${df.on?`<div class="alert">${df.txt}</div>`:`<p class="sub">${df.txt}</p>`}
+  ${E.held.length?`<div class="banner">판정 보류: ${E.held.join(', ')} — 자료가 없거나 오래되어 0점으로 셌습니다. 실제 점수는 더 높을 수 있습니다.</div>`:''}
+  <p class="sub">어제와 달라진 점: ${ch.length?ch.join(', '):'없음'}.</p>
+  ${p?`<div class="kv"><div><span>VLO 종가 (${sd(p.d)})</span><b>${usd(p.c)}</b></div><div><span>매입가 $${f0(S.set.buy)} 대비</span><b class="${p.ret>=0?'up':'dn'}">${pct(p.ret)}</b></div><div><span>관찰 고점 대비</span><b class="${p.dd<=-S.th.ddWarn?'up':''}">${pct(p.dd)}</b></div></div>`:''}
+  <div>${IND.map(([k,n])=>{const e=E[k];return`<div class="ind"><div><b>${n}</b>${badge(e.st)}</div><div class="pts${e.score?' hit':''}">${e.score} / 2</div><div class="d">${desc(k,e)}</div><div class="d note">${ageTxt(e)}${!ok(e.st)?' · 판정 보류(0점)':''}</div></div>`}).join('')}</div>
+  <div class="row"><button data-act="copy">오늘 보고서 복사</button><span class="note">Exit Score는 판단 보조 지표이며 자동 매매 명령이 아닙니다.</span></div></section>`}
+
+function rStages(E){const done=doneStage(),stg=stageOf(E.score),q=S.set.qty,p=E.p,nx=nextStage(done)||8;
+  const rows=[[0,'보유',0,0],...STAGES.map(([t,c],i)=>[t,i===STAGES.length-1?'잔여 매도':'추가 매도',c-(i?STAGES[i-1][1]:0),c])];
+  return`<section class="card"><h2>매도 단계와 실행 기록</h2>
+  <div class="tbl"><table><thead><tr><th>점수</th><th>할 일</th><th>이번 비율</th><th>누적</th>${q?'<th>주식 수</th>':''}<th>실행</th></tr></thead><tbody>
+  ${rows.map(([t,l,a,c])=>`<tr class="${t===stg?'cur':''}"><td>${t?t+'점':'0~1점'}</td><td style="font-family:var(--font)">${l}</td><td>${a?a+'%':'—'}</td><td>${c}%</td>${q?`<td>${a?f0(Math.floor(q*a/100)):'—'}</td>`:''}<td>${t&&t<=done?'✓':''}</td></tr>`).join('')}
+  </tbody></table></div>
+  <p class="note">굵은 줄이 지금 점수의 단계입니다. 같은 악화 신호가 이어진다고 같은 단계를 다시 적용하지 않고, 실행한 단계보다 높은 점수가 될 때만 다음 매도를 검토합니다.</p>
+  <h3>실제로 판 기록</h3>
+  <div class="row"><label class="fld"><span>날짜</span><input type="date" id="s_d" value="${TODAY}"></label>
+  <label class="fld"><span>단계</span><select id="s_st">${STAGES.map(([t,c])=>`<option value="${t}"${t===nx?' selected':''}>${t}점 (누적 ${c}%)</option>`).join('')}</select></label>
+  <label class="fld"><span>판 가격 ($)</span><input type="number" step="any" id="s_px" value="${p?p.c:''}"></label>
+  <label class="fld"><span>판 주식 수 (선택)</span><input type="number" step="1" id="s_n"></label>
+  <label class="fld" style="flex:1;min-width:160px"><span>메모</span><input type="text" id="s_m"></label>
+  <button class="primary" data-act="sell">기록</button></div>
+  ${S.sells.length?`<div class="tbl"><table><thead><tr><th>날짜</th><th>단계</th><th>누적</th><th>가격</th><th>매입가 대비</th><th>그때 점수</th><th>충족 지표</th><th>메모</th><th></th></tr></thead><tbody>
+  ${S.sells.map((x,i)=>`<tr><td>${x.d}</td><td>${x.stage}점</td><td>${cumOf(x.stage)}%</td><td>${usd(x.px)}${x.n?` × ${f0(x.n)}`:''}</td><td>${x.px?pct((x.px/S.set.buy-1)*100):'—'}</td><td>${x.score??'—'}</td><td style="font-family:var(--font)">${esc((x.on||[]).join(', ')||'—')}</td><td style="font-family:var(--font)">${esc(x.note||'')}</td><td><button class="x" data-act="delsell" data-i="${i}" aria-label="지우기">×</button></td></tr>`).join('')}
+  </tbody></table></div>`:'<p class="note">아직 판 기록이 없습니다.</p>'}</section>`}
+
+function rRange(){return`<div class="seg" role="group" aria-label="그래프 기간">${Object.keys(RANGES).map(k=>`<button data-act="range" data-v="${k}" aria-pressed="${S.ui.range===k}">${{'6m':'6개월','1y':'1년','3y':'3년'}[k]}</button>`).join('')}</div>`}
+
+function rPx(E){const p=E.p,rs=S.px.map(r=>[r.d,r.c]);
+  return`<section class="card"><h2>주가와 관찰 고점</h2>
+  ${p?`<div class="kv"><div><span>종가 ${sd(p.d)}</span><b>${usd(p.c)}</b></div><div><span>관찰 고점 ${sd(p.hiD)}</span><b>${usd(p.hi)}</b></div><div><span>고점 대비</span><b>${pct(p.dd)}</b></div><div><span>매입가 대비</span><b>${pct(p.ret)}</b></div></div>`:''}
+  ${chart({title:'VLO 주가',lines:[{pts:rs,color:'var(--s1)',label:'VLO 종가'}],hl:[{v:S.set.buy,label:'매입가',color:'var(--s4)'},p&&{v:p.hi,label:'관찰 고점',color:'var(--s3)'},p&&{v:p.hi*(1-S.th.ddWarn/100),label:`고점 −${S.th.ddWarn}%`}].filter(Boolean),fmt:f0})}
+  <div class="row"><label class="fld"><span>사이클 시작일 (이 날 이후 최고 종가가 관찰 고점)</span><input type="date" id="cyc" value="${S.set.cycleFrom||''}"></label><button data-act="cyc">적용</button><button data-act="cycNow">오늘부터 새 사이클</button></div>
+  <p class="note">매입가 $${f0(S.set.buy)}는 수익률 계산에만 씁니다. 비워 두면 넣은 주가 자료의 첫날부터 고점을 찾습니다.</p>
+  <details data-id="e_px"${S.ui.det.e_px?' open':''}><summary>주가 넣기</summary>${formHtml('px')}${rowsTable('px',[['날짜',r=>r.d],['종가',r=>usd(r.c)]])}</details></section>`}
+
+function rCrack(E){const e=E.c,rs=crackRows('9999'),bs=crackRows('9999',true),other=S.crack.filter(r=>r.t!==S.set.crackType).length,key=eiaKey();
+  const typeName=S.set.crackType==='spot'?'현물(EIA 걸프코스트)':'선물 연속물(NYMEX HO·CL)';
+  return`<section class="card"><div class="row" style="justify-content:space-between"><h2>① ULSD 크랙 스프레드</h2>${badge(e.st)}</div>
+  <p class="sub">${desc('c',e)}</p><p class="note">${ageTxt(e)} · 크랙 = ULSD($/gal)×42 − WTI(또는 Brent). 조건: 최근 ${S.th.crackAvg}주 평균이 ${S.th.crackHi}주 최고보다 ${S.th.crackDrop}% 이상 낮은 상태가 ${S.th.crackPersist}주 연속이면 2점.</p>
+  <div class="row"><span class="note">쓰는 자료</span><div class="seg">${[['spot','현물(EIA)'],['fut','선물 연속물']].map(([v,l])=>`<button data-act="ctype" data-v="${v}" aria-pressed="${S.set.crackType===v}">${l}</button>`).join('')}</div></div>
+  ${other?`<p class="note">다른 종류 자료 ${other}개는 섞지 않고 계산에서 뺐습니다(표에서 흐리게 보임).</p>`:''}
+  ${chart({title:'ULSD 크랙',lines:[{pts:rs.map(r=>[r.d,r.v]),color:'var(--s4)',w:1,label:'WTI 크랙'},{pts:rolling(rs,7*S.th.crackAvg),color:'var(--s1)',w:2.4,label:`${S.th.crackAvg}주 평균`},{pts:rolling(rs,7*S.th.crackHi,true),color:'var(--s3)',dash:'6 4',label:`${S.th.crackHi}주 최고`},{pts:bs.map(r=>[r.d,r.v]),color:'var(--s2)',w:1,label:'Brent 크랙(보조)'}],fmt:f0})}
+  <details data-id="e_crack"${S.ui.det.e_crack?' open':''}><summary>크랙 자료 넣기 — 지금 넣는 자료는 ${typeName}</summary>
+  ${key?`<div class="row"><button data-act="eiaCrack">EIA에서 현물 가격 받기 (3년)</button><span class="note">걸프코스트 ULSD·WTI·Brent 일별 현물</span></div>`:'<p class="note">아래 설정에 EIA API 키를 넣으면 현물 가격을 바로 받을 수 있습니다.</p>'}
+  ${formHtml('crack')}${rowsTable('crack',[['날짜',r=>r.d],['종류',r=>r.t==='spot'?'현물':'선물'],['ULSD',r=>fx(r.u,3)],['WTI',r=>f2(r.w)],['Brent',r=>f2(r.b)],['WTI크랙',r=>r.u!=null&&r.w!=null?f2(r.u*42-r.w):'—'],['Brent크랙',r=>r.u!=null&&r.b!=null?f2(r.u*42-r.b):'—'],['',est]])}</details>
+  <div class="links"><a href="https://www.eia.gov/dnav/pet/hist/EER_EPD2DXL0_PF4_RGC_DPGD.htm" target="_blank" rel="noopener">EIA 걸프코스트 ULSD</a><a href="https://www.eia.gov/dnav/pet/hist/RWTCd.htm" target="_blank" rel="noopener">EIA WTI</a><a href="https://www.eia.gov/dnav/pet/hist/RBRTEd.htm" target="_blank" rel="noopener">EIA Brent</a><a href="https://www.cmegroup.com/markets/energy/refined-products/heating-oil.html" target="_blank" rel="noopener">CME ULSD 선물</a><span>TradingView: NYMEX:HO1!*42-NYMEX:CL1!</span></div></section>`}
+
+function rInv(E){const e=E.i,key=eiaKey();
+  return`<section class="card"><div class="row" style="justify-content:space-between"><h2>② 미국 디스틸레이트 재고</h2>${badge(e.st)}</div>
+  <p class="sub">${desc('i',e)}</p><p class="note">${ageTxt(e)} · 부족률 = (재고 ÷ 5년 평균 − 1)×100. 조건: 최근 ${S.th.invWin}주 중 ${S.th.invUp}주 이상 증가 + 부족률이 ${S.th.invGap}% 이내로 줄면 2점. 주간 자료라 매일 바뀌지 않습니다.</p>
+  ${chart({title:'디스틸레이트 재고',lines:[{pts:S.inv.map(r=>[r.d,r.s]),color:'var(--s1)',w:2.2,label:'재고(백만 bbl)'},{pts:S.inv.map(r=>[r.d,invAvg(r)]),color:'var(--s4)',dash:'6 4',label:'5년 평균'}],fmt:f0})}
+  <details data-id="e_inv"${S.ui.det.e_inv?' open':''}><summary>재고 자료 넣기</summary>
+  ${key?`<div class="row"><button data-act="eiaInv">EIA에서 주간 재고 받기 (8년)</button><span class="note">5년 평균은 받은 과거 자료로 계산</span></div>`:'<p class="note">아래 설정에 EIA API 키를 넣으면 주간 재고를 바로 받을 수 있습니다.</p>'}
+  ${formHtml('inv')}${rowsTable('inv',[['날짜',r=>r.d],['재고',r=>f1(r.s)],['5년 평균',r=>{const a=invAvg(r);return a==null?'—':f1(a)+(r.a!=null?'':'*')}],['부족률',r=>{const a=invAvg(r);return a?pct((r.s/a-1)*100):'—'}],['',est]])}
+  <p class="note">*는 넣은 과거 자료로 계산한 5년 평균입니다(같은 요일 기준 1~5년 전 평균).</p></details>
+  <div class="links"><a href="https://www.eia.gov/petroleum/supply/weekly/" target="_blank" rel="noopener">EIA Weekly Petroleum Status Report</a></div></section>`}
+
+function rRu(E){const e=E.r;
+  return`<section class="card"><div class="row" style="justify-content:space-between"><h2>③ 러시아 디젤 수출</h2>${badge(e.st)}</div>
+  <p class="sub">${desc('r',e)}</p><p class="note">${ageTxt(e)} · 조건: 실제 수출(선적)이 하루 ${f0(S.th.ruLevel)}천 배럴 이상인 상태가 ${S.th.ruWeeks}주 이상 이어지면 2점(40만~50만 b/d 수준 회복). 정부 수출 쿼터는 실제 수출로 보지 않습니다 — 쿼터 칸은 그래프 참고용입니다.</p>
+  ${chart({title:'러시아 디젤 수출',lines:[{pts:S.ru.map(r=>[r.d,r.x]),color:'var(--s1)',w:2.2,dots:1,label:'실제 수출·선적'},{pts:S.ru.map(r=>[r.d,r.q]),color:'var(--s4)',dash:'4 4',label:'수출 쿼터(참고)'}],hl:[{v:S.th.ruLevel,label:`기준 ${f0(S.th.ruLevel)}`}],fmt:f0})}
+  <details data-id="e_ru"${S.ui.det.e_ru?' open':''}><summary>러시아 자료 넣기</summary>${formHtml('ru')}
+  ${rowsTable('ru',[['날짜',r=>r.d],['실제 수출',r=>f0(r.x)],['쿼터',r=>f0(r.q)],['처리량',r=>f0(r.r)],['디젤 생산',r=>f0(r.p)],['',est]])}</details>
+  <p class="note">선박 추적(케플러·볼텍사 등) 기반 보도처럼 실제 선적량을 밝힌 자료를 씁니다. 추정치면 "추정치"에 표시해 두세요.</p></section>`}
+
+function rVlo(E){const e=E.v,rs=vloRows();
+  return`<section class="card"><div class="row" style="justify-content:space-between"><h2>④ VLO 실현 정제마진</h2>${badge(e.st)}</div>
+  <p class="sub">${desc('v',e)}</p><p class="note">${ageTxt(e)} · 분기마다 바뀝니다. 실적 발표일부터 판정에 씁니다(발표일을 비우면 분기 끝 +30일). 조건: 분기 실현 마진이 $${f0(S.th.margin)}/bbl 아래면 2점 — 초기 경보선이므로 과거 사이클로 다시 맞춰야 합니다.</p>
+  ${chart({title:'VLO 실현 마진',lines:[{pts:rs.map(r=>[r.end,r.m]),color:'var(--s1)',w:2.2,dots:1,label:'걸프코스트 실현 마진'},{pts:rs.map(r=>[r.end,r.o!=null&&r.t?r.o*1000/(r.t*qDays(r.q)):null]),color:'var(--s2)',dots:1,label:'배럴당 정제 영업이익'}],hl:[{v:S.th.margin,label:`경보선 $${f0(S.th.margin)}`}],fmt:f0,all:1})}
+  <details data-id="e_vlo"${S.ui.det.e_vlo?' open':''}><summary>분기 실적 넣기</summary>${formHtml('vlo')}
+  ${rowsTable('vlo',[['분기',r=>r.q],['GC 마진',r=>usd(r.m)],['영업이익',r=>f0(r.o)],['처리량',r=>f0(r.t)],['$/bbl 이익',r=>r.o!=null&&r.t?usd(r.o*1000/(r.t*qDays(r.q))):'—'],['발표일',r=>r.r||'—'],['',est]])}
+  <p class="note">배럴당 정제 영업이익 = 영업이익 ÷ (처리량 × 분기 일수). ULSD 크랙은 디젤 마진이라 VLO 전체 실현 마진과 같지 않습니다.</p></details>
+  <div class="links"><a href="https://investorvalero.com/" target="_blank" rel="noopener">Valero IR</a><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001035002&type=10-Q" target="_blank" rel="noopener">SEC 공시</a></div></section>`}
+
+function rHist(TL){const pts=TL.map(t=>[t.d,t.E.score]),ev=[];
+  for(let i=1;i<TL.length;i++){const a=TL[i-1].E,b=TL[i].E;if(a.score!==b.score){const w=IND.filter(([k])=>a[k].score!==b[k].score).map(([k,n])=>`${n} ${b[k].score?'충족':'해제'}`);ev.push(`<tr><td>${TL[i].d}</td><td>${a.score}→${b.score}</td><td style="font-family:var(--font);text-align:left">${w.join(', ')}</td></tr>`)}}
+  return`<section class="card"><h2>Exit Score 흐름</h2>
+  <p class="note">넣은 자료를 날짜별로 다시 계산한 주간 점수입니다(그날까지 알 수 있던 자료만 씀). 자료를 고치면 과거 점수도 같이 바뀝니다.</p>
+  ${chart({title:'Exit Score',lines:[{pts,color:'var(--up)',w:2.4,step:1,label:'Exit Score'}],hl:STAGES.map(([t,c])=>({v:t,label:`${t}점 · ${c}%`,color:'var(--s4)'})),ymin:0,ymax:8.6,step0:2,fmt:f0,h:200})}
+  ${ev.length?`<div class="tbl"><table><thead><tr><th>날짜</th><th>점수</th><th style="text-align:left">바뀐 지표</th></tr></thead><tbody>${ev.reverse().slice(0,12).join('')}</tbody></table></div>`:'<p class="note">점수가 바뀐 적이 없습니다.</p>'}</section>`}
+
+function rSet(){const th=S.th,F=[['crackDrop','크랙: 13주 최고 대비 하락 (%)'],['crackHi','크랙: 최고를 찾는 기간 (주)'],['crackAvg','크랙: 평균 기간 (주)'],['crackPersist','크랙: 연속 (주)'],['invWin','재고: 살필 기간 (주)'],['invUp','재고: 증가한 주 (이상)'],['invGap','재고: 5년 평균 대비 (% 이상)'],['ruLevel','러시아: 수출 기준 (천 b/d)'],['ruWeeks','러시아: 지속 (주)'],['margin','VLO: 마진 경보선 ($/bbl)'],['ddWarn','주가: 고점 대비 하락 검토 (%)'],['ddHard','주가: 고점 대비 하락 강함 (%)'],['defScore','주가: 방어에 필요한 점수'],['ageCrack','오래됨: 크랙 (일)'],['ageInv','오래됨: 재고 (일)'],['ageRu','오래됨: 러시아 (일)'],['ageVlo','오래됨: VLO 분기 끝부터 (일)']];
+  return`<section class="card"><h2>설정</h2>
+  <div class="row"><label class="fld"><span>매입 평균가 ($)</span><input type="number" step="any" data-set="buy" value="${S.set.buy}"></label><label class="fld"><span>최초 보유수량 (주, 선택)</span><input type="number" step="1" data-set="qty" value="${S.set.qty||''}"></label></div>
+  <details data-id="th"${S.ui.det.th?' open':''}><summary>임계값 고치기 (초기 가설 — 백테스트로 검증 필요)</summary>
+  <div class="row">${F.map(([k,l])=>`<label class="fld"><span>${l}</span><input type="number" step="any" data-th="${k}" value="${th[k]}"></label>`).join('')}</div>
+  <button data-act="thReset">기본값으로</button></details>
+  <details data-id="eia"${S.ui.det.eia?' open':''}><summary>EIA API 키 ${eiaKey()?'(저장됨)':''}</summary>
+  <p class="note">무료 키는 eia.gov/opendata 에서 받습니다. 키는 이 기기 브라우저에만 저장되고 저장소에는 올라가지 않습니다.</p>
+  <div class="row"><input type="password" id="ekey" placeholder="EIA API 키" value="${esc(eiaKey())}" style="width:260px" autocomplete="off"><button data-act="ekey">저장</button></div></details>
+  <div class="row"><button data-act="export">백업 파일 받기</button><button data-act="import">백업·자동화 파일 불러오기</button><button data-act="reset">모두 지우기</button></div>
+  <p class="note">불러오기: 설정까지 든 백업 파일이면 전부 바꾸고, {"crack":[…],"ru":[…]}처럼 자료만 든 파일(매일 조사 결과 등)이면 같은 날짜를 덮어쓰며 합칩니다. 칸 이름: crack{d,u,w,b,t:"spot"|"fut",e} inv{d,s,a,e} ru{d,x,q,r,p,e} vlo{q,m,o,t,r,e} px{d,c}. e=1은 추정치.</p></section>`}
+
+function report(E,Ey){const stg=stageOf(E.score),done=doneStage(),p=E.p,L=[`[VLO 정제마진 모니터] ${E.D}`,`Exit Score ${E.score}/8 (어제 ${Ey.score}) · 단계 ${stg}점(누적 ${cumOf(stg)}%) · 실행한 단계 ${done}점(누적 ${cumOf(done)}%)`];
+  if(stg>done)L.push(`→ 최초 수량의 ${cumOf(stg)-cumOf(done)}% 추가 매도 검토`);
+  for(const[k,n]of IND){const e=E[k];L.push(`- ${n}: ${e.score}점 [${e.st}${ok(e.st)?'':' · 판정 보류'}] ${desc(k,e).replace(/<[^>]+>/g,'')}${e.asOf?` (기준일 ${e.asOf})`:''}`)}
+  if(p)L.push(`주가 ${usd(p.c)} (${p.d}) · 매입가 대비 ${pct(p.ret)} · 관찰 고점 ${usd(p.hi)} 대비 ${pct(p.dd)}`);
+  L.push(defense(E).txt);return L.join('\n')}
+
+function render(){INV=new Map(S.inv.map(r=>[r.d,r.s]));for(const k in CH)delete CH[k];
+  const E=evaluate(TODAY),Ey=evaluate(addD(TODAY,-1)),Ew=evaluate(addD(TODAY,-7));
+  const dates=[...S.crack,...S.inv,...S.ru,...S.px].map(r=>r.d).concat(vloRows().map(r=>r.rel));
+  let TL=[];if(dates.length){let first=dates.reduce((a,b)=>a<b?a:b);const lim=addD(TODAY,-7*156);if(first<lim)first=lim;
+    for(let d=TODAY;d>=first;d=addD(d,-7))TL.push(d);TL=TL.reverse().map(d=>({d,E:evaluate(d)}))}
+  window.__E=E;window.__report=()=>report(E,Ey);
+  $('#app').innerHTML=`<header class="row" style="justify-content:space-between;align-items:flex-end">
+    <div><h1>VLO 정제마진 사이클 모니터</h1><p class="meta">Valero Energy (NYSE: VLO) · 디젤 크랙·미국 재고·러시아 수출·VLO 실현 마진으로 사이클 정점을 살핍니다.</p></div>
+    <a class="meta" href="../">← 대시보드</a></header>
+    ${rTop(E,Ey,Ew)}${rStages(E)}
+    <div class="row" style="justify-content:space-between"><h2>지표 자세히</h2>${rRange()}</div>
+    <div class="grid2">${rCrack(E)}${rInv(E)}${rRu(E)}${rVlo(E)}</div>
+    <div class="grid2">${rPx(E)}${rHist(TL)}</div>
+    ${rSet()}
+    <p class="note">투자 판단을 돕는 도구이며 자동 매매가 아닙니다. 자료가 없거나 늦은 것은 시장 신호가 아니므로 0점 + 판정 보류로만 표시합니다. 서로 다른 자료(일별 가격, 주간 재고, 분기 실적)는 각자의 기준일을 그대로 둡니다.</p>`}
+
+/* ===== EIA (API v2 seriesid 경로; 실제 응답·CORS는 사용자 쪽에서 확인 필요) ===== */
+async function eiaGet(id,start){const k=eiaKey();if(!k)throw new Error('EIA API 키가 없습니다.');
+  const u=`https://api.eia.gov/v2/seriesid/${id}?api_key=${encodeURIComponent(k)}&start=${start}&sort%5B0%5D%5Bcolumn%5D=period&sort%5B0%5D%5Bdirection%5D=desc&length=5000`;
+  const res=await fetch(u);const j=await res.json().catch(()=>null);
+  const d=j&&j.response&&j.response.data;if(!res.ok||!Array.isArray(d))throw new Error((j&&j.error&&(j.error.message||j.error))||('응답 '+res.status));
+  const o=new Map();for(const x of d){const p=parseDate(x.period),v=num(x.value);if(p&&v!=null)o.set(p,v)}return o}
+async function eiaCrack(){toast('EIA에서 받는 중…');try{const st=addD(TODAY,-365*3);
+  const[u,w,b]=await Promise.all(['PET.EER_EPD2DXL0_PF4_RGC_DPG.D','PET.RWTC.D','PET.RBRTE.D'].map(id=>eiaGet(id,st)));
+  const rows=[];for(const[d,uv]of u){if(!w.has(d))continue;rows.push({d,u:uv,w:w.get(d),b:b.get(d)??null,t:'spot',e:0})}
+  if(!rows.length)throw new Error('ULSD와 WTI가 겹치는 날이 없습니다.');
+  S.set.crackType='spot';const n=upsert('crack',rows);render();toast(`현물 가격 ${n}일치를 넣었습니다(마지막 ${rows.map(r=>r.d).sort().pop()}).`)}catch(e){toast('받지 못했습니다: '+e.message)}}
+async function eiaInv(){toast('EIA에서 받는 중…');try{const m=await eiaGet('PET.WDISTUS1.W',addD(TODAY,-365*8));
+  const rows=[...m].map(([d,v])=>({d,s:+(v/1000).toFixed(3),e:0}));if(!rows.length)throw new Error('자료가 비었습니다.');
+  const n=upsert('inv',rows);render();toast(`주간 재고 ${n}주치를 넣었습니다.`)}catch(e){toast('받지 못했습니다: '+e.message)}}
+
+/* ===== 동작 ===== */
+document.addEventListener('toggle',e=>{const d=e.target;if(d.tagName==='DETAILS'&&d.dataset.id){S.ui.det[d.dataset.id]=d.open;save()}},true);
+document.addEventListener('change',e=>{const t=e.target;
+  if(t.dataset.th){const v=num(t.value);if(v==null)return;S.th[t.dataset.th]=v;save();t.blur();render()}
+  else if(t.dataset.set){const v=num(t.value);S.set[t.dataset.set]=v==null?(t.dataset.set==='buy'?322:0):v;save();t.blur();render()}
+  else if(t.id==='importFile'&&t.files[0])importFile(t.files[0])});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const a=b.dataset.act,k=b.dataset.k;
+  if(a==='add'){const sc=SCH[k],r={};for(const f of sc.f)r[f.k]=readField(f,$(`#f_${k}_${f.k}`).value);
+    if(sc.est)r.e=$(`#f_${k}_e`).checked?1:0;
+    if(!r[sc.f[0].k])return toast(k==='vlo'?'분기를 2026Q3처럼 넣어 주세요.':'날짜를 넣어 주세요.');
+    if(!sc.f.some(f=>f.t==='num'&&r[f.k]!=null))return toast('값을 하나 이상 넣어 주세요.');
+    if(k==='crack')r.t=S.set.crackType;upsert(k,[r]);render();toast('넣었습니다.')}
+  else if(a==='paste'){const sc=SCH[k],rows=[];let bad=0;
+    for(const line of $('#t_'+k).value.split(/\r?\n/)){if(!line.trim())continue;const c=line.split(line.includes('\t')?'\t':/[,;]/).map(s=>s.trim());
+      const r={};sc.f.forEach((f,i)=>r[f.k]=readField(f,c[i]??''));if(!r[sc.f[0].k]){bad++;continue}
+      if(sc.est)r.e=num(c[sc.f.length])===1?1:0;if(k==='crack')r.t=S.set.crackType;rows.push(r)}
+    if(!rows.length)return toast('읽은 줄이 없습니다. 첫 칸이 날짜(분기)인지 확인해 주세요.');
+    const n=upsert(k,rows);render();toast(`${n}줄을 넣었습니다.${bad?` 읽지 못한 줄 ${bad}개(제목 줄 등)는 건너뛰었습니다.`:''}`)}
+  else if(a==='del'){S[k].splice(+b.dataset.i,1);save();render()}
+  else if(a==='open'){S.ui.open[k]=!S.ui.open[k];save();render()}
+  else if(a==='range'){S.ui.range=b.dataset.v;save();render()}
+  else if(a==='ctype'){S.set.crackType=b.dataset.v;save();render()}
+  else if(a==='cyc'){S.set.cycleFrom=$('#cyc').value||'';save();render()}
+  else if(a==='cycNow'){if(!confirm('오늘부터 새 사이클로 보고 관찰 고점을 다시 잡을까요?'))return;S.set.cycleFrom=TODAY;save();render()}
+  else if(a==='sell'){const E=window.__E,st=+$('#s_st').value;
+    if(st<=doneStage()&&!confirm(`이미 ${doneStage()}점 단계까지 기록했습니다. 그래도 ${st}점 단계로 기록할까요?`))return;
+    S.sells.push({d:$('#s_d').value||TODAY,stage:st,px:num($('#s_px').value),n:num($('#s_n').value),note:$('#s_m').value.trim(),score:E.score,on:IND.filter(([k])=>E[k].score).map(([,n])=>n)});
+    sortAll();save();render();toast('매도 기록을 남겼습니다.')}
+  else if(a==='delsell'){if(!confirm('이 매도 기록을 지울까요?'))return;S.sells.splice(+b.dataset.i,1);save();render()}
+  else if(a==='copy'){const t=window.__report();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast('보고서를 복사했습니다.'),()=>{prompt('아래 내용을 복사하세요.',t)})}
+  else if(a==='thReset'){S.th={...TH0};save();render()}
+  else if(a==='ekey'){try{const v=$('#ekey').value.trim();v?localStorage.setItem(EKEY,v):localStorage.removeItem(EKEY)}catch(e){}render();toast('EIA 키를 저장했습니다.')}
+  else if(a==='eiaCrack')eiaCrack();
+  else if(a==='eiaInv')eiaInv();
+  else if(a==='export'){const blob=new Blob([JSON.stringify(S,null,1)],{type:'application/json'}),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download=`vlo-monitor-${TODAY}.json`;l.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+  else if(a==='import'){$('#importFile').value='';$('#importFile').click()}
+  else if(a==='reset'){if(!confirm('넣은 자료·매도 기록·설정을 모두 지울까요? 되돌릴 수 없습니다.'))return;S=blank();save();render()}});
+function importFile(file){file.text().then(t=>{const j=JSON.parse(t);
+  if(j.set&&j.th){if(!confirm('백업 파일입니다. 지금 자료를 모두 이 파일로 바꿀까요?'))return;try{localStorage.setItem(KEY,t)}catch(e){}S=load();render();toast('백업을 불러왔습니다.');return}
+  let n=0;for(const k of Object.keys(SCH))if(Array.isArray(j[k])){const sc=SCH[k];const rows=j[k].map(r=>{const o={};for(const f of sc.f)o[f.k]=f.t==='num'?num(r[f.k]):readField(f,r[f.k]);if(r.e!=null)o.e=r.e?1:0;if(k==='crack')o.t=r.t==='fut'?'fut':'spot';return o}).filter(r=>r[sc.f[0].k]);n+=upsert(k,rows)}
+  render();toast(n?`자료 ${n}줄을 합쳤습니다.`:'불러올 자료가 없습니다.')}).catch(e=>toast('읽지 못했습니다: '+e.message))}
+
+sortAll();render();
+</script>
+</body>
+</html>

@@ -234,7 +234,7 @@ function desc(k,e){if(e.st==='UNAVAILABLE')return e.why;const th=S.th;
     (e.brent!=null?` · Brent 크랙 ${usd(e.brent)}`:'')+(e.hit?` → <span class="hit">${th.crackPersist}주 연속 ${th.crackDrop}% 이상 하락</span>`:'')}
   if(k==='i')return`재고 ${f1(e.s)}백만 bbl · 5년 평균 대비 ${pct(e.gap)}(기준 ${th.invGap}% 이내) · 최근 ${th.invWin}주 중 ${e.ups}주 증가`+(e.hit?' → <span class="hit">조건 충족</span>':'');
   if(k==='r')return`실제 수출 ${f0(e.x)}천 b/d · ${f0(th.ruLevel)}천 b/d 이상 ${e.wk}주 지속(기준 ${th.ruWeeks}주)`+(e.hit?' → <span class="hit">조건 충족</span>':'');
-  if(k==='v')return`${e.q} 걸프코스트 실현 마진 ${usd(e.m)}/bbl(경보선 ${usd(th.margin)})`+(e.prev&&e.prev.m!=null?` · 전 분기 ${usd(e.prev.m)}`:'')+(e.hit?' → <span class="hit">경보선 아래</span>':'')}
+  if(k==='v')return`${e.q} 걸프코스트 실현 마진 ${usd(e.m)}/bbl(경보선 ${usd(th.margin)})`+(e.prev&&e.prev.m!=null?` · 직전 자료 ${e.prev.q} ${usd(e.prev.m)}`:'')+(e.hit?' → <span class="hit">경보선 아래</span>':'')}
 const badge=st=>`<span class="badge b-${ST[st][1]}">${ST[st][0]} ${st}</span>`;
 const ageTxt=e=>e.asOf?`기준일 ${e.asOf}${e.age!=null?` · ${e.age}일 전`:''}`:'';
 
@@ -489,6 +489,14 @@ function importFile(file){file.text().then(t=>{const j=JSON.parse(t);
   let n=0;for(const k of Object.keys(SCH))if(Array.isArray(j[k])){const sc=SCH[k];const rows=j[k].map(r=>{const o={};for(const f of sc.f)o[f.k]=f.t==='num'?num(r[f.k]):readField(f,r[f.k]);if(r.e!=null)o.e=r.e?1:0;if(k==='crack')o.t=r.t==='fut'?'fut':'spot';return o}).filter(r=>r[sc.f[0].k]);n+=upsert(k,rows)}
   render();toast(n?`자료 ${n}줄을 합쳤습니다.`:'불러올 자료가 없습니다.')}).catch(e=>toast('읽지 못했습니다: '+e.message))}
 
+/* 공식 발표 실적(8-K 실적 발표문 표). m=걸프코스트 배럴당 정제마진, o=정제 부문 영업이익(백만 $), t=전체 정제 처리량(천 b/d).
+   한 번 넣은 분기는 S.seeded에 기억 — 사용자가 지우거나 고친 값은 다시 덮지 않음. */
+const VLO_PUBLISHED=[
+  {q:'2025Q3',m:12.21,o:1610,t:3087},
+  {q:'2026Q3',m:37.55,o:8782,t:2972,r:'2026-10-22'}
+];
+(function(){const done=S.seeded||(S.seeded=[]),add=VLO_PUBLISHED.filter(r=>!done.includes(r.q)&&!S.vlo.some(x=>x.q===r.q));
+  VLO_PUBLISHED.forEach(r=>{if(!done.includes(r.q))done.push(r.q)});if(add.length)upsert('vlo',add.map(r=>({...r,e:0})));else save()})();
 sortAll();render();
 </script>
 </body>

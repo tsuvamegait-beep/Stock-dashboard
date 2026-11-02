@@ -49,6 +49,7 @@
 - 설정값: `SECRET_KEY`, `SHEET_ID`(시세 시트), `AI_MODEL`, 스크립트 속성 `ANTHROPIC_API_KEY` `NH_APP_KEY` `NH_APP_SECRET`.
 - 나무증권 Open API(NH PLUG, https://www.nhplug.com/llms.txt): `?nh=accounts` 계좌 목록, `?nh=trades&acct=&from=&to=` 종합거래내역(`/common/inquiry/v1/totalTransaction`, HTS 8203, 연속조회는 응답 헤더 `cts`/`cts_flag`). 토큰은 24시간 유효, 발급마다 보안 알림 → 스크립트 속성 `NH_TOKEN`/`NH_TOKEN_EXP`에 보관하고 만료·401일 때만 재발급. 주문 API는 `NH_PATHS` 허용 목록에 넣지 않음(조회 전용). 편집기에서 `testNh` 실행하면 적요별 건수·예시를 로그로 확인.
 - `doGet` 파라미터: `history` `trades` `series` `credit` `peers` `nh` `fx`(없으면 동기화 데이터). `doPost`: `saveTrades` `deleteTrades` `saveCredit` `saveHistoryFill` `deleteHistory` `resolveTickers` 및 동기화 저장.
+- 맨 첫 줄 `// 버전: YYYY-MM-DD · 마지막 변경: …`은 사용자가 붙여넣은 코드가 최신인지 확인하는 표시. 두 Apps Script(`apps_script.gs.txt`, `backtest/apps_script.gs.txt`)를 고칠 때마다 날짜와 내용을 바꾸고, 답변에 그 줄을 알려 줍니다.
 - 코드를 바꾸면 사용자가 Apps Script에 다시 붙여넣고 "배포 관리 → 새 버전"으로 배포해야 반영됩니다(주소가 바뀌는 "새 배포"는 금지).
 - 비밀번호·웹 앱 주소·API 키는 저장소에 넣지 않습니다(브라우저 localStorage / 스크립트 속성에만).
 

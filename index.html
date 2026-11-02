@@ -963,8 +963,10 @@ async function histDelete(d) {
 }
 // 계좌별 기록: rec.a = {계좌id: {t, s, c, p, k}} → 고른 계좌만 더한 값
 function histPick(r, ids) {
-  if (!ids) return r; if (!r.a || ids.some(id => !r.a[id])) return null;
-  const o = {t: 0, s: 0, c: 0, p: 0, k: 0, m: 0, r: r.r}; ids.forEach(id => { const x = r.a[id]; ['t', 's', 'c', 'p', 'k'].forEach(f => { o[f] += x[f] || 0; }); }); return o;
+  if (!ids) return r; if (!r.a) return null;
+  // 그날 값이 없는 계좌는 잔고·보유가 없던 것(빈 계좌)이므로 0으로 본다. 고른 계좌가 하나도 없으면 그날은 뺀다
+  if (!ids.some(id => r.a[id])) return null;
+  const o = {t: 0, s: 0, c: 0, p: 0, k: 0, m: 0, r: r.r}; ids.forEach(id => { const x = r.a[id] || {}; ['t', 's', 'c', 'p', 'k'].forEach(f => { o[f] += x[f] || 0; }); }); return o;
 }
 // 행(보유 종목)·현금 목록을 계좌별로 더한다
 function histByAcct(rows, cash) {

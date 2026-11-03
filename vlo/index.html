@@ -243,22 +243,27 @@ const CH={};let chN=0;
 const RANGES={'6m':182,'1y':365,'3y':1095};
 const rangeFrom=()=>addD(TODAY,-(RANGES[S.ui.range]||365));
 function niceStep(r){if(!(r>0))return 1;const p=Math.pow(10,Math.floor(Math.log10(r))),n=r/p;return(n<1.5?1:n<3?2:n<7?5:10)*p}
-function chart(o){const W=520,H=o.h||230,L=50,R=10,T=12,B=26,from=o.all?'0000':rangeFrom();
-  const lines=o.lines.map(l=>({...l,pts:l.pts.filter(p=>p[0]>=from&&p[1]!=null&&isFinite(p[1]))})).filter(l=>l.pts.length);
+function chart(o){const lines=o.lines.map(l=>({...l,pts:l.pts.filter(p=>p[0]>=(o.all?'0000':rangeFrom())&&p[1]!=null&&isFinite(p[1]))})).filter(l=>l.pts.length);
+  const two=lines.some(l=>l.ax===2)&&lines.some(l=>l.ax!==2);
+  const W=520,H=o.h||230,L=50,R=two?46:10,T=12,B=26;
   if(!lines.length)return'<p class="note">이 기간에 그릴 자료가 없습니다.</p>';
-  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity;
-  for(const l of lines)for(const[d,v]of l.pts){const t=tm(d);x0=Math.min(x0,t);x1=Math.max(x1,t);y0=Math.min(y0,v);y1=Math.max(y1,v)}
+  let x0=Infinity,x1=-Infinity,y0=Infinity,y1=-Infinity,z0=Infinity,z1=-Infinity;
+  for(const l of lines)for(const[d,v]of l.pts){const t=tm(d);x0=Math.min(x0,t);x1=Math.max(x1,t);if(two&&l.ax===2){z0=Math.min(z0,v);z1=Math.max(z1,v)}else{y0=Math.min(y0,v);y1=Math.max(y1,v)}}
   const hl=(o.hl||[]).filter(h=>h.v!=null&&isFinite(h.v));
   for(const h of hl){y0=Math.min(y0,h.v);y1=Math.max(y1,h.v)}
   if(o.ymin!=null)y0=o.ymin;if(o.ymax!=null)y1=o.ymax;
   if(x1===x0){x0-=3*864e5;x1+=3*864e5}
   if(y1===y0){y0-=1;y1+=1}else{const pd=(y1-y0)*.08;if(o.ymin==null)y0-=pd;if(o.ymax==null)y1+=pd}
-  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y=v=>T+(1-(v-y0)/(y1-y0))*(H-T-B),fmt=o.fmt||f1;
+  if(two){if(z1===z0){z0-=1;z1+=1}else{const pd=(z1-z0)*.08;z0-=pd;z1+=pd}}
+  const X=t=>L+(t-x0)/(x1-x0)*(W-L-R),Y1=v=>T+(1-(v-y0)/(y1-y0))*(H-T-B),Y2=v=>T+(1-(v-z0)/(z1-z0))*(H-T-B),fmt=o.fmt||f1;
+  const Yof=l=>two&&l.ax===2?Y2:Y1,Y=Y1;
   const st=o.step0||niceStep((y1-y0)/4);let g='';
   for(let v=Math.ceil(y0/st-1e-9)*st;v<=y1+1e-9;v+=st){const y=Y(v).toFixed(1);g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:var(--grid)"/><text x="${L-6}" y="${+y+4}" text-anchor="end">${fmt(v)}</text>`}
+  if(two){const l2=lines.find(l=>l.ax===2),f2x=l2.fmt||fmt,s2=niceStep((z1-z0)/4);
+    for(let v=Math.ceil(z0/s2-1e-9)*s2;v<=z1+1e-9;v+=s2)g+=`<text x="${W-R+6}" y="${(Y2(v)+4).toFixed(1)}" text-anchor="start" style="fill:${l2.color}">${f2x(v)}</text>`}
   [x0,(x0+x1)/2,x1].forEach((t,i)=>{g+=`<text x="${X(t).toFixed(1)}" y="${H-6}" text-anchor="${['start','middle','end'][i]}">${sd(iso(t))}</text>`});
   for(const h of hl){const y=Y(h.v).toFixed(1),c=h.color||'var(--up)';g+=`<line x1="${L}" x2="${W-R}" y1="${y}" y2="${y}" style="stroke:${c};stroke-dasharray:5 4"/><text x="${W-R}" y="${y-5}" text-anchor="end" style="fill:${c}">${esc(h.label)}</text>`}
-  for(const l of lines){let d='';l.pts.forEach((p,i)=>{const x=X(tm(p[0])).toFixed(1),y=Y(p[1]).toFixed(1);d+=!i?`M${x},${y}`:l.step?`H${x}V${y}`:`L${x},${y}`});
+  for(const l of lines){const Y=Yof(l);let d='';l.pts.forEach((p,i)=>{const x=X(tm(p[0])).toFixed(1),y=Y(p[1]).toFixed(1);d+=!i?`M${x},${y}`:l.step?`H${x}V${y}`:`L${x},${y}`});
     if(l.step)d+=`H${(W-R).toFixed(1)}`;
     g+=`<path d="${d}" fill="none" stroke-linejoin="round" style="stroke:${l.color};stroke-width:${l.w||1.8};${l.dash?'stroke-dasharray:'+l.dash:''}"/>`;
     if(l.dots)for(const p of l.pts)g+=`<circle cx="${X(tm(p[0])).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3.5" style="fill:${l.color}"/>`}
@@ -269,7 +274,7 @@ function onChart(ev){const svg=ev.target.closest&&ev.target.closest('svg[data-ch
   const r=svg.getBoundingClientRect(),px=(ev.clientX-r.left)/r.width*c.W,t=c.x0+(px-c.L)/(c.W-c.L-c.R)*(c.x1-c.x0);
   let best=null,bd=Infinity;for(const l of c.lines)for(const p of l.pts){const d=Math.abs(tm(p[0])-t);if(d<bd){bd=d;best=p[0]}}
   if(!best)return;const parts=[];
-  for(const l of c.lines){let v=null;for(const p of l.pts){if(p[0]>best)break;v=p}if(v&&(l.step||days(v[0],best)<=10))parts.push(`${l.label||''} ${c.fmt(v[1])}`)}
+  for(const l of c.lines){let v=null;for(const p of l.pts){if(p[0]>best)break;v=p}if(v&&(l.step||days(v[0],best)<=10))parts.push(`${l.label||''} ${(l.fmt||c.fmt)(v[1])}`)}
   $('#'+svg.dataset.ch+'r').textContent=best+' · '+parts.join(' · ');
   const x=c.L+(tm(best)-c.x0)/(c.x1-c.x0)*(c.W-c.L-c.R),cur=svg.querySelector('.cur');cur.setAttribute('x1',x);cur.setAttribute('x2',x);cur.style.display=''}
 document.addEventListener('pointerdown',onChart);document.addEventListener('pointermove',e=>{if(e.pointerType==='mouse')onChart(e)});
@@ -344,13 +349,12 @@ function rStages(E){const done=doneStage(),stg=stageOf(E.score),q=S.set.qty,p=E.
 
 function rRange(){return`<div class="seg" role="group" aria-label="그래프 기간">${Object.keys(RANGES).map(k=>`<button data-act="range" data-v="${k}" aria-pressed="${S.ui.range===k}">${{'6m':'6개월','1y':'1년','3y':'3년'}[k]}</button>`).join('')}</div>`}
 
-function rPx(E){const p=E.p,rs=S.px.map(r=>[r.d,r.c]);
-  return`<section class="card"><h2>주가와 관찰 고점</h2>
-  ${p?`<div class="kv"><div><span>종가 ${sd(p.d)}</span><b>${usd(p.c)}</b></div><div><span>관찰 고점 ${sd(p.hiD)}</span><b>${usd(p.hi)}</b></div><div><span>고점 대비</span><b>${pct(p.dd)}</b></div><div><span>매입가 대비</span><b>${pct(p.ret)}</b></div></div>`:''}
-  ${chart({title:'VLO 주가',lines:[{pts:rs,color:'var(--s1)',label:'VLO 종가'}],hl:[{v:S.set.buy,label:'매입가',color:'var(--s4)'},p&&{v:p.hi,label:'관찰 고점',color:'var(--s3)'},p&&{v:p.hi*(1-S.th.ddWarn/100),label:`고점 −${S.th.ddWarn}%`}].filter(Boolean),fmt:f0})}
-  <div class="row"><label class="fld"><span>사이클 시작일 (이 날 이후 최고 종가가 관찰 고점)</span><input type="date" id="cyc" value="${S.set.cycleFrom||''}"></label><button data-act="cyc">적용</button><button data-act="cycNow">오늘부터 새 사이클</button></div>
-  <p class="note">매입가 $${f0(S.set.buy)}는 수익률 계산에만 씁니다. 비워 두면 넣은 주가 자료의 첫날부터 고점을 찾습니다.</p>
-  <details data-id="e_px"${S.ui.det.e_px?' open':''}><summary>주가 넣기</summary>${formHtml('px')}${rowsTable('px',[['날짜',r=>r.d],['종가',r=>usd(r.c)]])}</details></section>`}
+function rScorePx(TL){
+  return`<section class="card"><h2>Exit Score와 VLO 주가</h2>
+  <p class="note">왼쪽 눈금은 Exit Score(0~8점), 오른쪽 눈금은 VLO 종가($)입니다. 점수가 오를 때 주가가 어떻게 움직였는지 함께 봅니다.</p>
+  ${chart({title:'Exit Score와 VLO 주가',lines:[{pts:TL.map(t=>[t.d,t.E.score]),color:'var(--up)',w:2.4,step:1,label:'Exit Score'},{pts:S.px.map(r=>[r.d,r.c]),color:'var(--s1)',ax:2,fmt:v=>'$'+f0(v),label:'VLO 종가'}],ymin:0,ymax:8.6,step0:2,fmt:f0})}
+  <details data-id="e_px"${S.ui.det.e_px?' open':''}><summary>주가 넣기</summary>${formHtml('px')}${rowsTable('px',[['날짜',r=>r.d],['종가',r=>usd(r.c)]])}
+  <div class="row"><label class="fld"><span>사이클 시작일 (방어 조건의 고점을 이 날 이후에서 찾음)</span><input type="date" id="cyc" value="${S.set.cycleFrom||''}"></label><button data-act="cyc">적용</button><button data-act="cycNow">오늘부터 새 사이클</button></div></details></section>`}
 
 function rCrack(E){const e=E.c,rs=crackRows('9999'),bs=crackRows('9999',true),other=S.crack.filter(r=>r.t!==S.set.crackType).length,key=eiaKey();
   const typeName=S.set.crackType==='spot'?'현물(EIA 걸프코스트)':'선물 연속물(NYMEX HO·CL)';
@@ -428,7 +432,7 @@ function render(){INV=new Map(S.inv.map(r=>[r.d,r.s]));for(const k in CH)delete 
     ${rTop(E,Ey,Ew)}${rStages(E)}
     <div class="row" style="justify-content:space-between"><h2>지표 자세히</h2>${rRange()}</div>
     <div class="grid2">${rCrack(E)}${rInv(E)}${rRu(E)}${rVlo(E)}</div>
-    <div class="grid2">${rPx(E)}${rHist(TL)}</div>
+    ${rHist(TL)}${rScorePx(TL)}
     ${rSet()}
     <p class="note">투자 판단을 돕는 도구이며 자동 매매가 아닙니다. 자료가 없거나 늦은 것은 시장 신호가 아니므로 0점 + 판정 보류로만 표시합니다. 서로 다른 자료(일별 가격, 주간 재고, 분기 실적)는 각자의 기준일을 그대로 둡니다.</p>`}
 

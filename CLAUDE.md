@@ -28,7 +28,7 @@
 - `vlo/index.html`(GitHub Pages `/vlo/`), 다른 파일과 코드 공유 없음(테마 `portfolio-theme`만 읽음). 저장 localStorage `vlo-monitor` {set{buy 322, qty, cycleFrom, crackType spot|fut}, th(임계값 `TH0`), crack{d,u,w,b,t,e} inv{d,s,a,e} ru{d,x,q,r,p,e} vlo{q,m,o,t,r,e} px{d,c} sells}, EIA 키 `vlo-eia-key`.
 - 판정 `evaluate(D)`: 그날까지의 자료만 씀 → 지표 4개(`evalCrack` `evalInv` `evalRu` `evalVlo`) 각 0/2점, 상태 CONFIRMED/ESTIMATED/STALE/UNAVAILABLE(뒤 둘은 0점+판정 보류). 크랙은 고른 종류(현물/선물)만, 2주 연속 = 마지막 날과 7일 전 두 시점. 재고 5년 평균은 직접 값 없으면 364일×1~5년 전 값 평균(`fiveYr`). 러시아는 실제 수출 `x`만(쿼터 `q`는 참고). VLO는 발표일(없으면 분기 끝+30일)부터. Exit Score 흐름은 주마다 `evaluate`를 다시 계산.
 - 매도 단계: 실행 기록 `sells`의 최고 단계보다 높은 점수일 때만 다음 매도 검토(같은 신호 반복 적용 안 함). 방어 = 관찰 고점(사이클 시작일 이후 최고 종가) 대비 −12% 이하 + 점수 4 이상.
-- EIA 받기: `https://api.eia.gov/v2/seriesid/PET.EER_EPD2DXL0_PF4_RGC_DPG.D`(+RWTC, RBRTE, WDISTUS1.W 천 배럴→백만). 실제 응답·브라우저 CORS 미확인. 자동화 결과는 JSON 불러오기로 합침.
+- EIA 받기: `https://api.eia.gov/v2/seriesid/PET.EER_EPD2DXL0_PF4_RGC_DPG.D`(+RWTC, RBRTE, WDISTUS1.W 천 배럴→백만). 주간 수급 카드(`rSup`, `eiaSup`, 점수에 안 씀): `sup{d,p,u,x,r}` = 생산 WDIRPUS2·내수 공급 WDIUPUS2·수출 WDIEXUS2(천 b/d, 그래프는 4주 평균)·가동률 WPULEUS3(%), 하나 실패해도 나머지 넣음. 화면 아래쪽에 Exit Score와 VLO 종가 겹친 그래프(`rScorePx`, `chart`의 `ax:2` 오른쪽 축). 실제 응답·브라우저 CORS 미확인. 자동화 결과는 JSON 불러오기로 합침.
 
 ## DART 로컬 저장소(`dart/`)
 - `dart/dart_fetch.py 종목…  [--years N]`: 이 컴퓨터에서 DART를 직접 불러 `dart/data/<코드>_<회사명>/`에 저장(보고서별 원본 `reports/<연도>_<분기>Q_<CFS|OFS>.json`·`_shares.json`, 분기 요약 `summary.csv`, 최근 1년 공시 `disclosures.json`, 상장사 목록 `data/corp_codes.json` 하루 보관). 키는 `--setkey`로 `dart/.dart_key`에. `.gitignore`로 키와 data는 GitHub에 안 올림. 이미 받은 보고서는 재사용(최근 6분기만 다시 받음).

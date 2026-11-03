@@ -119,7 +119,7 @@ details>*+*{margin-top:10px}
 const KEY='vlo-monitor',EKEY='vlo-eia-key';
 const TH0={crackDrop:20,crackHi:13,crackAvg:4,crackPersist:2,invWin:4,invUp:3,invGap:-5,ruLevel:400,ruWeeks:3,margin:30,ddWarn:12,ddHard:15,defScore:4,ageCrack:10,ageInv:14,ageRu:21,ageVlo:140};
 const STAGES=[[2,15],[4,40],[6,75],[8,100]];
-function blank(){return{set:{buy:322,qty:0,cycleFrom:'',crackType:'spot'},th:{...TH0},crack:[],inv:[],ru:[],vlo:[],px:[],sells:[],ui:{range:'1y',det:{},open:{}}}}
+function blank(){return{set:{buy:322,qty:0,cycleFrom:'',crackType:'spot'},th:{...TH0},crack:[],inv:[],ru:[],vlo:[],px:[],sup:[],sells:[],ui:{range:'1y',det:{},open:{}}}}
 function load(){let s=null;try{s=JSON.parse(localStorage.getItem(KEY))}catch(e){}const b=blank();if(!s||typeof s!=='object')return b;
   for(const k in b)if(s[k]==null)s[k]=b[k];s.set={...b.set,...s.set};s.th={...TH0,...s.th};s.ui={...b.ui,...s.ui};return s}
 let S=load();
@@ -149,7 +149,7 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const $=q=>document.querySelector(q);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),2600)}
 const byD=(a,b)=>a.d<b.d?-1:a.d>b.d?1:0;
-function sortAll(){for(const k of['crack','inv','ru','px','sells'])S[k].sort(byD);S.vlo.sort((a,b)=>a.q<b.q?-1:a.q>b.q?1:0)}
+function sortAll(){for(const k of['crack','inv','ru','px','sup','sells'])S[k].sort(byD);S.vlo.sort((a,b)=>a.q<b.q?-1:a.q>b.q?1:0)}
 
 /* ===== 지표 판정 (기준일 D까지의 자료만 씀) =====
    상태: CONFIRMED 확인 / ESTIMATED 추정 / STALE 오래됨 / UNAVAILABLE 자료 없음.
@@ -287,7 +287,8 @@ const SCH={
   inv:{f:[{k:'d',t:'date',l:'주 마지막 날'},{k:'s',t:'num',l:'재고 (백만 bbl)'},{k:'a',t:'num',l:'5년 평균 (선택)'}],est:1},
   ru:{f:[{k:'d',t:'date',l:'주 마지막 날'},{k:'x',t:'num',l:'실제 수출·선적 (천 b/d)'},{k:'q',t:'num',l:'수출 쿼터 (참고)'},{k:'r',t:'num',l:'정유 처리량 (천 b/d)'},{k:'p',t:'num',l:'디젤 생산 (천 b/d)'}],est:1},
   vlo:{f:[{k:'q',t:'q',l:'분기 (예: 2026Q3)'},{k:'m',t:'num',l:'걸프코스트 실현 마진 ($/bbl)'},{k:'o',t:'num',l:'정제 영업이익 (백만 $)'},{k:'t',t:'num',l:'정제 처리량 (천 b/d)'},{k:'r',t:'date',l:'실적 발표일 (선택)'}],est:1},
-  px:{f:[{k:'d',t:'date',l:'날짜'},{k:'c',t:'num',l:'VLO 종가 ($)'}]}
+  px:{f:[{k:'d',t:'date',l:'날짜'},{k:'c',t:'num',l:'VLO 종가 ($)'}]},
+  sup:{f:[{k:'d',t:'date',l:'주 마지막 날'},{k:'p',t:'num',l:'생산 (천 b/d)'},{k:'u',t:'num',l:'내수 공급 (천 b/d)'},{k:'x',t:'num',l:'수출 (천 b/d)'},{k:'r',t:'num',l:'정유 가동률 (%)'}]}
 };
 function upsert(key,rows){const kf=SCH[key].f[0].k;let n=0;
   for(const r of rows){for(const k in r)if(r[k]==null)delete r[k];
@@ -301,7 +302,7 @@ function formHtml(key){const sc=SCH[key];
   <button class="primary" data-act="add" data-k="${key}">추가</button></div>
   <details data-id="p_${key}"${S.ui.det['p_'+key]?' open':''}><summary>여러 줄 붙여넣기</summary>
   <p class="note">한 줄에 하나씩, 칸은 쉼표나 탭으로 나눕니다: ${sc.f.map(f=>f.l.replace(/ \(.*\)/,'')).join(', ')}${sc.est?', 추정(1이면 추정치)':''}. 빈 칸은 비워 둡니다. 엑셀에서 열을 그대로 복사해도 됩니다.</p>
-  <textarea id="t_${key}" placeholder="${key==='vlo'?'2026Q3, 31.5, 2100, 3000, 2026-10-23':key==='crack'?'2026-10-30, 2.35, 61.2, 65.0':'2026-10-24, 112.3'}"></textarea>
+  <textarea id="t_${key}" placeholder="${key==='vlo'?'2026Q3, 31.5, 2100, 3000, 2026-10-23':key==='crack'?'2026-10-30, 2.35, 61.2, 65.0':key==='sup'?'2026-10-24, 4900, 3800, 1300, 90.5':'2026-10-24, 112.3'}"></textarea>
   <button data-act="paste" data-k="${key}">붙여넣은 내용 넣기</button></details>`}
 function rowsTable(key,cols){const rs=S[key].map((r,i)=>({r,i}));if(key==='crack')rs.forEach(o=>o.dim=o.r.t!==S.set.crackType);
   rs.reverse();const open=S.ui.open[key],show=open?rs:rs.slice(0,6);
@@ -395,6 +396,22 @@ function rVlo(E){const e=E.v,rs=vloRows();
   <p class="note">배럴당 정제 영업이익 = 영업이익 ÷ (처리량 × 분기 일수). ULSD 크랙은 디젤 마진이라 VLO 전체 실현 마진과 같지 않습니다.</p></details>
   <div class="links"><a href="https://investorvalero.com/" target="_blank" rel="noopener">Valero IR</a><a href="https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=0001035002&type=10-Q" target="_blank" rel="noopener">SEC 공시</a></div></section>`}
 
+function rSup(){const rs=S.sup,key=eiaKey(),avg=k=>rolling(rs.filter(r=>r[k]!=null).map(r=>({d:r.d,v:r[k]})),28);
+  const last=k=>{const a=(k==='s'?S.inv:rs).filter(r=>r[k]!=null);return a.length?[a[a.length-1],a[a.length-2]]:[]};
+  const kv=[['s','재고',v=>f1(v)+'백만'],['p','생산',f0],['u','내수 공급',f0],['x','수출',f0],['r','가동률',v=>f1(v)+'%']].map(([k,n,fm])=>{const[a,b]=last(k);if(!a)return'';const dv=b?a[k]-b[k]:null;
+    return`<div><span>${n} ${sd(a.d)}</span><b>${fm(a[k])}</b>${dv!=null?`<small class="note"> 전주 ${dv>=0?'+':''}${k==='s'||k==='r'?f1(dv):f0(dv)}</small>`:''}</div>`}).join('');
+  return`<section class="card"><h2>EIA 주간 디스틸레이트 수급</h2>
+  <p class="note">미국 디스틸레이트(디젤·난방유) 주간 자료입니다. 생산·내수 공급·수출은 단위가 하루 천 배럴이고, 주마다 들쭉날쭉해서 4주 평균으로 그립니다(EIA도 4주 평균을 따로 발표). 점수에는 쓰지 않는 참고 자료입니다.</p>
+  ${kv?`<div class="kv">${kv}</div>`:''}
+  ${key?`<div class="row"><button data-act="eiaSup">EIA에서 주간 수급 받기</button><span class="note">재고(8년)·생산·내수 공급·수출·가동률(3년)을 한 번에 받습니다</span></div>`:'<p class="note">아래 설정에 EIA API 키를 넣으면 바로 받을 수 있습니다.</p>'}
+  <div class="grid2"><div><h3>재고 (백만 배럴)</h3>${chart({title:'디스틸레이트 재고',lines:[{pts:S.inv.map(r=>[r.d,r.s]),color:'var(--s1)',w:2.2,label:'재고'},{pts:S.inv.map(r=>[r.d,invAvg(r)]),color:'var(--s4)',dash:'6 4',label:'5년 평균'}],fmt:f0,h:200})}</div>
+  <div><h3>생산·내수 공급·수출 (천 b/d, 4주 평균)</h3>${chart({title:'생산·내수 공급·수출',lines:[{pts:avg('p'),color:'var(--s1)',w:2.2,label:'생산'},{pts:avg('u'),color:'var(--s3)',w:2.2,label:'내수 공급'},{pts:avg('x'),color:'var(--s2)',w:2.2,label:'수출'}],fmt:f0,h:200})}</div>
+  <div><h3>정유시설 가동률 (%)</h3>${chart({title:'정유 가동률',lines:[{pts:rs.map(r=>[r.d,r.r]),color:'var(--s1)',w:1.2,label:'주간'},{pts:avg('r'),color:'var(--up)',w:2.4,label:'4주 평균'}],fmt:f0,h:200})}</div></div>
+  <p class="note">읽는 법: 생산이 늘고 내수·수출이 줄면 재고가 쌓여 크랙이 약해지기 쉽습니다. 가동률이 90%를 넘게 오래 유지되면 공급이 늘어나는 신호입니다.</p>
+  <details data-id="e_sup"${S.ui.det.e_sup?' open':''}><summary>수급 자료 직접 넣기</summary>${formHtml('sup')}
+  ${rowsTable('sup',[['날짜',r=>r.d],['생산',r=>f0(r.p)],['내수',r=>f0(r.u)],['수출',r=>f0(r.x)],['가동률',r=>f1(r.r)]])}</details>
+  <div class="links"><a href="https://www.eia.gov/petroleum/supply/weekly/" target="_blank" rel="noopener">EIA Weekly Petroleum Status Report</a><a href="https://www.eia.gov/dnav/pet/pet_sum_sndw_dcus_nus_w.htm" target="_blank" rel="noopener">EIA 주간 수급 표</a></div></section>`}
+
 function rHist(TL){const pts=TL.map(t=>[t.d,t.E.score]),ev=[];
   for(let i=1;i<TL.length;i++){const a=TL[i-1].E,b=TL[i].E;if(a.score!==b.score){const w=IND.filter(([k])=>a[k].score!==b[k].score).map(([k,n])=>`${n} ${b[k].score?'충족':'해제'}`);ev.push(`<tr><td>${TL[i].d}</td><td>${a.score}→${b.score}</td><td style="font-family:var(--font);text-align:left">${w.join(', ')}</td></tr>`)}}
   return`<section class="card"><h2>Exit Score 흐름</h2>
@@ -432,7 +449,7 @@ function render(){INV=new Map(S.inv.map(r=>[r.d,r.s]));for(const k in CH)delete 
     ${rTop(E,Ey,Ew)}${rStages(E)}
     <div class="row" style="justify-content:space-between"><h2>지표 자세히</h2>${rRange()}</div>
     <div class="grid2">${rCrack(E)}${rInv(E)}${rRu(E)}${rVlo(E)}</div>
-    ${rHist(TL)}${rScorePx(TL)}
+    ${rSup()}${rHist(TL)}${rScorePx(TL)}
     ${rSet()}
     <p class="note">투자 판단을 돕는 도구이며 자동 매매가 아닙니다. 자료가 없거나 늦은 것은 시장 신호가 아니므로 0점 + 판정 보류로만 표시합니다. 서로 다른 자료(일별 가격, 주간 재고, 분기 실적)는 각자의 기준일을 그대로 둡니다.</p>`}
 
@@ -450,6 +467,15 @@ async function eiaCrack(){toast('EIA에서 받는 중…');try{const st=addD(TOD
 async function eiaInv(){toast('EIA에서 받는 중…');try{const m=await eiaGet('PET.WDISTUS1.W',addD(TODAY,-365*8));
   const rows=[...m].map(([d,v])=>({d,s:+(v/1000).toFixed(3),e:0}));if(!rows.length)throw new Error('자료가 비었습니다.');
   const n=upsert('inv',rows);render();toast(`주간 재고 ${n}주치를 넣었습니다.`)}catch(e){toast('받지 못했습니다: '+e.message)}}
+/* 주간 수급: 생산 WDIRPUS2, 내수 공급 WDIUPUS2, 수출 WDIEXUS2(천 b/d), 정유 가동률 WPULEUS3(%). 하나가 실패해도 나머지는 넣음 */
+async function eiaSup(){toast('EIA에서 받는 중…');const st=addD(TODAY,-365*3),ids=[['p','PET.WDIRPUS2.W','생산'],['u','PET.WDIUPUS2.W','내수 공급'],['x','PET.WDIEXUS2.W','수출'],['r','PET.WPULEUS3.W','가동률']];
+  const[inv,...got]=await Promise.allSettled([eiaGet('PET.WDISTUS1.W',addD(TODAY,-365*8)),...ids.map(([,id])=>eiaGet(id,st))]);
+  const by=new Map(),fail=[];
+  got.forEach((g,i)=>{const[k,,n]=ids[i];if(g.status!=='fulfilled'){fail.push(n+'('+g.reason.message+')');return}
+    for(const[d,v]of g.value){const r=by.get(d)||{d};r[k]=v;by.set(d,r)}});
+  if(inv.status==='fulfilled')upsert('inv',[...inv.value].map(([d,v])=>({d,s:+(v/1000).toFixed(3),e:0})));else fail.push('재고('+inv.reason.message+')');
+  const n=by.size?upsert('sup',[...by.values()]):0;render();
+  toast(fail.length===5?'받지 못했습니다: '+fail.join(', '):`주간 수급 ${n}주치를 넣었습니다.${fail.length?' 못 받은 것: '+fail.join(', '):''}`)}
 
 /* ===== 동작 ===== */
 document.addEventListener('toggle',e=>{const d=e.target;if(d.tagName==='DETAILS'&&d.dataset.id){S.ui.det[d.dataset.id]=d.open;save()}},true);
@@ -485,6 +511,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
   else if(a==='ekey'){try{const v=$('#ekey').value.trim();v?localStorage.setItem(EKEY,v):localStorage.removeItem(EKEY)}catch(e){}render();toast('EIA 키를 저장했습니다.')}
   else if(a==='eiaCrack')eiaCrack();
   else if(a==='eiaInv')eiaInv();
+  else if(a==='eiaSup')eiaSup();
   else if(a==='export'){const blob=new Blob([JSON.stringify(S,null,1)],{type:'application/json'}),u=URL.createObjectURL(blob),l=document.createElement('a');l.href=u;l.download=`vlo-monitor-${TODAY}.json`;l.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
   else if(a==='import'){$('#importFile').value='';$('#importFile').click()}
   else if(a==='reset'){if(!confirm('넣은 자료·매도 기록·설정을 모두 지울까요? 되돌릴 수 없습니다.'))return;S=blank();save();render()}});

@@ -329,17 +329,16 @@ function drawDetail(g) {
 }
 const bg = document.createElement('canvas'); bg.width = W * S; bg.height = H * S;
 { const g = bg.getContext('2d'); g.scale(S, S); drawRoom(g); drawDetail(g); }
-// 따뜻한 금융 리서치 오피스가 기본. 실패하면 밝은 v2 → 코드 배경 순으로 폴백한다.
-let roomImageActive = false, roomFallbackTried = false;
+// 예찌 대표석과 회의용 컴퓨터 배치가 기본. 실패하면 따뜻한 v3 → 밝은 v2 → 코드 배경 순으로 폴백한다.
+let roomImageActive = false, roomFallbackStage = 0;
 const ROOM_IMAGE = new Image();
 ROOM_IMAGE.onload = () => { roomImageActive = true; };
 ROOM_IMAGE.onerror = () => {
-  if (!roomFallbackTried) {
-    roomFallbackTried = true;
-    ROOM_IMAGE.src = 'assets/office-financial-research-v2.png';
-  } else console.warn('사무실 배경을 불러오지 못해 코드 기반 백업 배경을 표시합니다.');
+  const fallbacks = ['assets/office-warm-research-v3.png', 'assets/office-financial-research-v2.png'];
+  if (roomFallbackStage < fallbacks.length) ROOM_IMAGE.src = fallbacks[roomFallbackStage++];
+  else console.warn('사무실 배경을 불러오지 못해 코드 기반 백업 배경을 표시합니다.');
 };
-ROOM_IMAGE.src = 'assets/office-warm-research-v3.png';
+ROOM_IMAGE.src = 'assets/office-boss-left-computer-right-v4.png';
 // 창밖 구름 [시작 위치, y, 폭, 속도]
 const CLOUDS = [[0, 6, 16, 3], [120, 9, 12, 2], [200, 5, 20, 2.5], [300, 8, 10, 3.5]];
 
@@ -477,7 +476,7 @@ DOG_SHEET.onerror = () => console.warn('강아지 캐릭터를 불러오지 못�
 DOG_SHEET.src = 'assets/cavalier-dog-pixel-concept-v1.png';
 
 /* 예찌 사장님: 사진의 긴 웨이브 헤어·선글라스·차콜 수트를 살린 대표석 착석 캐릭터. */
-const BOSS_W = 44, BOSS_H = 58, BOSS_X = 210, BOSS_Y = 138;
+const BOSS_W = 44, BOSS_H = 58, BOSS_X = 112, BOSS_Y = 84;
 let bossSpriteActive = false, BOSS_SPR;
 const BOSS_SHEET = new Image();
 BOSS_SHEET.onload = () => {
@@ -618,9 +617,9 @@ function draw(now) {
     const d = new Date(), hand = (ang, len, c) => { for (let r = .5; r <= len; r += .5) R(ctx, c, Math.round((74 + Math.sin(ang) * r) * 2) / 2 - .25, Math.round((13 - Math.cos(ang) * r) * 2) / 2 - .25, .5, .5); };
     hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
   }
-  // 사장님은 회의 테이블 뒤에 앉고, 테이블 앞면을 다시 그려 자연스럽게 가린다.
+  // 사장님은 왼쪽 위 대표 업무석에 앉고, 책상 앞면을 다시 그려 자연스럽게 가린다.
   drawBoss();
-  drawRoomPatch(161, 127, 96, 25);
+  drawRoomPatch(20, 74, 116, 20);
   const up = imgHead ? (PH - SH) / S : 0; // 그림 머리를 쓰면 키가 커져서 위로 더 올라감(발 위치는 같음)
   const drawAssistant = () => {
     if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2);

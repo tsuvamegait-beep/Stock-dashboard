@@ -21,6 +21,11 @@
 
 `assistant-character-guide-v1.png`를 비서 캐릭터의 외형 기준으로 사용합니다.
 
+- 원본 백업: `archive/assistant-character-guide-v1-backup.png`
+- 2D 도트 비율 비교 시안: `assistant-character-pixel-v2-preview.png`
+- v2 시안은 약 2.7등신, 머리 약 37%, 짧은 몸통과 팔다리를 기준으로 합니다.
+- v2가 확정되기 전까지 기존 화면 자산은 교체하지 않습니다.
+
 - 모든 자세에서 같은 얼굴, 머리 모양, 체형과 복장을 유지합니다.
 - 기본 복장은 남색 재킷, 미색 셔츠, 차콜색 바지입니다.
 - 정면, 측면, 후면은 이동 방향에 사용합니다.

@@ -114,7 +114,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', 
 const getSync = () => { const o = lsGet('backtest-sync', null); return o && o.url && o.key ? o : null; };
 async function api(params) {
   const s = getSync(); if (!s) throw new Error('먼저 백테스트 페이지에서 Apps Script를 연결해 주십시오');
-  const res = await fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(s.key) + '&' + params, {cache: 'no-store'});
+  const res = await fetch(s.url + (s.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(String(s.key).trim()) + '&' + params, {cache: 'no-store'});
   let j; try { j = await res.json(); } catch (e) { throw new Error('Apps Script 응답을 읽지 못했습니다(새 버전으로 배포했는지 확인)'); }
   if (!j.ok) throw new Error(j.error || '실패');
   return j;
@@ -625,7 +625,7 @@ async function doFin(q) {
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
   } catch (e) {
     me.work = false; say('죄송합니다, 실패했습니다', 3000);
-    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주십시오.</p>' : ''));
+    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/비밀번호/.test(e.message) ? '<p class="note">백테스트용 Apps Script 맨 위의 <b>SECRET_KEY</b> 값과 백테스트 페이지에 넣은 비밀번호가 다릅니다. 새 코드를 붙여넣으면 SECRET_KEY가 기본 문구로 돌아가니 예전 값으로 다시 적고 "새 버전"으로 배포하거나, 아래 버튼에서 지금 SECRET_KEY 값을 다시 넣어 주십시오.</p><a class="btn" href="../backtest/?connect=1">비밀번호 다시 넣기</a>' : '') + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주십시오.</p>' : ''));
     log(stock[1] + ' 재무 조회 실패: ' + e.message);
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
     walkTo('home');

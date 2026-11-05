@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f6f2">
+  <meta name="color-scheme" content="light">
+  <title>주식 사무실 시안</title>
+  <style>
+    :root {
+      --ink: #172321;
+      --muted: #65716e;
+      --paper: #f3f6f2;
+      --card: rgba(255, 255, 255, .9);
+      --line: rgba(23, 35, 33, .1);
+      --accent: #116b5e;
+      --accent-soft: #dcebe5;
+      --shadow: 0 18px 48px rgba(28, 54, 48, .1);
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow-x: hidden;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 0%, rgba(196, 220, 210, .6), transparent 34rem),
+        linear-gradient(180deg, #f8faf7 0%, var(--paper) 100%);
+      font-family: Inter, Pretendard, "Noto Sans KR", -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: inherit; }
+
+    .topbar {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      padding-top: env(safe-area-inset-top);
+      border-bottom: 1px solid rgba(23, 35, 33, .07);
+      background: rgba(248, 250, 247, .86);
+      backdrop-filter: blur(18px);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(1120px, 100%);
+      min-height: 58px;
+      margin: 0 auto;
+      padding: 0 18px;
+    }
+
+    .back,
+    .original-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 40px;
+      font-size: 14px;
+      font-weight: 750;
+      text-decoration: none;
+    }
+
+    .back::before { content: "←"; font-size: 18px; }
+
+    .top-label {
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .08em;
+    }
+
+    main {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 42px 18px calc(64px + env(safe-area-inset-bottom));
+    }
+
+    .hero { max-width: 720px; margin-bottom: 30px; }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 15px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #48a78f;
+      box-shadow: 0 0 0 5px rgba(72, 167, 143, .13);
+      content: "";
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(34px, 8.7vw, 62px);
+      line-height: 1.08;
+      letter-spacing: -.05em;
+    }
+
+    .lead {
+      margin: 17px 0 0;
+      color: var(--muted);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .section-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin: 38px 0 16px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 23px;
+      letter-spacing: -.035em;
+    }
+
+    .section-heading p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .concept-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+
+    .concept-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 25px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+    }
+
+    .concept-image {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      background-image: url("../assets/office-concepts-v1.png");
+      background-repeat: no-repeat;
+      background-size: 300% 100%;
+    }
+
+    .concept-image.a { background-position: left center; }
+    .concept-image.b { background-position: center center; }
+    .concept-image.c { background-position: right center; }
+
+    .concept-image::after {
+      position: absolute;
+      inset: auto 0 0;
+      height: 22%;
+      background: linear-gradient(transparent, rgba(10, 22, 19, .18));
+      content: "";
+      pointer-events: none;
+    }
+
+    .badge {
+      position: absolute;
+      z-index: 1;
+      top: 14px;
+      left: 14px;
+      padding: 8px 11px;
+      border: 1px solid rgba(255, 255, 255, .55);
+      border-radius: 999px;
+      color: #fff;
+      background: rgba(18, 41, 35, .62);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, .15);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: .04em;
+      backdrop-filter: blur(10px);
+    }
+
+    .badge.recommended { background: rgba(17, 107, 94, .88); }
+
+    .concept-copy { padding: 20px 20px 22px; }
+
+    .concept-copy h3 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -.035em;
+    }
+
+    .concept-copy p {
+      min-height: 48px;
+      margin: 10px 0 17px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; }
+
+    .chip {
+      padding: 7px 10px;
+      border-radius: 999px;
+      color: #53605d;
+      background: #edf1ee;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .character-card {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 25px;
+      background: rgba(255, 255, 255, .78);
+      box-shadow: var(--shadow);
+    }
+
+    .character-scroll {
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+      scroll-snap-type: x proximity;
+      scrollbar-color: #9eb8b0 transparent;
+      scrollbar-width: thin;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .character-scroll img {
+      display: block;
+      width: 1120px;
+      max-width: none;
+      height: auto;
+      padding: 18px;
+      scroll-snap-align: start;
+    }
+
+    .character-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px 18px;
+      border-top: 1px solid var(--line);
+    }
+
+    .swipe-hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .original-link {
+      flex: 0 0 auto;
+      min-height: 36px;
+      padding: 0 12px;
+      border-radius: 999px;
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-size: 12px;
+    }
+
+    .note {
+      margin: 20px 0 0;
+      padding: 16px 18px;
+      border: 1px solid rgba(17, 107, 94, .12);
+      border-radius: 18px;
+      color: #53605d;
+      background: rgba(220, 235, 229, .52);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    @media (min-width: 760px) {
+      main { padding-inline: 28px; }
+      .topbar-inner { padding-inline: 28px; }
+      .concept-grid { grid-template-columns: repeat(3, 1fr); }
+      .concept-card { border-radius: 28px; }
+      .character-scroll img { width: 100%; padding: 24px; }
+      .section-heading { margin-top: 52px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="back" href="../">사무실로 돌아가기</a>
+      <span class="top-label">MOBILE PREVIEW</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Office refresh</p>
+      <h1>주식 사무실<br>디자인 시안</h1>
+      <p class="lead">기존 픽셀 사무실을 더 자연스럽고 정돈된 투자 공간으로 바꾸기 위한 3가지 방향입니다. 휴대폰에서 한 장씩 비교해 보세요.</p>
+    </section>
+
+    <div class="section-heading">
+      <h2>환경 디자인 3안</h2>
+      <p>아래로 내려 비교</p>
+    </div>
+
+    <section class="concept-grid" aria-label="사무실 환경 디자인 시안">
+      <article class="concept-card">
+        <div class="concept-image a" role="img" aria-label="금융 리서치 오피스 시안">
+          <span class="badge recommended">A · 추천</span>
+        </div>
+        <div class="concept-copy">
+          <h3>금융 리서치 오피스</h3>
+          <p>차분한 우드와 세이지 그린. 현재 대시보드의 Wealthfolio 색감과 가장 자연스럽게 이어집니다.</p>
+          <div class="chips"><span class="chip">밝은 낮</span><span class="chip">우드</span><span class="chip">세이지</span></div>
+        </div>
+      </article>
+
+      <article class="concept-card">
+        <div class="concept-image b" role="img" aria-label="투자 라이브러리 시안">
+          <span class="badge">B · 집중형</span>
+        </div>
+        <div class="concept-copy">
+          <h3>투자 라이브러리</h3>
+          <p>책장과 자료가 중심인 안정적인 공간. 기업 분석과 리서치 분위기를 더 강조합니다.</p>
+          <div class="chips"><span class="chip">서재</span><span class="chip">리서치</span><span class="chip">차분함</span></div>
+        </div>
+      </article>
+
+      <article class="concept-card">
+        <div class="concept-image c" role="img" aria-label="도시형 포트폴리오 스튜디오 시안">
+          <span class="badge">C · 개방형</span>
+        </div>
+        <div class="concept-copy">
+          <h3>도시형 포트폴리오 스튜디오</h3>
+          <p>큰 창과 도시 전망이 있는 현대적인 공간. 활동적이고 확장된 느낌을 줍니다.</p>
+          <div class="chips"><span class="chip">도시 전망</span><span class="chip">모던</span><span class="chip">개방감</span></div>
+        </div>
+      </article>
+    </section>
+
+    <div class="section-heading">
+      <h2>어시스턴트 캐릭터</h2>
+      <p>자세·표정 가이드</p>
+    </div>
+
+    <section class="character-card" aria-label="어시스턴트 캐릭터 시안">
+      <div class="character-scroll" tabindex="0" aria-label="좌우로 움직여 캐릭터 시안을 확인하세요">
+        <img src="../assets/assistant-character-guide-v1.png" alt="투자 사무실 어시스턴트 캐릭터의 여러 자세와 표정">
+      </div>
+      <div class="character-meta">
+        <p class="swipe-hint">휴대폰에서는 이미지를 좌우로 밀어 자세를 확인하세요.</p>
+        <a class="original-link" href="../assets/assistant-character-guide-v1.png" target="_blank" rel="noopener">원본 크게 보기 ↗</a>
+      </div>
+    </section>
+
+    <p class="note">이 페이지는 비교용 시안입니다. 선택한 방향을 기준으로 실제 사무실 화면의 가구, 배경, 조명과 캐릭터 동작을 순서대로 적용할 수 있습니다.</p>
+  </main>
+</body>
+</html>

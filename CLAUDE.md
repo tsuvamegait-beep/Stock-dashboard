@@ -21,7 +21,7 @@
 - `office/index.html`(GitHub Pages `/office/`): 밝은 실내 사무실(위쪽 창문 너머 도시). 논리 288×176 칸, 실제 캔버스 2배(576×352)라 0.5 단위 잔무늬 가능. 배경은 `drawRoom`+`drawDetail`로 한 번 그려 두고, 매 프레임 창밖 구름(`frames`로 창틀 다시 덮음)·모니터 3대(`MON`)·벽시계·비서만 그림. 비서 '주야'는 도트 몸(28×36 RLE `TOP`/`LEGS`) 위에 시안 얼굴 PNG(base64 `HEAD`, 34×36점으로 축소)를 얹음 — 뒤를 볼 땐 얼굴을 머리색으로 덮고, 그림을 못 읽으면 도트 머리 그대로. 자리 `SPOT`(dash 시세 책상, bt 벽 화이트보드, fin 서류함, home 비서 책상 + 한가할 때 coffee/plant/window), 길은 통로 y=108을 거쳐 감(`walkTo`). 페이지에 `big()` 함수(금액 표기)가 있으니 전역 이름 겹침 주의.
 - 재무 카드에 PBR 밴드(`bandCard`: 분기 말 BPS 계단 × 1·2·3·4배 + 종가, 3년=DART 12분기·일봉 780개)와 목표 가이드라인(지금 BPS × 배수, 지난 기간 PBR 최저·평균·최고 × 지금 BPS, 현재가 대비 %). 걷기가 7초 넘게 멈추면(화면 꺼짐) 바로 도착 처리.
 - 명령(`command`): 백테스트·전략 단어 → `../backtest/`, 대시보드·보유 → `../`, 그 밖은 종목 이름으로 보고 DART 재무(`doFin` → `finCard`). 작업 기록 localStorage `office-log`.
-- 연결은 백테스트와 같은 `backtest-sync`·`backtest-univ`를 씀. 재무는 백테스트 Apps Script `?dart=코드&q=8`(스크립트 속성 `DART_API_KEY`): corpCode.xml(zip)로 고유번호, `fnlttSinglAcntAll`(CFS 없으면 OFS) 계정 id 우선·이름 보조, `stockTotqySttus` 주식 수. 손익은 {a 분기, c 누적}, 4분기 = 사업보고서 a − 3분기 c. BPS = 지배주주 자본 ÷ (발행 − 자기주식), ROE·PER는 최근 4분기.
+- 연결은 백테스트와 같은 `backtest-sync`·`backtest-univ`를 씀. 사무실 안에도 연결 설정 카드(`#conn`, `showConn`, 맨 아래 ⚙ 버튼·연결 없을 때·비밀번호 오류 카드의 버튼으로 열림, `?ping=1`로 확인, 비밀번호 틀리면 이전 값 되돌림)가 있음. 비밀번호는 앞뒤 공백을 지우고 보냄. 재무는 백테스트 Apps Script `?dart=코드&q=8`(스크립트 속성 `DART_API_KEY`): corpCode.xml(zip)로 고유번호, `fnlttSinglAcntAll`(CFS 없으면 OFS) 계정 id 우선·이름 보조, `stockTotqySttus` 주식 수. 손익은 {a 분기, c 누적}, 4분기 = 사업보고서 a − 3분기 c. BPS = 지배주주 자본 ÷ (발행 − 자기주식), ROE·PER는 최근 4분기.
 - 미확인: 실제 DART 응답의 계정 id·이름(회사마다 다를 수 있음), 사업보고서 `thstrm_amount`가 1년 값인지, 금융업 회사.
 
 ## VLO 정제마진 모니터(`vlo/`, Exit 판단 보조)

@@ -12,7 +12,8 @@ main{width:min(1080px,100%)}
 .scene{position:relative;aspect-ratio:16/9;border-radius:24px;overflow:hidden;background:#183d69 url('assets/oriental-pearl-promenade-v1.png') center/cover no-repeat;box-shadow:0 30px 80px rgb(0 0 0/.45),inset 0 0 0 1px rgb(255 255 255/.18);isolation:isolate}
 .scene::after{content:"";position:absolute;inset:auto 0 0;height:38%;background:linear-gradient(transparent,rgb(2 10 25/.22));pointer-events:none;z-index:1}
 .caption{position:absolute;z-index:4;left:3%;top:4%;max-width:48%;padding:11px 14px;border:1px solid rgb(255 255 255/.2);border-radius:15px;background:var(--glass);backdrop-filter:blur(10px);box-shadow:0 8px 24px rgb(0 0 0/.2)}.caption b{display:block;font-size:clamp(14px,2vw,20px)}.caption span{font-size:clamp(10px,1.3vw,13px);color:#d9e8ff}
-.yejji{--x:18%;position:absolute;z-index:3;left:var(--x);bottom:2.5%;width:clamp(100px,17vw,184px);aspect-ratio:1;background-image:url('assets/yejji-shanghai-tourist-v1.png');background-repeat:no-repeat;background-size:200% 200%;background-position:0 0;filter:drop-shadow(0 8px 5px rgb(0 0 0/.3));transform:translateX(-50%);transition:left 4.8s linear;will-change:left}
+.yejji{--x:18%;position:absolute;z-index:3;left:var(--x);bottom:2.5%;width:clamp(100px,17vw,184px);aspect-ratio:1;background-image:url('assets/yejji-winter-ivory-tourist-v2.png');background-repeat:no-repeat;background-size:200% 200%;background-position:0 0;filter:drop-shadow(0 8px 5px rgb(0 0 0/.3));transform:translateX(-50%);transition:left 4.8s linear;will-change:left}
+.yejji[data-outfit="classic"]{background-image:url('assets/yejji-shanghai-tourist-v1.png')}
 .yejji.right{background-position:0 0}.yejji.left{background-position:100% 0}.yejji.photo{background-position:0 100%}.yejji.wave{background-position:100% 100%}.yejji.walking{animation:bob .48s steps(2) infinite}@keyframes bob{50%{translate:0 -3px}}
 .flash{position:absolute;z-index:5;width:22px;aspect-ratio:1;border-radius:50%;background:#fff;box-shadow:0 0 32px 16px #fff8b4;opacity:0;pointer-events:none}.flash.on{animation:flash .65s ease-out}@keyframes flash{0%,15%{opacity:1;scale:.3}100%{opacity:0;scale:3}}
 .controls{display:flex;justify-content:center;flex-wrap:wrap;gap:9px;margin-top:14px}.controls button{border:1px solid rgb(255 255 255/.18);border-radius:999px;padding:10px 16px;background:rgb(255 255 255/.1);color:var(--cream);font:700 14px inherit;cursor:pointer;box-shadow:0 6px 16px rgb(0 0 0/.15)}.controls button:hover,.controls button:focus-visible{background:var(--gold);color:#33210a;outline:none}.status{text-align:center;min-height:24px;margin:9px 0 0;color:#c7d9f3;font-size:13px}
@@ -24,24 +25,25 @@ main{width:min(1080px,100%)}
   <header class="top"><div><p class="eyebrow">YEJJI'S TRAVEL LOG</p><h1>동방명주에서, 예찌</h1></div><a class="back" href="../office/">← Office</a></header>
   <section class="scene" id="scene" aria-label="동방명주와 황푸강 야경을 배경으로 예찌가 관광하는 2D 도트 화면">
     <div class="caption"><b>Shanghai · The Bund</b><span>황푸강 너머 반짝이는 동방명주를 바라보는 저녁</span></div>
-    <div class="yejji right walking" id="yejji" role="img" aria-label="선글라스와 차콜 코트를 입고 상하이를 관광하는 예찌"></div>
+    <div class="yejji right walking" id="yejji" data-outfit="winter" role="img" aria-label="레오퍼드 퍼 모자와 아이보리 코트를 입고 상하이를 관광하는 예찌"></div>
     <div class="flash" id="flash"></div>
   </section>
   <nav class="controls" aria-label="예찌 관광 동작">
     <button type="button" data-act="walk">🚶 산책하기</button>
-    <button type="button" data-act="photo">📷 사진 찍기</button>
+    <button type="button" data-act="pose">📷 여행 포즈</button>
     <button type="button" data-act="wave">👋 손 흔들기</button>
-    <button type="button" data-act="tower">✨ 동방명주 보기</button>
+    <button type="button" data-act="outfit">🧥 코디 바꾸기</button>
   </nav>
   <p class="status" id="status" aria-live="polite">예찌가 와이탄 산책로를 걷고 있어요.</p>
 </main>
 <script>
 const y=document.getElementById('yejji'),status=document.getElementById('status'),flash=document.getElementById('flash');
-let timer=0,atRight=false;
+let timer=0,atRight=false,outfit='winter';
 function pose(name,text){clearTimeout(timer);y.className='yejji '+name;status.textContent=text}
 function walk(){clearTimeout(timer);atRight=!atRight;y.className='yejji '+(atRight?'right':'left')+' walking';y.style.left=atRight?'76%':'18%';status.textContent='예찌가 황푸강 바람을 맞으며 산책하고 있어요.';timer=setTimeout(walk,5000)}
-function photo(){pose('photo','찰칵! 동방명주 야경을 여행 사진으로 남겼어요.');const r=y.getBoundingClientRect(),s=document.getElementById('scene').getBoundingClientRect();flash.style.left=(r.left-s.left+r.width*.54)+'px';flash.style.top=(r.top-s.top+r.height*.37)+'px';flash.classList.remove('on');void flash.offsetWidth;flash.classList.add('on')}
-document.querySelector('.controls').addEventListener('click',e=>{const a=e.target.dataset.act;if(!a)return;if(a==='walk')walk();if(a==='photo')photo();if(a==='wave')pose('wave','예찌가 동방명주를 배경으로 반갑게 손을 흔들어요.');if(a==='tower'){pose('wave','동방명주 야경이 오늘 여행의 하이라이트예요 ✨');y.style.left='71%'}});
+function travelPose(){pose('photo',outfit==='winter'?'예찌가 아이보리 코트 주머니에 손을 넣고 동방명주 야경을 바라봐요.':'찰칵! 동방명주 야경을 여행 사진으로 남겼어요.');if(outfit==='classic'){const r=y.getBoundingClientRect(),s=document.getElementById('scene').getBoundingClientRect();flash.style.left=(r.left-s.left+r.width*.54)+'px';flash.style.top=(r.top-s.top+r.height*.37)+'px';flash.classList.remove('on');void flash.offsetWidth;flash.classList.add('on')}}
+function changeOutfit(){outfit=outfit==='winter'?'classic':'winter';y.dataset.outfit=outfit;y.setAttribute('aria-label',outfit==='winter'?'레오퍼드 퍼 모자와 아이보리 코트를 입고 상하이를 관광하는 예찌':'선글라스와 차콜 코트를 입고 상하이를 관광하는 예찌');pose('wave',outfit==='winter'?'사진 속 아이보리 코트와 퍼 모자 코디로 갈아입었어요.':'차콜 롱코트 여행 코디로 갈아입었어요.')}
+document.querySelector('.controls').addEventListener('click',e=>{const a=e.target.dataset.act;if(!a)return;if(a==='walk')walk();if(a==='pose')travelPose();if(a==='wave')pose('wave','예찌가 동방명주를 배경으로 반갑게 손을 흔들어요.');if(a==='outfit')changeOutfit()});
 if(matchMedia('(prefers-reduced-motion: reduce)').matches)pose('wave','예찌가 동방명주 야경을 감상하고 있어요.');else timer=setTimeout(walk,1200);
 </script>
 </html>

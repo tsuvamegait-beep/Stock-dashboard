@@ -459,6 +459,7 @@ svg circle:not([fill="none"]){vector-effect:non-scaling-stroke;stroke-width:1px}
     <button type="button" role="tab" data-tab="detail" aria-selected="false">상세 현황</button>
     <button type="button" role="tab" data-tab="ana" aria-selected="false">종목분석</button>
     <button type="button" role="tab" data-tab="rs" aria-selected="false">RS</button>
+    <button type="button" role="tab" data-tab="sector" aria-selected="false">미국 섹터</button>
     <button type="button" role="tab" data-tab="trades" aria-selected="false">거래 내역</button>
     <button type="button" role="tab" data-tab="prices" aria-selected="false">시세·환율</button>
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
@@ -497,6 +498,7 @@ svg circle:not([fill="none"]){vector-effect:non-scaling-stroke;stroke-width:1px}
   <section id="tab-opening" class="col" hidden><div class="col" id="res-opening"></div></section>
   <section id="tab-accounts" class="col" hidden><div class="col" id="res-accounts"></div></section>
   <section id="tab-rs" class="col" hidden><div class="col" id="res-rs"></div></section>
+  <section id="tab-sector" class="col" hidden><div class="col" id="res-sector"></div></section>
   <section id="tab-ana" class="col" hidden><div class="col" id="res-ana"></div></section>
   <section id="tab-theme" class="col" hidden><div class="col" id="res-theme"></div></section>
 </div>
@@ -1476,7 +1478,7 @@ rs.busy = false; rs.msg = ''; rs.tried = {};
 const rsSave = () => { try { localStorage.setItem(RS_LS, JSON.stringify({sel: rs.sel, idx: rs.idx, per: rs.per, tk: rs.tk, cidx: rs.cidx})); } catch (e) {} };
 let rsCache = {}; try { rsCache = JSON.parse(localStorage.getItem(RSC_LS) || '{}') || {}; } catch (e) { rsCache = {}; }
 function rsCacheSave() {
-  Object.keys(rsCache).sort((a, b) => (rsCache[b].ts || 0) - (rsCache[a].ts || 0)).slice(24).forEach(k => { delete rsCache[k]; });
+  Object.keys(rsCache).sort((a, b) => (rsCache[b].ts || 0) - (rsCache[a].ts || 0)).slice(40).forEach(k => { delete rsCache[k]; }); // 미국 섹터 12개도 함께 보관
   try { localStorage.setItem(RSC_LS, JSON.stringify(rsCache)); } catch (e) {}
 }
 const rsDay = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
@@ -1691,6 +1693,103 @@ function renderRS(C) {
     tile(kt, 'RS 고점 대비', pct(R.fromHigh), '0%면 기간 최고 상대강도');
   }
   mk('p', {class: 'sub', style: 'margin:0 4px'}, out, '종가 기준 가격 수익률입니다(배당 제외). 종목과 지수는 각자의 통화로 비교하며 환율 효과는 넣지 않았습니다. 구글 시세(GOOGLEFINANCE)는 지연되거나 일부 종목·지수가 빠질 수 있습니다. 판정은 숫자를 기계적으로 읽은 것이며 투자 권유가 아닙니다. 마지막 불러오기: ' + new Date(Math.min(S.ts, I.ts)).toLocaleString('ko-KR'));
+}
+
+/* ================= 화면: 미국 섹터 (11개 섹터 ETF 흐름) =================
+ * 과거 시세는 RS와 같은 Apps Script ?series=1(GOOGLEFINANCE, 약 400일)로 받아 하루 한 번 rsCache에 보관.
+ * 서버는 한 요청에 4개까지라 4개씩 차례로 받는다. 기준은 SPY. */
+const SEC_ETF = [
+  {t: 'XLK', n: '기술', c: '#2f6fdf'}, {t: 'XLC', n: '커뮤니케이션', c: '#8e44ad'}, {t: 'XLY', n: '경기소비재', c: '#e67e22'},
+  {t: 'XLF', n: '금융', c: '#16a085'}, {t: 'XLV', n: '헬스케어', c: '#e84393'}, {t: 'XLI', n: '산업재', c: '#7f8c8d'},
+  {t: 'XLE', n: '에너지', c: '#c0392b'}, {t: 'XLB', n: '소재', c: '#a0782c'}, {t: 'XLP', n: '필수소비재', c: '#27ae60'},
+  {t: 'XLU', n: '유틸리티', c: '#d4ac0d'}, {t: 'XLRE', n: '부동산', c: '#00a8c6'}
+];
+const SEC_BM = 'SPY', SEC_LS = 'portfolio-sector';
+const SEC_PER = [{id: '1d', l: '1일'}, {id: '1w', l: '1주', d: 7}, {id: '1m', l: '1개월', m: 1}, {id: '3m', l: '3개월', m: 3}, {id: '6m', l: '6개월', m: 6}, {id: 'ytd', l: 'YTD'}, {id: '1y', l: '1년', m: 12}];
+const sec = (() => { const d = {per: '1w', off: []}; try { return Object.assign(d, JSON.parse(localStorage.getItem(SEC_LS) || '{}')); } catch (e) { return d; } })();
+sec.busy = false; sec.msg = ''; sec.auto = '';
+const secSave = () => { try { localStorage.setItem(SEC_LS, JSON.stringify({per: sec.per, off: sec.off})); } catch (e) {} };
+async function secFetch(force) {
+  const cfg = getSync();
+  if (!cfg) { sec.msg = '과거 시세는 구글 시트(GOOGLEFINANCE)로 가져옵니다. 계좌 관리 탭에서 기기 간 동기화(Apps Script 주소·비밀번호)를 먼저 설정하세요.'; scheduleRender(); return; }
+  const today = rsDay(Date.now()), all = SEC_ETF.map(x => x.t).concat(SEC_BM);
+  const need = all.filter(t => force || !rsCache[t] || rsCache[t].day !== today);
+  if (!need.length || sec.busy) return;
+  sec.busy = true; sec.msg = ''; scheduleRender();
+  try {
+    const from = rsDay(Date.now() - 400 * 864e5);
+    for (let i = 0; i < need.length; i += 4) {
+      const part = need.slice(i, i + 4);
+      const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&series=1&from=' + from + '&t=' + encodeURIComponent(part.join(',')), {cache: 'no-store'});
+      const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+      if (!j.series) throw new Error('Apps Script를 새 버전으로 다시 배포하세요(과거 시세 기능이 없는 버전입니다).');
+      part.forEach(t => { const x = j.series[t]; rsCache[t] = x && x.ok ? {day: today, ts: Date.now(), rows: x.rows} : {day: today, ts: Date.now(), err: (x && x.error) || '데이터 없음', rows: []}; });
+      rsCacheSave(); scheduleRender();
+    }
+  } catch (e) { sec.msg = '섹터 시세를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  sec.busy = false; scheduleRender();
+}
+// 기간 시작 종가 대비 수익률. 1일은 바로 전 거래일 대비
+function secRet(rows, per) {
+  if (!rows || rows.length < 2) return null;
+  const end = rows[rows.length - 1];
+  let k = per.id === '1d' ? rows.length - 2 : rsAt(rows, rsStart(per, end[0]));
+  if (k == null || k < 0) k = 0;
+  return {r: end[1] / rows[k][1] - 1, start: rows[k][0], end: end[0], k};
+}
+const secPp = v => (v >= 0 ? '+' : '−') + (Math.abs(v) * 100).toFixed(1);
+function renderSector() {
+  const out = $('res-sector'); out.replaceChildren();
+  const per = SEC_PER.find(p => p.id === sec.per) || SEC_PER[1];
+  const c = mk('div', {class: 'card'}, out);
+  const hh = mk('div', {class: 'sec-h'}, c); mk('h2', {}, hh, '미국 11개 섹터 흐름');
+  const rb = mk('button', {type: 'button'}, hh, sec.busy ? '불러오는 중…' : '새로 받기'); rb.disabled = sec.busy; rb.addEventListener('click', () => secFetch(true));
+  mk('p', {class: 'sub', style: 'margin:4px 0 12px'}, c, 'S&P 500을 11개 업종으로 나눈 섹터 ETF(SPDR XL 시리즈)의 수익률을 SPY(S&P 500)와 비교합니다. 이 탭을 열면 하루 한 번 최신 종가(약 1년치)를 자동으로 받아 이 기기에 보관합니다.');
+  const seg = mk('div', {class: 'seg'}, c);
+  SEC_PER.forEach(p => { const b = mk('button', {type: 'button', 'aria-pressed': String(p.id === per.id)}, seg, p.l); b.addEventListener('click', () => { sec.per = p.id; secSave(); render(); }); });
+  if (sec.msg) mk('p', {class: 'sub', style: 'color:var(--up);margin-top:10px'}, c, sec.msg);
+  // 탭을 열었을 때 하루 한 번 자동으로 받기
+  if (ui.tab === 'sector' && sec.auto !== rsDay(Date.now())) { sec.auto = rsDay(Date.now()); setTimeout(() => secFetch(false), 0); }
+
+  const bm = rsCache[SEC_BM] && rsCache[SEC_BM].rows, bR = secRet(bm, per);
+  const res = SEC_ETF.map(x => { const rows = rsCache[x.t] && rsCache[x.t].rows; return {x, rows, R: secRet(rows, per), err: rsCache[x.t] && rsCache[x.t].err}; });
+  const ok = res.filter(z => z.R).sort((a, b) => b.R.r - a.R.r);
+  if (!ok.length) { mk('p', {class: 'sub', style: 'margin-top:12px'}, c, sec.busy ? '섹터 시세를 받고 있습니다(4개씩 차례로, 1분 정도 걸립니다)…' : '아직 받은 섹터 시세가 없습니다. "새로 받기"를 눌러 주세요.'); return; }
+
+  // 순위 막대
+  const rc = mk('div', {class: 'card'}, out); mk('h2', {}, rc, per.l + ' 수익률 순위');
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, rc, ok[0].R.start + ' → ' + ok[0].R.end + ' 종가 기준' + (bR ? ' · SPY ' + pct(bR.r) : '') + '. 괄호는 SPY보다 앞선(+)·뒤처진(−) 정도(%p)입니다.');
+  const items = ok.map(z => { const ex = bR ? z.R.r - bR.r : null, col = z.R.r >= 0 ? 'var(--up)' : 'var(--dn)'; return {label: z.x.n + ' ' + z.x.t, value: z.R.r, color: col, text: pct(z.R.r) + (ex != null ? ' (' + secPp(ex) + ')' : ''), tip: [{label: '수익률', value: pct(z.R.r), color: col}].concat(ex != null ? [{label: 'SPY 대비', value: secPp(ex) + '%p', color: 'var(--axis)'}] : [])}; });
+  if (bR) items.push({label: 'S&P 500 SPY', value: bR.r, color: 'var(--muted)', text: pct(bR.r), tip: [{label: '수익률', value: pct(bR.r), color: 'var(--muted)'}]});
+  items.sort((a, b) => b.value - a.value);
+  hbars(rc, items, true);
+  const miss = res.filter(z => !z.R); if (miss.length) mk('p', {class: 'sub', style: 'margin-top:8px'}, rc, '시세 없음: ' + miss.map(z => z.x.t + (z.err ? '(' + z.err + ')' : '')).join(', '));
+
+  // 누적 흐름 선그래프(1일은 1주로 그림)
+  const cp = per.id === '1d' ? SEC_PER[1] : per;
+  const lc = mk('div', {class: 'card'}, out); mk('h2', {}, lc, '누적 흐름 (' + cp.l + ', 시작일 = 100)');
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, lc, '이름을 눌러 선을 켜고 끌 수 있습니다. 굵은 회색 선이 SPY입니다.');
+  const chips = mk('div', {class: 'row', style: 'flex-wrap:wrap;gap:6px;margin-bottom:10px'}, lc);
+  ok.forEach(z => { const on = sec.off.indexOf(z.x.t) < 0; const b = mk('button', {type: 'button', 'aria-pressed': String(on), style: 'padding:4px 9px;font-size:12px;opacity:' + (on ? 1 : .45)}, chips); const sw = mk('i', {class: 'sw'}, b); sw.style.background = z.x.c; b.append(' ' + z.x.n); b.addEventListener('click', () => { const i = sec.off.indexOf(z.x.t); if (i >= 0) sec.off.splice(i, 1); else sec.off.push(z.x.t); secSave(); render(); }); });
+  const bR2 = secRet(bm, cp);
+  if (bR2) {
+    const s0 = bm[bR2.k][0], days = bm.filter(r => r[0] >= s0).map(r => r[0]);
+    const shown = ok.filter(z => sec.off.indexOf(z.x.t) < 0), lines = shown.concat([{x: {t: SEC_BM}, rows: bm}]), base = {};
+    lines.forEach(z => { const k = rsAt(z.rows, s0); base[z.x.t] = k == null ? z.rows[0][1] : z.rows[k][1]; });
+    const pts = days.map(d => { const p = {d}; lines.forEach(z => { const k = rsAt(z.rows, d); p[z.x.t] = k != null ? z.rows[k][1] / base[z.x.t] * 100 : 100; }); return p; });
+    if (pts.length > 1) rsChart(lc, pts, shown.map(z => ({k: z.x.t, name: z.x.n, color: z.x.c, w: '1.8'})).concat([{k: SEC_BM, name: 'SPY', color: 'var(--muted)', w: '3'}]), {label: '미국 섹터 누적 수익률', fmt: v => v.toFixed(0), tip: v => (v >= 100 ? '+' : '') + (v - 100).toFixed(1) + '%'});
+  }
+
+  // 기간별 비교 표
+  const tc = mk('div', {class: 'card'}, out); mk('h2', {}, tc, '기간별 비교');
+  const cols = ['1d', '1w', '1m', '3m', 'ytd'].map(id => SEC_PER.find(p => p.id === id));
+  const tw = mk('div', {style: 'overflow-x:auto'}, tc), tb = mk('table', {style: 'width:100%;border-collapse:collapse;font-size:13px'}, tw);
+  const hr = mk('tr', {}, mk('thead', {}, tb)); mk('th', {style: 'text-align:left;padding:6px 4px'}, hr, '섹터'); cols.forEach(p => mk('th', {style: 'text-align:right;padding:6px 4px'}, hr, p.l));
+  const body = mk('tbody', {}, tb);
+  ok.concat(bm ? [{x: {t: SEC_BM, n: 'S&P 500'}, rows: bm}] : []).forEach(z => {
+    const tr = mk('tr', {style: 'border-top:1px solid var(--grid)'}, body); mk('td', {style: 'text-align:left;padding:6px 4px;white-space:nowrap'}, tr, z.x.n + ' ' + z.x.t);
+    cols.forEach(p => { const R = secRet(z.rows, p), td = mk('td', {style: 'text-align:right;padding:6px 4px;white-space:nowrap'}, tr, R ? pct(R.r) : '–'); if (R) td.style.color = R.r > 0 ? 'var(--up)' : R.r < 0 ? 'var(--dn)' : ''; });
+  });
 }
 
 /* ================= 화면: 종목분석 (내 종목 주가 + 코스피 신용잔고) ================= */
@@ -2807,13 +2906,13 @@ function render() {
   else if (!state.writable) { $('banner').hidden = false; $('banner').textContent = '보기 전용으로 열렸습니다. 데이터를 올리거나 고치려면 페이지 소유자 계정으로 여세요.'; }
   const lastPrice = Object.keys(state.prices).map(k => state.prices[k].asof).filter(Boolean).sort().pop();
   $('meta').textContent = !state.ready ? '불러오는 중…' : (C.accts.length ? '계좌 ' + C.accts.length + '개 · 보유 ' + C.rows.length + '종목 · ' + (lastPrice ? '최근 시세 ' + ago(lastPrice) : '시세 없음') : '계좌가 없습니다');
-  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderAna(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
+  if (state.ready) { recordHistory(C); renderHoldings(C); renderDetail(C); renderRS(C); renderSector(); renderAna(C); renderTheme(); renderTrades(C); renderPrices(C); renderOpening(C); renderAccounts(C); }
 }
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   if (!$('tab-' + ui.tab)) ui.tab = ui.tab === 'an' ? 'ana' : 'holdings'; // 없어진 "분석" 탭은 종목분석으로
   document.querySelectorAll('#tabs button').forEach(b => { const on = b.dataset.tab === ui.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on) b.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
-  ['holdings', 'detail', 'rs', 'ana', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
+  ['holdings', 'detail', 'rs', 'sector', 'ana', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
   document.querySelectorAll('#seg-view button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === ui.view)));

@@ -1429,6 +1429,8 @@ function renderHoldings(C) {
     donut(sc, sitems, '주식 평가액', money('KRW', T.val));
     if (bySec['미분류']) mk('p', {class: 'sub', style: 'margin:10px 0 0'}, sc, '분류가 없는 종목은 "미분류"로 묶었습니다. 시세 시트에 분류를 적거나 시세·환율 탭에서 입력하세요.');
   }
+  // 순서: 기간별 추이 → 분류별 투자현황 → 비중 → 보유 종목 → 종목별
+  breakdown.insertBefore(sc, comp); out.appendChild(holdings);
 
   // 종목 차트
   const merged = mergeRows(rows).filter(h => h.valueKRW != null);

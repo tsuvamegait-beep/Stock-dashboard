@@ -438,8 +438,10 @@ PIXEL_V2.onload = () => {
   };
   SPR.down = [cut(BOX.front), cut(BOX.front, false, 1), cut(BOX.front)];
   SPR.up = [cut(BOX.back), cut(BOX.back, false, 1), cut(BOX.back)];
-  SPR.right = [cut(BOX.side), cut(BOX.walk), cut(BOX.side, false, 1)];
-  SPR.left = [cut(BOX.side, true), cut(BOX.walk, true), cut(BOX.side, true, 1)];
+  // 옆으로 걸을 때 3/4 얼굴과 측면 얼굴을 번갈아 쓰면 고개를 빠르게 돌리는 것처럼 보인다.
+  // 측면 얼굴은 고정하고 1픽셀 상하 움직임만 줘서 방향을 안정적으로 유지한다.
+  SPR.right = [cut(BOX.side), cut(BOX.side, false, 1), cut(BOX.side)];
+  SPR.left = [cut(BOX.side, true), cut(BOX.side, true, 1), cut(BOX.side, true)];
   imgHead = true;
 };
 PIXEL_V2.onerror = () => console.warn('2D v2 캐릭터를 불러오지 못해 백업 캐릭터를 표시합니다.');
@@ -509,7 +511,7 @@ function step(dt) {
     if (d <= v) { me.x = t.x; me.y = t.y; me.path.shift(); }
     else { me.x += dx / d * v; me.y += dy / d * v; }
     me.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-    me.t += dt; if (me.t > 0.14) { me.t = 0; me.frame = me.frame === 1 ? 2 : 1; }
+    me.t += dt; if (me.t > 0.18) { me.t = 0; me.frame = me.frame === 1 ? 2 : 1; }
     if (!me.path.length) { me.dir = me.face || 'down'; me.frame = 0; const f = me.done; me.done = null; if (f) f(); }
   } else if (me.work) { me.t += dt; if (me.t > 0.25) { me.t = 0; me.frame = me.frame ? 0 : 1; } } // 일하는 중: 제자리에서 살짝 움직임
   else me.frame = 0;

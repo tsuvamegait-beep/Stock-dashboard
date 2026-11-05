@@ -79,10 +79,10 @@ svg.ch text{fill:var(--muted);font:10px var(--num)}
   </header>
 
   <div class="stage px" id="stage">
-    <canvas id="cv" width="576" height="352" role="img" aria-label="큰 창문 너머로 도시가 보이는 밝은 실내 사무실에서 비서가 일하는 도트 그림"></canvas>
-    <button type="button" class="spot" data-act="dash" style="left:21%;top:24%">📈 대시보드</button>
-    <button type="button" class="spot" data-act="bt" style="left:61%;top:8%">🧪 백테스트</button>
-    <button type="button" class="spot" data-act="fin" style="left:89%;top:31%">🗂 재무</button>
+    <canvas id="cv" width="576" height="352" role="img" aria-label="도시가 보이는 밝은 금융 리서치 오피스에서 2D 비서가 일하는 그림"></canvas>
+    <button type="button" class="spot" data-act="dash" style="left:22%;top:37%">📈 대시보드</button>
+    <button type="button" class="spot" data-act="bt" style="left:61%;top:20%">🧪 백테스트</button>
+    <button type="button" class="spot" data-act="fin" style="left:88%;top:38%">🗂 재무</button>
     <div class="bubble" id="bubble" hidden></div>
   </div>
 
@@ -314,6 +314,12 @@ function drawDetail(g) {
 }
 const bg = document.createElement('canvas'); bg.width = W * S; bg.height = H * S;
 { const g = bg.getContext('2d'); g.scale(S, S); drawRoom(g); drawDetail(g); }
+// 승인한 금융 리서치 오피스 이미지. 로딩 전이나 실패 시에는 위의 코드 배경을 그대로 사용한다.
+let roomV2Active = false;
+const ROOM_V2 = new Image();
+ROOM_V2.onload = () => { roomV2Active = true; };
+ROOM_V2.onerror = () => console.warn('금융 리서치 오피스 배경을 불러오지 못해 백업 배경을 표시합니다.');
+ROOM_V2.src = 'assets/office-financial-research-v2.png';
 // 창밖 구름 [시작 위치, y, 폭, 속도]
 const CLOUDS = [[0, 6, 16, 3], [120, 9, 12, 2], [200, 5, 20, 2.5], [300, 8, 10, 3.5]];
 
@@ -423,8 +429,8 @@ PIXEL_V2.src = 'assets/assistant-character-pixel-v2-preview.png';
  * 자리마다 서는 위치. 길은 "가운데 통로(y=108)로 내려가 → 옆으로 → 올라가거나 내려감" 하나라 가구에 걸리지 않음.
  * window는 위쪽 큰 창문 앞에서 도시를 보는 자리 */
 const SPOT = {
-  home: {x: 208, y: 96, face: 'down'}, dash: {x: 54, y: 78, face: 'up'}, bt: {x: 170, y: 44, face: 'up'},
-  fin: {x: 254, y: 88, face: 'up'}, coffee: {x: 254, y: 112, face: 'right'}, plant: {x: 108, y: 130, face: 'right'}, window: {x: 106, y: 46, face: 'up'}};
+  home: {x: 208, y: 96, face: 'down'}, dash: {x: 54, y: 78, face: 'up'}, bt: {x: 170, y: 84, face: 'up'},
+  fin: {x: 254, y: 88, face: 'up'}, coffee: {x: 254, y: 112, face: 'right'}, plant: {x: 108, y: 130, face: 'right'}, window: {x: 106, y: 74, face: 'up'}};
 const AISLE = 108;
 const me = {x: 208, y: 96, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
 function walkTo(name) {
@@ -460,26 +466,32 @@ function step(dt) {
   else me.frame = 0;
 }
 function draw(now) {
-  ctx.drawImage(bg, 0, 0, W, H);
-  // 창밖 구름이 천천히 흘러감(유리 안에서만 보이게 잘라 그린 뒤 창틀을 다시 덮음)
-  ctx.save(); ctx.beginPath(); WIN.forEach(([x, w]) => ctx.rect(x, 4, w, 30)); ctx.clip();
-  CLOUDS.forEach(([o, y, w, v]) => {
-    const x = Math.round(((now / 1000 * v + o) % (W + 40) - 30) * 2) / 2;
-    R(ctx, '#ffffff', x, y, w, 2); R(ctx, '#ffffff', x + w * .25, y - 1.5, w * .5, 1.5); R(ctx, '#e4f1fb', x, y + 2, w, .5);
-  });
-  ctx.restore(); frames(ctx);
-  // 모니터 3대: 봉 차트 / 선 차트 / 봉 차트가 흘러감
   const k = Math.floor(now / 400);
-  MON.forEach((mx, m) => {
-    for (let i = 0; i < 30; i++) {
-      const t = i / 2 + k + m * 5, a = (Math.sin(t * .9) + Math.sin(t * .37) + 2) * 1.6, y = 50 + Math.round(a * 2) / 2;
-      if (m === 1) R(ctx, '#6fcf8f', mx + 1.5 + i / 2, y, .5, .5);
-      else if (i % 2 === 0) R(ctx, Math.sin(t * 1.3) > 0 ? '#ff6b5e' : '#5b9bff', mx + 1.5 + i / 2, y, .5, 2);
-    }
-  });
-  // 벽시계 바늘(지금 시각)
-  const d = new Date(), hand = (ang, len, c) => { for (let r = .5; r <= len; r += .5) R(ctx, c, Math.round((74 + Math.sin(ang) * r) * 2) / 2 - .25, Math.round((13 - Math.cos(ang) * r) * 2) / 2 - .25, .5, .5); };
-  hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
+  if (roomV2Active) {
+    // 원본(3:2)을 무대(18:11)에 맞춰 위아래만 조금 잘라 가구 비율을 보존한다.
+    const sw = ROOM_V2.naturalWidth, sh = sw * H / W, sy = (ROOM_V2.naturalHeight - sh) / 2;
+    ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(ROOM_V2, 0, sy, sw, sh, 0, 0, W, H); ctx.restore();
+    ctx.imageSmoothingEnabled = false;
+  } else {
+    ctx.drawImage(bg, 0, 0, W, H);
+    // 백업 배경의 창밖 구름이 천천히 흘러감
+    ctx.save(); ctx.beginPath(); WIN.forEach(([x, w]) => ctx.rect(x, 4, w, 30)); ctx.clip();
+    CLOUDS.forEach(([o, y, w, v]) => {
+      const x = Math.round(((now / 1000 * v + o) % (W + 40) - 30) * 2) / 2;
+      R(ctx, '#ffffff', x, y, w, 2); R(ctx, '#ffffff', x + w * .25, y - 1.5, w * .5, 1.5); R(ctx, '#e4f1fb', x, y + 2, w, .5);
+    });
+    ctx.restore(); frames(ctx);
+    MON.forEach((mx, m) => {
+      for (let i = 0; i < 30; i++) {
+        const t = i / 2 + k + m * 5, a = (Math.sin(t * .9) + Math.sin(t * .37) + 2) * 1.6, y = 50 + Math.round(a * 2) / 2;
+        if (m === 1) R(ctx, '#6fcf8f', mx + 1.5 + i / 2, y, .5, .5);
+        else if (i % 2 === 0) R(ctx, Math.sin(t * 1.3) > 0 ? '#ff6b5e' : '#5b9bff', mx + 1.5 + i / 2, y, .5, 2);
+      }
+    });
+    const d = new Date(), hand = (ang, len, c) => { for (let r = .5; r <= len; r += .5) R(ctx, c, Math.round((74 + Math.sin(ang) * r) * 2) / 2 - .25, Math.round((13 - Math.cos(ang) * r) * 2) / 2 - .25, .5, .5); };
+    hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
+  }
   const up = imgHead ? (PH - SH) / S : 0; // 그림 머리를 쓰면 키가 커져서 위로 더 올라감(발 위치는 같음)
   if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2); // 일하는 표시
   ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x * S) / S - 1 - (imgHead ? 2 : 0), Math.round(me.y * S) / S - 2 - up,

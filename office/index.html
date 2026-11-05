@@ -84,7 +84,7 @@ svg.ch text{fill:var(--muted);font:10px var(--num)}
   </header>
 
   <div class="stage px" id="stage">
-    <canvas id="cv" width="576" height="352" role="img" aria-label="따뜻한 원목 금융 리서치 오피스에서 2D 비서가 일하는 그림"></canvas>
+    <canvas id="cv" width="576" height="352" role="img" aria-label="따뜻한 원목 금융 리서치 오피스에서 예찌 사장님과 2D 비서, 강아지가 함께 일하는 그림"></canvas>
     <button type="button" class="spot" data-act="dash" style="left:22%;top:37%">📈 대시보드</button>
     <button type="button" class="spot" data-act="bt" style="left:61%;top:20%">🧪 백테스트</button>
     <button type="button" class="spot" data-act="fin" style="left:88%;top:38%">🗂 재무</button>
@@ -476,14 +476,29 @@ DOG_SHEET.onload = () => {
 DOG_SHEET.onerror = () => console.warn('강아지 캐릭터를 불러오지 못했습니다.');
 DOG_SHEET.src = 'assets/cavalier-dog-pixel-concept-v1.png';
 
+/* 예찌 사장님: 사진의 긴 웨이브 헤어·선글라스·차콜 수트를 살린 대표석 착석 캐릭터. */
+const BOSS_W = 44, BOSS_H = 58, BOSS_X = 210, BOSS_Y = 138;
+let bossSpriteActive = false, BOSS_SPR;
+const BOSS_SHEET = new Image();
+BOSS_SHEET.onload = () => {
+  const c = document.createElement('canvas'); c.width = BOSS_W; c.height = BOSS_H;
+  const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+  const box = [120, 17, 400, 573], scale = Math.min((BOSS_W - 2) / box[2], (BOSS_H - 2) / box[3]);
+  const dw = Math.round(box[2] * scale), dh = Math.round(box[3] * scale);
+  g.drawImage(BOSS_SHEET, ...box, Math.round((BOSS_W - dw) / 2), BOSS_H - dh, dw, dh);
+  BOSS_SPR = c; bossSpriteActive = true;
+};
+BOSS_SHEET.onerror = () => console.warn('예찌 사장님 캐릭터를 불러오지 못했습니다.');
+BOSS_SHEET.src = 'assets/yejji-boss-pixel-v1.png';
+
 /* ===== 비서 움직임 =====
  * 자리마다 서는 위치. 길은 "가운데 통로(y=108)로 내려가 → 옆으로 → 올라가거나 내려감" 하나라 가구에 걸리지 않음.
  * window는 위쪽 큰 창문 앞에서 도시를 보는 자리 */
 const SPOT = {
-  home: {x: 208, y: 96, face: 'down'}, dash: {x: 54, y: 78, face: 'up'}, bt: {x: 170, y: 84, face: 'up'},
+  home: {x: 150, y: 104, face: 'down'}, dash: {x: 54, y: 78, face: 'up'}, bt: {x: 170, y: 84, face: 'up'},
   fin: {x: 254, y: 88, face: 'up'}, coffee: {x: 254, y: 112, face: 'right'}, plant: {x: 108, y: 130, face: 'right'}, window: {x: 106, y: 74, face: 'up'}};
 const AISLE = 108;
-const me = {x: 208, y: 96, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
+const me = {x: 150, y: 104, dir: 'down', path: [], t: 0, frame: 0, done: null, busy: false, work: false};
 function walkTo(name) {
   const s = SPOT[name];
   return new Promise(res => {
@@ -565,6 +580,17 @@ function drawDog() {
   const bob = dog.path.length && dog.frame ? 0.5 : 0;
   ctx.drawImage(s, Math.round(dog.x * S) / S - DOG_W / (S * 2), Math.round(dog.y * S) / S - DOG_H / S + bob, DOG_W / S, DOG_H / S);
 }
+function drawBoss() {
+  if (!bossSpriteActive) return;
+  ctx.drawImage(BOSS_SPR, BOSS_X - BOSS_W / (S * 2), BOSS_Y - BOSS_H / S, BOSS_W / S, BOSS_H / S);
+}
+function drawRoomPatch(x, y, w, h) {
+  if (!roomImageActive) return;
+  const sw = ROOM_IMAGE.naturalWidth, sh = sw * H / W, sy = (ROOM_IMAGE.naturalHeight - sh) / 2;
+  ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(ROOM_IMAGE, x / W * sw, sy + y / H * sh, w / W * sw, h / H * sh, x, y, w, h);
+  ctx.restore(); ctx.imageSmoothingEnabled = false;
+}
 function draw(now) {
   const k = Math.floor(now / 400);
   if (roomImageActive) {
@@ -592,6 +618,9 @@ function draw(now) {
     const d = new Date(), hand = (ang, len, c) => { for (let r = .5; r <= len; r += .5) R(ctx, c, Math.round((74 + Math.sin(ang) * r) * 2) / 2 - .25, Math.round((13 - Math.cos(ang) * r) * 2) / 2 - .25, .5, .5); };
     hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
   }
+  // 사장님은 회의 테이블 뒤에 앉고, 테이블 앞면을 다시 그려 자연스럽게 가린다.
+  drawBoss();
+  drawRoomPatch(161, 127, 96, 25);
   const up = imgHead ? (PH - SH) / S : 0; // 그림 머리를 쓰면 키가 커져서 위로 더 올라감(발 위치는 같음)
   const drawAssistant = () => {
     if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2);

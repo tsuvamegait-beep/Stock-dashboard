@@ -430,6 +430,35 @@ PIXEL_V2.onload = () => {
 PIXEL_V2.onerror = () => console.warn('2D v2 캐릭터를 불러오지 못해 백업 캐릭터를 표시합니다.');
 PIXEL_V2.src = 'assets/assistant-character-pixel-v2-preview.png';
 
+/* 사진을 기준으로 만든 카발리에 강아지 시트. 사람 캐릭터보다 작은 40×32 도트 캔버스로 통일한다. */
+const DOG_W = 40, DOG_H = 32, DOG_SPR = {};
+let dogSpriteActive = false;
+const DOG_SHEET = new Image();
+DOG_SHEET.onload = () => {
+  const BOX = {
+    front: [104, 86, 260, 334], side: [504, 98, 352, 321], back: [978, 88, 239, 337], wag: [1351, 85, 326, 333],
+    runA: [50, 531, 345, 256], runB: [485, 531, 354, 267], sit: [945, 499, 385, 315], sleep: [1330, 607, 347, 197]
+  };
+  const cut = (box, flip) => {
+    const c = document.createElement('canvas'); c.width = DOG_W; c.height = DOG_H;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false;
+    const [sx, sy, sw, sh] = box, scale = Math.min((DOG_W - 2) / sw, (DOG_H - 2) / sh);
+    const dw = Math.max(1, Math.round(sw * scale)), dh = Math.max(1, Math.round(sh * scale));
+    const dx = Math.round((DOG_W - dw) / 2), dy = DOG_H - dh;
+    if (flip) { g.translate(DOG_W, 0); g.scale(-1, 1); }
+    g.drawImage(DOG_SHEET, sx, sy, sw, sh, flip ? DOG_W - dx - dw : dx, dy, dw, dh);
+    return c;
+  };
+  DOG_SPR.front = cut(BOX.front); DOG_SPR.back = cut(BOX.back); DOG_SPR.wag = cut(BOX.wag);
+  DOG_SPR.sideL = cut(BOX.side); DOG_SPR.sideR = cut(BOX.side, true);
+  DOG_SPR.runR = [cut(BOX.runA), cut(BOX.runB)];
+  DOG_SPR.runL = [cut(BOX.runA, true), cut(BOX.runB, true)];
+  DOG_SPR.sit = cut(BOX.sit); DOG_SPR.sleep = cut(BOX.sleep);
+  dogSpriteActive = true;
+};
+DOG_SHEET.onerror = () => console.warn('강아지 캐릭터를 불러오지 못했습니다.');
+DOG_SHEET.src = 'assets/cavalier-dog-pixel-concept-v1.png';
+
 /* ===== 비서 움직임 =====
  * 자리마다 서는 위치. 길은 "가운데 통로(y=108)로 내려가 → 옆으로 → 올라가거나 내려감" 하나라 가구에 걸리지 않음.
  * window는 위쪽 큰 창문 앞에서 도시를 보는 자리 */
@@ -469,6 +498,55 @@ function step(dt) {
     if (!me.path.length) { me.dir = me.face || 'down'; me.frame = 0; const f = me.done; me.done = null; if (f) f(); }
   } else if (me.work) { me.t += dt; if (me.t > 0.25) { me.t = 0; me.frame = me.frame ? 0 : 1; } } // 일하는 중: 제자리에서 살짝 움직임
   else me.frame = 0;
+  dogStep(dt);
+}
+
+/* ===== 강아지 움직임 =====
+ * 소파 옆 쿠션에서 출발해 가구를 피하는 중앙 통로를 빠르게 달리고, 도착하면 잠시 앉거나 꼬리를 흔든다. */
+const DOG_SPOT = {
+  bed: {x: 103, y: 151, face: 'left'}, lounge: {x: 118, y: 121, face: 'down'}, dash: {x: 82, y: 96, face: 'up'},
+  center: {x: 148, y: 112, face: 'right'}, home: {x: 190, y: 111, face: 'left'}, records: {x: 242, y: 108, face: 'up'}
+};
+const DOG_AISLE = 112, reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dog = {x: 103, y: 151, dir: 'left', face: 'left', path: [], t: 0, frame: 0, state: 'sleep', target: 'bed'};
+function dogWalkTo(name) {
+  if (reduceMotion || !DOG_SPOT[name]) return;
+  const s = DOG_SPOT[name], p = [];
+  if (Math.abs(dog.y - s.y) > 1 || Math.abs(dog.x - s.x) > 1) {
+    if (Math.abs(dog.x - s.x) > 1) p.push({x: dog.x, y: DOG_AISLE}, {x: s.x, y: DOG_AISLE});
+    p.push({x: s.x, y: s.y});
+  }
+  dog.path = p; dog.face = s.face; dog.target = name; dog.state = p.length ? 'run' : (name === 'bed' ? 'sleep' : 'sit');
+}
+function dogStep(dt) {
+  if (dog.path.length) {
+    const t = dog.path[0], dx = t.x - dog.x, dy = t.y - dog.y, d = Math.hypot(dx, dy), v = 68 * dt;
+    if (d <= v) { dog.x = t.x; dog.y = t.y; dog.path.shift(); }
+    else { dog.x += dx / d * v; dog.y += dy / d * v; }
+    dog.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+    dog.t += dt; if (dog.t > 0.12) { dog.t = 0; dog.frame = dog.frame ? 0 : 1; }
+    if (!dog.path.length) {
+      dog.dir = dog.face; dog.frame = 0;
+      dog.state = dog.target === 'bed' ? 'sleep' : (Math.random() < 0.55 ? 'sit' : 'wag');
+    }
+  } else if (dog.state === 'wag') {
+    dog.t += dt; if (dog.t > 0.28) { dog.t = 0; dog.frame = dog.frame ? 0 : 1; }
+  }
+}
+function drawDog() {
+  if (!dogSpriteActive) return;
+  let s;
+  if (dog.path.length) {
+    if (dog.dir === 'right') s = DOG_SPR.runR[dog.frame];
+    else if (dog.dir === 'left') s = DOG_SPR.runL[dog.frame];
+    else s = dog.dir === 'up' ? DOG_SPR.back : DOG_SPR.front;
+  } else if (dog.state === 'sleep') s = DOG_SPR.sleep;
+  else if (dog.state === 'wag') s = dog.frame ? DOG_SPR.wag : DOG_SPR.front;
+  else if (dog.dir === 'left') s = DOG_SPR.sideL;
+  else if (dog.dir === 'right') s = DOG_SPR.sideR;
+  else s = DOG_SPR.sit;
+  const bob = dog.path.length && dog.frame ? 0.5 : 0;
+  ctx.drawImage(s, Math.round(dog.x * S) / S - DOG_W / (S * 2), Math.round(dog.y * S) / S - DOG_H / S + bob, DOG_W / S, DOG_H / S);
 }
 function draw(now) {
   const k = Math.floor(now / 400);
@@ -498,15 +576,28 @@ function draw(now) {
     hand((d.getHours() % 12 + d.getMinutes() / 60) / 6 * Math.PI, 2, '#2a2d36'); hand(d.getMinutes() / 30 * Math.PI, 3, '#2a2d36');
   }
   const up = imgHead ? (PH - SH) / S : 0; // 그림 머리를 쓰면 키가 커져서 위로 더 올라감(발 위치는 같음)
-  if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2); // 일하는 표시
-  ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x * S) / S - 1 - (imgHead ? 2 : 0), Math.round(me.y * S) / S - 2 - up,
-    (imgHead ? PW : SW) / S, (imgHead ? PH : SH) / S);
+  const drawAssistant = () => {
+    if (me.work && k % 2) R(ctx, '#f3a83a', me.x + 5, me.y - 6 - up, 2, 2);
+    ctx.drawImage(SPR[me.dir][me.frame === 2 ? 2 : me.frame], Math.round(me.x * S) / S - 1 - (imgHead ? 2 : 0), Math.round(me.y * S) / S - 2 - up,
+      (imgHead ? PW : SW) / S, (imgHead ? PH : SH) / S);
+  };
+  if (dog.y < me.y) drawDog();
+  drawAssistant();
+  if (dog.y >= me.y) drawDog();
   const b = $('bubble'); // 말풍선은 비서 머리 위
   b.style.left = ((me.x + 6) / W * 100) + '%'; b.style.top = ((me.y - 5 - up) / H * 100) + '%';
 }
 let last = performance.now();
 function loop(now) { step(Math.min(0.05, (now - last) / 1000)); last = now; draw(now); requestAnimationFrame(loop); }
 requestAnimationFrame(loop);
+
+// 첫 화면에서 쿠션을 떠나 비서 쪽으로 달려온 뒤, 약 4초마다 안전한 위치를 골라 돌아다닌다.
+if (!reduceMotion) setTimeout(() => dogWalkTo('home'), 1200);
+setInterval(() => {
+  if (reduceMotion || dog.path.length || document.hidden) return;
+  const names = Object.keys(DOG_SPOT), next = Math.random() < 0.18 ? 'bed' : names[Math.floor(Math.random() * names.length)];
+  dogWalkTo(next === dog.target ? 'center' : next);
+}, 4200);
 
 // 한가할 때는 사무실을 돌아다님
 const IDLE = [['coffee', '커피 한 잔 마십니다 ☕'], ['window', '창밖 날씨가 좋습니다… 오늘 시장은 어떨지 궁금합니다'], ['plant', '화분에 물을 줍니다 🌱'], ['home', '']];

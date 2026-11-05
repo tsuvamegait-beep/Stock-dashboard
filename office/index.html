@@ -736,7 +736,16 @@ async function doFin(q) {
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
   } catch (e) {
     me.work = false; say('죄송합니다, 실패했습니다', 3000);
-    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + (/비밀번호/.test(e.message) ? '<p class="note">백테스트용 Apps Script 맨 위의 <b>SECRET_KEY</b> 값과 백테스트 페이지에 넣은 비밀번호가 다릅니다. 새 코드를 붙여넣으면 SECRET_KEY가 기본 문구로 돌아가니 예전 값으로 다시 적고 "새 버전"으로 배포하거나, 아래 버튼에서 지금 SECRET_KEY 값을 다시 넣어 주십시오.</p><button type="button" class="btn" onclick="showConn()">비밀번호 다시 넣기</button>' : '') + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주십시오.</p>' : ''));
+    let net = ''; // "Failed to fetch" = 응답 자체를 못 받음 → 간단한 연결 확인(ping)으로 원인을 나눔
+    if (/Failed to fetch|NetworkError|Load failed|network/i.test(e.message)) {
+      say('원인을 확인하고 있습니다…', 0);
+      let ping = null; try { await api('ping=1'); ping = 'ok'; } catch (e2) { ping = e2.message; }
+      net = ping === 'ok'
+        ? '<p class="note"><b>연결은 정상입니다.</b> 재무 조회 도중 Apps Script가 멈춘 것입니다(처음 조회 때 DART 회사 목록을 받느라 오래 걸리거나 오류가 난 경우). 백테스트용 Apps Script 편집기에서 위쪽 함수 목록을 <b>testDart</b>로 바꾸고 "실행"을 누른 뒤, 아래 실행 로그의 내용을 알려 주십시오. testDart가 목록에 없으면 저장소의 backtest/apps_script.gs.txt를 새로 붙여넣고(SECRET_KEY 값은 그대로) "배포 관리 → 새 버전"으로 배포해 주십시오.</p>'
+        : '<p class="note"><b>Apps Script에 연결되지 않습니다</b>(' + esc(ping) + '). ① 웹 앱 주소가 /exec로 끝나는지, ② "배포 관리"에서 액세스 권한이 <b>모든 사용자</b>인지, ③ 인터넷 연결을 확인해 주십시오.</p><button type="button" class="btn" onclick="showConn()">연결 설정 열기</button>';
+      say('죄송합니다, 실패했습니다', 3000);
+    }
+    showCard('<h2>' + esc(stock[1]) + '</h2><p class="err">' + esc(e.message) + '</p>' + net + (/비밀번호/.test(e.message) ? '<p class="note">백테스트용 Apps Script 맨 위의 <b>SECRET_KEY</b> 값과 백테스트 페이지에 넣은 비밀번호가 다릅니다. 새 코드를 붙여넣으면 SECRET_KEY가 기본 문구로 돌아가니 예전 값으로 다시 적고 "새 버전"으로 배포하거나, 아래 버튼에서 지금 SECRET_KEY 값을 다시 넣어 주십시오.</p><button type="button" class="btn" onclick="showConn()">비밀번호 다시 넣기</button>' : '') + (/DART_API_KEY|dart/i.test(e.message) || /응답을 읽지/.test(e.message) ? '<p class="note">Apps Script를 새 버전으로 배포했는지, 스크립트 속성에 DART_API_KEY가 있는지 확인해 주십시오.</p>' : ''));
     log(stock[1] + ' 재무 조회 실패: ' + e.message);
     $('result').scrollIntoView({behavior: 'smooth', block: 'nearest'});
     walkTo('home');

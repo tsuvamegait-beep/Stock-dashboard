@@ -10,3 +10,5 @@
 - `miyakojima-burger-zone-v1.png`: 노란 푸드트럭·잔디·청록색 야외 테이블을 합친 미야코지마 수제 햄버거 존 배경입니다.
 - `yejji-hanwon-burger-walk-v1.png`: 캐주얼 여름옷을 입은 예찌와 한원의 햄버거 존 좌우 산책 2×2 투명 캐릭터 시트입니다.
 - `yejji-hanwon-burger-meal-v1.png`: 피크닉 테이블에서 수제 햄버거·감자튀김·음료를 즐기는 두 사람의 투명 장면입니다.
+- `miyakojima-runway-sunset-v1.png`: 바다 옆 활주로 진입로와 접근등, 노을이 비치는 젖은 산책로를 담은 16:9 배경입니다.
+- `yejji-hanwon-runway-walk-v1.png`: 사진 속 파란 꽃무늬 원피스의 예찌와 리넨 셔츠 차림 한원의 노을 산책 2×2 투명 캐릭터 시트입니다.

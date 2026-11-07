@@ -6,7 +6,7 @@
 - 배포: GitHub Pages (`main` 브랜치 루트). `index.html` 한 파일이 전부입니다(HTML+CSS+JS, 파서까지 인라인). 빌드 도구 없음. push하면 1~2분 뒤 반영됩니다.
 - 저장소: `index.html`(앱), `apps_script.gs.txt`(구글 Apps Script 서버 코드 — 사용자가 구글에 직접 붙여넣어 배포), `README.md`(기능별 사용법).
 - 서버 없음. 데이터는 브라우저 localStorage + 구글 시트 + Apps Script 웹 앱.
-- `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderSector`(미국 섹터: 11개 섹터 ETF `SEC_ETF` XLK…XLRE + 기준 SPY, RS와 같은 `?series=1`을 4개씩 차례로 받아 `rsCache`에 하루 한 번 보관, 탭을 열면 자동으로 받음. 기간 `SEC_PER` 1일~1년, 순위 막대·누적 흐름 선·기간별 표, 저장 `portfolio-sector`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
+- `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderSector`(미국 섹터: 11개 섹터 ETF `SEC_ETF` XLK…XLRE + 기준 SPY, RS와 같은 `?series=1`을 4개씩 차례로 받아 `rsCache`에 하루 한 번 보관, 탭을 열면 자동으로 받음. 기간 `SEC_PER` 1일~1년, 순위 막대·누적 흐름 선·기간별 표, 그 아래 섹터별 대표 종목 `SEC_TOP`(비중 상위 10개 고정 목록, 기본 5개·`sec.open`으로 펼침) `secTop`, 저장 `portfolio-sector`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
 
 ## 백테스트(`backtest/`, 대시보드와 분리)
 - `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).
@@ -29,6 +29,11 @@
 - 판정 `evaluate(D)`: 그날까지의 자료만 씀 → 지표 4개(`evalCrack` `evalInv` `evalRu` `evalVlo`) 각 0/2점, 상태 CONFIRMED/ESTIMATED/STALE/UNAVAILABLE(뒤 둘은 0점+판정 보류). 크랙은 고른 종류(현물/선물)만, 2주 연속 = 마지막 날과 7일 전 두 시점. 재고 5년 평균은 직접 값 없으면 364일×1~5년 전 값 평균(`fiveYr`). 러시아는 실제 수출 `x`만(쿼터 `q`는 참고). VLO는 발표일(없으면 분기 끝+30일)부터. Exit Score 흐름은 주마다 `evaluate`를 다시 계산.
 - 매도 단계: 실행 기록 `sells`의 최고 단계보다 높은 점수일 때만 다음 매도 검토(같은 신호 반복 적용 안 함). 방어 = 관찰 고점(사이클 시작일 이후 최고 종가) 대비 −12% 이하 + 점수 4 이상.
 - EIA 받기: `https://api.eia.gov/v2/seriesid/PET.EER_EPD2DXL0_PF4_RGC_DPG.D`(+RWTC, RBRTE, WDISTUS1.W 천 배럴→백만). 주간 수급 카드(`rSup`, `eiaSup`, 점수에 안 씀): `sup{d,p,u,x,r}` = 생산 WDIRPUS2·내수 공급 WDIUPUS2·수출 WDIEXUS2(천 b/d, 그래프는 4주 평균)·가동률 WPULEUS3(%), 하나 실패해도 나머지 넣음. 화면 아래쪽에 Exit Score와 VLO 종가 겹친 그래프(`rScorePx`, `chart`의 `ax:2` 오른쪽 축). 실제 응답·브라우저 CORS 미확인. 자동화 결과는 JSON 불러오기로 합침.
+
+## 외국인 수급(`foreign/`)
+- `foreign/index.html`(GitHub Pages `/foreign/`): 코스피 시총 상위 50 외국인 순매수. 연결은 `backtest-sync` 공유, 백테스트 Apps Script `?foreign=1&top=50&n=5`(`foreign_`: 종목 마스터 전일 시총 off174로 순위, ETF·리츠·투자회사·우선주 제외, 종목마다 `flows_` 호출, 60초 캐시). `flows_` 줄 뒤에 [종가, 등락률%, 외국인 지분율%]를 덧붙였고, `universe_` 줄 뒤에 [시총(억), 종목구분추가, 자본금 규모, 코스피200 산업군]을 덧붙임(캐시 키 `univ2_`).
+- 금액 = 순매수 수량 × 그날 종가(나무에 금액 칸 없음). 업종은 화면의 `SECTOR` 표, 없으면 코스피200 산업군(`K200`). 시장 대용 = 50종목 시총 가중 평균 등락률. 태그: 지속 유입(5일 중 4일+), 단기 매수, 하락 중 매수, 지속 이탈. 자동 갱신 1/3/5분(평일 9:00~15:40, 화면 켜져 있을 때만). 저장 `foreign-last` `foreign-ui`.
+- 미확인: 장중에 currentInvestor 오늘 줄이 잠정치로 바뀌는지, `prdy_avls` 실제 값, 등락률 부호(`prdy_vrss_sign` 4·5를 음수로 봄).
 
 ## DART 로컬 저장소(`dart/`)
 - `dart/dart_fetch.py 종목…  [--years N]`: 이 컴퓨터에서 DART를 직접 불러 `dart/data/<코드>_<회사명>/`에 저장(보고서별 원본 `reports/<연도>_<분기>Q_<CFS|OFS>.json`·`_shares.json`, 분기 요약 `summary.csv`, 최근 1년 공시 `disclosures.json`, 상장사 목록 `data/corp_codes.json` 하루 보관). 키는 `--setkey`로 `dart/.dart_key`에. `.gitignore`로 키와 data는 GitHub에 안 올림. 이미 받은 보고서는 재사용(최근 6분기만 다시 받음).

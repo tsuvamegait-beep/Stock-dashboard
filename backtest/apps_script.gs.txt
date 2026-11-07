@@ -1,4 +1,4 @@
-// 버전: 2026-11-05 · 마지막 변경: 재무 조회 확인용 testDart, 회사 목록 캐시 크기 수정
+// 버전: 2026-11-06 · 마지막 변경: 외국인 수급(?foreign=1) 추가 — 코스피 시총 상위 50 종목별 외국인 순매수
 /**
  * 백테스트용 Apps Script (주식 대시보드 Apps Script와 별개의 새 프로젝트)
  * 나무증권 Open API(NH PLUG)에서 국내 종목 목록, 일봉, 투자자별 순매수를, DART에서 분기 재무를 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
@@ -22,7 +22,8 @@ function out_(obj) {
 // ?candles=005930:1,035720:1&n=1400 : 종목별 일봉(오래된 날짜 → 최근). 한 요청에 최대 30종목.
 //   한 봉 = [yyyyMMdd, 시가, 고가, 저가, 종가, 거래량, 기준가, 락구분코드] — 분할·배당락 보정은 백테스트 화면에서 기준가로 함
 // ?dart=005930&q=8 : DART 분기별 재무(최근 q개 보고서) + 주식 수. 금액은 원 단위
-// ?flows=005930:1,…&n=999 : 종목별 투자자 순매수(오래된 날짜 → 최근, 최대 999일). 한 줄 = [yyyyMMdd, 외국인, 기관계, 개인] 순매수 수량(주)
+// ?flows=005930:1,…&n=999 : 종목별 투자자 순매수(오래된 날짜 → 최근, 최대 999일). 한 줄 = [yyyyMMdd, 외국인, 기관계, 개인] 순매수 수량(주), 뒤에 [종가, 등락률%, 외국인 지분율%]
+// ?foreign=1&top=50&n=5 : 코스피 시가총액 상위 top개(전일 시총 순) 종목별 최근 n일 수급. {at, items:[{c 코드, n 이름, cap 시총(억), k2 코스피200 산업군, f 위 flows 줄}], errors}
 function doGet(e) {
   const q = (e && e.parameter) || {};
   if (q.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
@@ -30,6 +31,7 @@ function doGet(e) {
     if (q.universe) return out_({ok: true, list: universe_()});
     if (q.candles) return out_(candlesMany_(String(q.candles), +q.n || 300));
     if (q.flows) return out_(flowsMany_(String(q.flows), +q.n || 300));
+    if (q.foreign) return out_(foreign_(Math.max(5, Math.min(+q.top || 50, 60)), Math.max(1, Math.min(+q.n || 5, 30))));
     if (q.dart) return out_(dartFin_(String(q.dart), Math.max(1, Math.min(+q.q || 8, 12))));
     return out_({ok: true, hello: '백테스트 Apps Script 연결됨'});
   } catch (err) { return out_({ok: false, error: String(err && err.message || err)}); }
@@ -73,18 +75,18 @@ function nhCall_(path, input) {
 
 /* ===== 종목 목록: 나무 종목 마스터(m_new_stock.mst, 인증 불필요, CP949 고정 길이 237바이트) ===== */
 function universe_() {
-  const cache = CacheService.getScriptCache(), n = +cache.get('univ_n') || 0;
+  const cache = CacheService.getScriptCache(), n = +cache.get('univ2_n') || 0; // univ2: 시가총액 등 칸을 덧붙인 판
   if (n) {
-    const parts = cache.getAll(Array.from({length: n}, (_, i) => 'univ_' + i));
-    if (Object.keys(parts).length === n) return JSON.parse(Array.from({length: n}, (_, i) => parts['univ_' + i]).join(''));
+    const parts = cache.getAll(Array.from({length: n}, (_, i) => 'univ2_' + i));
+    if (Object.keys(parts).length === n) return JSON.parse(Array.from({length: n}, (_, i) => parts['univ2_' + i]).join(''));
   }
   const res = UrlFetchApp.fetch('https://www.nhplug.com/instruments/m_new_stock.mst', {muteHttpExceptions: true});
   if (res.getResponseCode() !== 200) throw new Error('나무 종목 목록을 받지 못했습니다(' + res.getResponseCode() + ')');
   const list = parseStockMst_(res.getContent());
-  try { // 캐시 한 칸이 100KB 제한이라 나눠서 6시간 보관
-    const s = JSON.stringify(list), size = 90000, put = {};
-    let i = 0; for (; i * size < s.length; i++) put['univ_' + i] = s.substr(i * size, size);
-    put.univ_n = String(i); cache.putAll(put, 21600);
+  try { // 캐시 한 칸이 100KB 제한이라 나눠서 6시간 보관(한글 3바이트라 30000자씩)
+    const s = JSON.stringify(list), size = 30000, put = {};
+    let i = 0; for (; i * size < s.length; i++) put['univ2_' + i] = s.substr(i * size, size);
+    put.univ2_n = String(i); cache.putAll(put, 21600);
   } catch (e) {}
   return list;
 }
@@ -98,7 +100,10 @@ function parseStockMst_(b) {
     if (nb[0] === 42 || nb[0] === 35) nb = nb.slice(1); // 이름 앞 표시 * 코스피200, # 코스닥150
     const name = Utilities.newBlob(nb).getDataAsString('MS949').replace(/[\s\u0000]+$/, '');
     const k200 = txt(i + 168, 1); // 코스피200 산업군(0이면 미편입)
-    out.push([code, name, mkt, k200 && k200 !== '0' ? 1 : 0, txt(i + 172, 1) === 'Y' ? 1 : 0, txt(i + 161, 1) === 'Y' ? 1 : 0]);
+    // 뒤에 덧붙인 칸(외국인 수급 화면용): [6] 전일 시가총액(억) off174 len12, [7] 종목구분추가 off165(코스피 5 투자회사·6 리츠·8 ETF·9 선박·A 인프라),
+    // [8] 자본금 규모 off129(0 우선주 등, 공백 ETF·ETN), [9] 코스피200 산업군 문자(B 반도체, 6 금융 …)
+    out.push([code, name, mkt, k200 && k200 !== '0' ? 1 : 0, txt(i + 172, 1) === 'Y' ? 1 : 0, txt(i + 161, 1) === 'Y' ? 1 : 0,
+      +txt(i + 174, 12).trim() || 0, txt(i + 165, 1), txt(i + 129, 1), k200 || '0']);
   }
   return out;
 }
@@ -145,11 +150,34 @@ function flows_(code, mkt, n) {
   const map = {};
   (r.j.Output_0 || []).forEach(x => {
     const d = String(x.bsop_date1 || ''); if (!/^\d{8}$/.test(d)) return;
-    map[d] = [d, +x.frgn_ntby_qty || 0, +x.gigwan || 0, +x.person || 0];
+    const sg = String(x.prdy_vrss_sign || '').trim(), rt = Math.abs(+x.prdy_ctrt || 0); // 부호 4 하한·5 하락이면 음수
+    // 뒤 세 칸은 외국인 수급 화면용: 그날 종가, 전일 대비 등락률(%), 외국인 지분율(%)
+    map[d] = [d, +x.frgn_ntby_qty || 0, +x.gigwan || 0, +x.person || 0, +x.stck_prpr || 0, sg === '4' || sg === '5' ? -rt : rt, +x.for_rate || 0];
   });
   return Object.keys(map).sort().map(d => map[d]);
 }
 function flowsMany_(codes, n) { return many_(codes, n, flows_); }
+
+/* ===== 외국인 수급: 코스피 시가총액 상위 종목(?foreign=1&top=50&n=5) =====
+ * 종목 마스터의 전일 시가총액(억)으로 순위를 매김(ETF·리츠·투자회사·우선주 제외). 나무에는 순위·복수종목 시세 API가 없어
+ * 종목마다 currentInvestor를 한 번씩 부름(초당 5회 제한 → 50종목 약 20~30초). 같은 결과는 60초 동안 재사용 */
+function foreign_(top, n) {
+  const ck = 'frg_' + top + '_' + n, hit = cacheGetJson_(ck);
+  if (hit) return hit;
+  const list = universe_().filter(r => r[2] === '1' && r[6] > 0 && r[8] && r[8] !== ' ' && r[8] !== '0' && '5689A'.indexOf(r[7] || '-') < 0)
+    .sort((a, b) => b[6] - a[6]).slice(0, top);
+  if (!list.length) throw new Error('종목 목록에 시가총액이 없습니다(Apps Script를 새 버전으로 배포했는지 확인)');
+  const items = [], errors = {};
+  list.forEach((r, i) => {
+    if (i) Utilities.sleep(220);
+    let f = [];
+    try { f = flows_(r[0], '1', n); } catch (err) { errors[r[0]] = String(err && err.message || err); }
+    items.push({c: r[0], n: r[1], cap: r[6], k2: r[9] || '0', f});
+  });
+  const out = {ok: true, at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'), items, errors};
+  cachePutJson_(ck, out, 60);
+  return out;
+}
 
 /* ===== DART(금감원 전자공시 오픈API) 재무 =====
  * 종목코드(6자리) → DART 고유번호(8자리)는 corpCode.xml(zip)에서 찾아 6시간 캐시.
@@ -264,6 +292,11 @@ function testDart() {
 }
 
 // 편집기에서 직접 실행해 보는 확인용: 종목 수와 삼성전자 최근 일봉 3개, 받은 봉 개수, 수급 일수를 로그에 남김
+function testForeign() { // 외국인 수급 확인: 상위 5종목만 3일치
+  const r = foreign_(5, 3);
+  r.items.forEach(x => Logger.log(x.n + ' 시총 ' + x.cap + '억 · 산업군 ' + x.k2 + ' · [날짜, 외국인, 기관, 개인, 종가, 등락률, 지분율] ' + JSON.stringify(x.f)));
+  Logger.log('오류: ' + JSON.stringify(r.errors));
+}
 function testBt() {
   const u = universe_();
   Logger.log('종목 ' + u.length + '개 · 코스피200 ' + u.filter(r => r[3]).length + ' · 코스닥150 ' + u.filter(r => r[4]).length + ' · 예: ' + JSON.stringify(u.filter(r => r[0] === '005930')));

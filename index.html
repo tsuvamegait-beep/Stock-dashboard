@@ -1707,7 +1707,7 @@ const SEC_ETF = [
 const SEC_BM = 'SPY', SEC_LS = 'portfolio-sector';
 const SEC_PER = [{id: '1d', l: '1일'}, {id: '1w', l: '1주', d: 7}, {id: '1m', l: '1개월', m: 1}, {id: '3m', l: '3개월', m: 3}, {id: '6m', l: '6개월', m: 6}, {id: 'ytd', l: 'YTD'}, {id: '1y', l: '1년', m: 12}];
 const sec = (() => { const d = {per: '1w', off: []}; try { return Object.assign(d, JSON.parse(localStorage.getItem(SEC_LS) || '{}')); } catch (e) { return d; } })();
-sec.busy = false; sec.msg = ''; sec.auto = '';
+sec.busy = false; sec.msg = ''; sec.auto = ''; sec.open = [];
 const secSave = () => { try { localStorage.setItem(SEC_LS, JSON.stringify({per: sec.per, off: sec.off})); } catch (e) {} };
 async function secFetch(force) {
   const cfg = getSync();
@@ -1754,7 +1754,7 @@ function renderSector() {
   const bm = rsCache[SEC_BM] && rsCache[SEC_BM].rows, bR = secRet(bm, per);
   const res = SEC_ETF.map(x => { const rows = rsCache[x.t] && rsCache[x.t].rows; return {x, rows, R: secRet(rows, per), err: rsCache[x.t] && rsCache[x.t].err}; });
   const ok = res.filter(z => z.R).sort((a, b) => b.R.r - a.R.r);
-  if (!ok.length) { mk('p', {class: 'sub', style: 'margin-top:12px'}, c, sec.busy ? '섹터 시세를 받고 있습니다(4개씩 차례로, 1분 정도 걸립니다)…' : '아직 받은 섹터 시세가 없습니다. "새로 받기"를 눌러 주세요.'); return; }
+  if (!ok.length) { mk('p', {class: 'sub', style: 'margin-top:12px'}, c, sec.busy ? '섹터 시세를 받고 있습니다(4개씩 차례로, 1분 정도 걸립니다)…' : '아직 받은 섹터 시세가 없습니다. "새로 받기"를 눌러 주세요.'); secTop(out, []); return; }
 
   // 순위 막대
   const rc = mk('div', {class: 'card'}, out); mk('h2', {}, rc, per.l + ' 수익률 순위');
@@ -1789,6 +1789,46 @@ function renderSector() {
   ok.concat(bm ? [{x: {t: SEC_BM, n: 'S&P 500'}, rows: bm}] : []).forEach(z => {
     const tr = mk('tr', {style: 'border-top:1px solid var(--grid)'}, body); mk('td', {style: 'text-align:left;padding:6px 4px;white-space:nowrap'}, tr, z.x.n + ' ' + z.x.t);
     cols.forEach(p => { const R = secRet(z.rows, p), td = mk('td', {style: 'text-align:right;padding:6px 4px;white-space:nowrap'}, tr, R ? pct(R.r) : '–'); if (R) td.style.color = R.r > 0 ? 'var(--up)' : R.r < 0 ? 'var(--dn)' : ''; });
+  });
+  secTop(out, ok);
+}
+// 섹터별 대표 종목: 각 ETF의 비중 상위 10종목(대략, 분기마다 바뀔 수 있음). 기본 5개, 펼치면 10개
+const SEC_TOP = {
+  XLK: [['NVDA', '엔비디아'], ['AAPL', '애플'], ['MSFT', '마이크로소프트'], ['AVGO', '브로드컴'], ['ORCL', '오라클'], ['PLTR', '팔란티어'], ['AMD', 'AMD'], ['CSCO', '시스코'], ['IBM', 'IBM'], ['CRM', '세일즈포스']],
+  XLC: [['META', '메타'], ['GOOGL', '알파벳 A'], ['GOOG', '알파벳 C'], ['NFLX', '넷플릭스'], ['DIS', '디즈니'], ['TTWO', '테이크투'], ['EA', '일렉트로닉 아츠'], ['CMCSA', '컴캐스트'], ['T', 'AT&T'], ['VZ', '버라이즌']],
+  XLY: [['AMZN', '아마존'], ['TSLA', '테슬라'], ['HD', '홈디포'], ['MCD', '맥도날드'], ['BKNG', '부킹홀딩스'], ['TJX', 'TJX'], ['LOW', '로우스'], ['SBUX', '스타벅스'], ['ORLY', '오라일리'], ['NKE', '나이키']],
+  XLF: [['BRK.B', '버크셔 해서웨이'], ['JPM', 'JP모건'], ['V', '비자'], ['MA', '마스터카드'], ['BAC', '뱅크오브아메리카'], ['WFC', '웰스파고'], ['GS', '골드만삭스'], ['MS', '모건스탠리'], ['AXP', '아메리칸 익스프레스'], ['C', '씨티그룹']],
+  XLV: [['LLY', '일라이 릴리'], ['JNJ', '존슨앤드존슨'], ['ABBV', '애브비'], ['UNH', '유나이티드헬스'], ['MRK', '머크'], ['ABT', '애보트'], ['TMO', '써모피셔'], ['ISRG', '인튜이티브 서지컬'], ['AMGN', '암젠'], ['BSX', '보스턴 사이언티픽']],
+  XLI: [['GE', 'GE 에어로스페이스'], ['CAT', '캐터필러'], ['RTX', 'RTX'], ['UBER', '우버'], ['GEV', 'GE 버노바'], ['BA', '보잉'], ['HON', '하니웰'], ['UNP', '유니온 퍼시픽'], ['ETN', '이튼'], ['DE', '디어']],
+  XLE: [['XOM', '엑슨모빌'], ['CVX', '셰브론'], ['COP', '코노코필립스'], ['WMB', '윌리엄스'], ['EOG', 'EOG 리소시스'], ['KMI', '킨더 모건'], ['SLB', 'SLB'], ['PSX', '필립스66'], ['MPC', '마라톤 페트롤리엄'], ['OKE', '원오크']],
+  XLB: [['LIN', '린데'], ['SHW', '셔윈윌리엄스'], ['NEM', '뉴몬트'], ['ECL', '에코랩'], ['APD', '에어프로덕츠'], ['FCX', '프리포트 맥모란'], ['CTVA', '코르테바'], ['MLM', '마틴 마리에타'], ['VMC', '벌컨 머티리얼즈'], ['NUE', '뉴코어']],
+  XLP: [['WMT', '월마트'], ['COST', '코스트코'], ['PG', 'P&G'], ['KO', '코카콜라'], ['PM', '필립모리스'], ['PEP', '펩시코'], ['MO', '알트리아'], ['MDLZ', '몬델리즈'], ['CL', '콜게이트'], ['MNST', '몬스터 베버리지']],
+  XLU: [['NEE', '넥스트에라 에너지'], ['SO', '서던'], ['CEG', '컨스텔레이션 에너지'], ['DUK', '듀크 에너지'], ['VST', '비스트라'], ['AEP', '아메리칸 일렉트릭 파워'], ['SRE', '셈프라'], ['D', '도미니언 에너지'], ['EXC', '엑셀론'], ['XEL', '엑셀 에너지']],
+  XLRE: [['WELL', '웰타워'], ['PLD', '프로로지스'], ['AMT', '아메리칸 타워'], ['EQIX', '에퀴닉스'], ['SPG', '사이먼 프로퍼티'], ['DLR', '디지털 리얼티'], ['O', '리얼티 인컴'], ['PSA', '퍼블릭 스토리지'], ['CCI', '크라운 캐슬'], ['CBRE', 'CBRE']]
+};
+function secTop(out, ok) {
+  const card = mk('div', {class: 'card'}, out); mk('h2', {}, card, '섹터별 대표 종목');
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, '각 섹터 ETF에서 비중이 큰 순서입니다(대략적인 구성으로, 분기마다 조금씩 바뀝니다). 섹터 순서는 위 수익률 순위를 따릅니다. "10개 보기"를 누르면 펼쳐집니다.');
+  const all = mk('button', {type: 'button', style: 'margin-bottom:10px'}, card, sec.open.length >= SEC_ETF.length ? '모두 5개로 접기' : '모두 10개로 펼치기');
+  all.addEventListener('click', () => { sec.open = sec.open.length >= SEC_ETF.length ? [] : SEC_ETF.map(x => x.t); render(); });
+  const grid = mk('div', {style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px'}, card);
+  const order = ok.map(z => z).concat(SEC_ETF.filter(x => !ok.some(z => z.x.t === x.t)).map(x => ({x})));
+  order.forEach(z => {
+    const t = z.x.t, list = SEC_TOP[t] || [], open = sec.open.indexOf(t) >= 0;
+    const box = mk('div', {style: 'border:1px solid var(--grid);border-radius:10px;padding:10px 12px'}, grid);
+    const h = mk('div', {style: 'display:flex;align-items:center;gap:6px;margin-bottom:6px'}, box);
+    const sw = mk('i', {class: 'sw'}, h); sw.style.background = z.x.c;
+    mk('b', {}, h, z.x.n + ' ' + t);
+    if (z.R) { const s = mk('span', {style: 'margin-left:auto;font-size:12px'}, h, pct(z.R.r)); s.style.color = z.R.r > 0 ? 'var(--up)' : z.R.r < 0 ? 'var(--dn)' : ''; }
+    const tb = mk('table', {style: 'width:100%;border-collapse:collapse;font-size:13px'}, box), body = mk('tbody', {}, tb);
+    list.slice(0, open ? 10 : 5).forEach((s, i) => {
+      const tr = mk('tr', {style: i ? 'border-top:1px solid var(--grid)' : ''}, body);
+      mk('td', {style: 'width:22px;padding:4px 2px;color:var(--muted)'}, tr, String(i + 1));
+      mk('td', {style: 'text-align:left;padding:4px 2px'}, tr, s[1]);
+      mk('td', {style: 'text-align:right;padding:4px 2px;color:var(--muted);font-size:12px'}, tr, s[0]);
+    });
+    const b = mk('button', {type: 'button', style: 'margin-top:6px;padding:3px 10px;font-size:12px'}, box, open ? '5개만 보기 ▴' : '10개 보기 ▾');
+    b.addEventListener('click', () => { const i = sec.open.indexOf(t); if (i >= 0) sec.open.splice(i, 1); else sec.open.push(t); render(); });
   });
 }
 

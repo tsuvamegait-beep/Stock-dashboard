@@ -7,7 +7,7 @@
 - 저장소: `index.html`(앱), `apps_script.gs.txt`(구글 Apps Script 서버 코드 — 사용자가 구글에 직접 붙여넣어 배포), `README.md`(기능별 사용법).
 - 서버 없음. 데이터는 브라우저 localStorage + 구글 시트 + Apps Script 웹 앱.
 - `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderSector`(미국 섹터: 11개 섹터 ETF `SEC_ETF` XLK…XLRE + 기준 SPY, RS와 같은 `?series=1`을 4개씩 차례로 받아 `rsCache`에 하루 한 번 보관, 탭을 열면 자동으로 받음. 기간 `SEC_PER` 1일~1년, 순위 막대·누적 흐름 선·기간별 표, 그 아래 섹터별 대표 종목 `SEC_TOP`(비중 상위 10개 고정 목록, 기본 5개·`sec.open`으로 펼침) `secTop`, 저장 `portfolio-sector`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
-- 탭 줄(`#tabs`) 맨 끝, 테마 탭 다음에 다른 페이지 바로 가기 링크 `a.go`(외국인 수급·백테스트·사무실·VLO). PC 밝은 테마는 왼쪽 메뉴의 테마 아래, 폰은 탭 줄을 오른쪽으로 밀면 보임.
+- 탭 줄(`#tabs`) 맨 끝, 테마 탭 다음에 "바로 가기" 버튼 `#goBtn`(탭과 같은 모양, `data-tab` 없음 — 탭 처리는 `#tabs button[data-tab]`만 봄). 누르면 `#goList` 링크 `a.go`(외국인 수급·백테스트·사무실·VLO)가 펼쳐지고 상태는 localStorage `portfolio-go`. PC 밝은 테마는 왼쪽 메뉴에서 아래로 펼침.
 
 ## 백테스트(`backtest/`, 대시보드와 분리)
 - `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).

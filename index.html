@@ -171,13 +171,17 @@ input::placeholder{color:var(--muted)}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hair);overflow-x:auto}
 .tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 12px;color:var(--ink2);white-space:nowrap}
 .tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
-/* 탭 줄 끝의 다른 페이지 바로 가기(즐겨찾기) */
-.tabs .golab{align-self:center;margin-left:10px;padding-left:12px;border-left:1px solid var(--hair);font-size:11px;color:var(--muted);white-space:nowrap}
-.tabs a.go{display:inline-flex;align-items:center;padding:8px 12px;font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap;border-radius:8px;flex-shrink:0}
-.tabs a.go:hover{background:var(--wash,rgba(0,0,0,.05))}
+/* 탭 줄 끝의 다른 페이지 바로 가기(즐겨찾기): 탭과 같은 모양의 버튼, 누르면 링크가 펼쳐짐 */
+.tabs .gobtn .chev{display:inline-block;font-size:10px;margin-left:2px;transition:transform 160ms ease}
+.tabs .gobtn[aria-expanded=true]{color:var(--accent);font-weight:700}
+.tabs .gobtn[aria-expanded=true] .chev{transform:rotate(180deg)}
+.tabs .golist{display:flex;gap:4px;align-items:center;flex-shrink:0}
+.tabs .golist[hidden]{display:none}
+.tabs a.go{display:inline-flex;align-items:center;padding:8px 12px;font-size:13px;color:var(--ink2);text-decoration:none;white-space:nowrap;border-radius:8px;flex-shrink:0;background:var(--wash,rgba(0,0,0,.04))}
+.tabs a.go:hover{color:var(--accent)}
 @media(min-width:1000px){
- :root[data-theme="light"] .tabs .golab,:root[data-theme="wealth-dark"] .tabs .golab{margin:14px 0 0;padding:10px 15px 0;border-left:0;border-top:1px solid var(--hair)}
- :root[data-theme="light"] .tabs a.go,:root[data-theme="wealth-dark"] .tabs a.go{padding:10px 15px}
+ :root[data-theme="light"] .tabs .golist,:root[data-theme="wealth-dark"] .tabs .golist{flex-direction:column;align-items:stretch;gap:3px;padding-left:12px}
+ :root[data-theme="light"] .tabs a.go,:root[data-theme="wealth-dark"] .tabs a.go{padding:9px 15px}
 }
 /* 카드: 테두리 상자 대신 위쪽 진한 줄로 구역을 나눔 */
 .card{background:transparent;border:0;border-top:1px solid var(--ink);border-radius:0;padding:14px 0;min-width:0}
@@ -473,11 +477,13 @@ svg circle:not([fill="none"]){vector-effect:non-scaling-stroke;stroke-width:1px}
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
     <button type="button" role="tab" data-tab="accounts" aria-selected="false">계좌 관리</button>
     <button type="button" role="tab" data-tab="theme" aria-selected="false">테마</button>
-    <span class="golab" aria-hidden="true">바로 가기</span>
-    <a class="go" href="foreign/">외국인 수급 ↗</a>
-    <a class="go" href="backtest/">백테스트 ↗</a>
-    <a class="go" href="office/">사무실 ↗</a>
-    <a class="go" href="vlo/">VLO 모니터 ↗</a>
+    <button type="button" class="gobtn" id="goBtn" aria-expanded="false" aria-controls="goList">바로 가기 <span class="chev" aria-hidden="true">▾</span></button>
+    <span class="golist" id="goList" hidden>
+      <a class="go" href="foreign/">외국인 수급 ↗</a>
+      <a class="go" href="backtest/">백테스트 ↗</a>
+      <a class="go" href="office/">사무실 ↗</a>
+      <a class="go" href="vlo/">VLO 모니터 ↗</a>
+    </span>
   </nav>
 
   <section id="tab-holdings" class="col">
@@ -2964,7 +2970,7 @@ function render() {
 document.addEventListener('focusout', () => { if (pendingAfterBlur) { pendingAfterBlur = false; setTimeout(render, 0); } });
 function syncTabs() {
   if (!$('tab-' + ui.tab)) ui.tab = ui.tab === 'an' ? 'ana' : 'holdings'; // 없어진 "분석" 탭은 종목분석으로
-  document.querySelectorAll('#tabs button').forEach(b => { const on = b.dataset.tab === ui.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on) b.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
+  document.querySelectorAll('#tabs button[data-tab]').forEach(b => { const on = b.dataset.tab === ui.tab; b.setAttribute('aria-selected', String(on)); b.tabIndex = on ? 0 : -1; if (on) b.scrollIntoView({block: 'nearest', inline: 'nearest'}); });
   ['holdings', 'detail', 'rs', 'sector', 'ana', 'trades', 'prices', 'opening', 'accounts', 'theme'].forEach(t => { $('tab-' + t).hidden = t !== ui.tab; });
 }
 function syncSegs() {
@@ -2972,14 +2978,18 @@ function syncSegs() {
   [['seg-cls', 'cls'], ['seg-cls2', 'cls'], ['seg-cls3', 'dcls']].forEach(([id, k]) => document.querySelectorAll('#' + id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.c === ui[k]))));
 }
 (function init() {
-  document.querySelectorAll('#tabs button').forEach(b => {
+  document.querySelectorAll('#tabs button[data-tab]').forEach(b => {
     b.id = 'tabbtn-' + b.dataset.tab; b.setAttribute('aria-controls', 'tab-' + b.dataset.tab);
     const p = $('tab-' + b.dataset.tab); p.setAttribute('role', 'tabpanel'); p.setAttribute('aria-labelledby', b.id);
     b.addEventListener('click', () => { ui.tab = b.dataset.tab; saveUi(); syncTabs(); });
   });
+  // 바로 가기: 누르면 다른 페이지 링크를 펼치고 접음(펼친 상태는 이 브라우저에 기억)
+  const goOpen = on => { $('goBtn').setAttribute('aria-expanded', String(on)); $('goList').hidden = !on; try { localStorage.setItem('portfolio-go', on ? '1' : ''); } catch (e) {} };
+  try { goOpen(localStorage.getItem('portfolio-go') === '1'); } catch (e) {}
+  $('goBtn').addEventListener('click', () => { const on = $('goBtn').getAttribute('aria-expanded') !== 'true'; goOpen(on); if (on) $('goList').scrollIntoView({block: 'nearest', inline: 'nearest'}); });
   // 키보드: 좌우 화살표·Home·End로 탭 이동
   $('tabs').addEventListener('keydown', e => {
-    const bs = [...document.querySelectorAll('#tabs button')], i = bs.indexOf(document.activeElement); if (i < 0) return;
+    const bs = [...document.querySelectorAll('#tabs button[data-tab]')], i = bs.indexOf(document.activeElement); if (i < 0) return;
     const j = (e.key === 'ArrowRight' || e.key === 'ArrowDown') ? (i + 1) % bs.length : (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? (i - 1 + bs.length) % bs.length : e.key === 'Home' ? 0 : e.key === 'End' ? bs.length - 1 : -1;
     if (j < 0) return; e.preventDefault(); bs[j].click(); bs[j].focus();
   });

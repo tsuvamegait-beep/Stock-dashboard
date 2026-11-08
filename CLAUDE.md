@@ -7,6 +7,7 @@
 - 저장소: `index.html`(앱), `apps_script.gs.txt`(구글 Apps Script 서버 코드 — 사용자가 구글에 직접 붙여넣어 배포), `README.md`(기능별 사용법).
 - 서버 없음. 데이터는 브라우저 localStorage + 구글 시트 + Apps Script 웹 앱.
 - `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderSector`(미국 섹터: 11개 섹터 ETF `SEC_ETF` XLK…XLRE + 기준 SPY, RS와 같은 `?series=1`을 4개씩 차례로 받아 `rsCache`에 하루 한 번 보관, 탭을 열면 자동으로 받음. 기간 `SEC_PER` 1일~1년, 순위 막대·누적 흐름 선·기간별 표, 그 아래 섹터별 대표 종목 `SEC_TOP`(비중 상위 10개 고정 목록, 기본 5개·`sec.open`으로 펼침) `secTop`, 저장 `portfolio-sector`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
+- 탭 줄(`#tabs`) 맨 끝, 테마 탭 다음에 다른 페이지 바로 가기 링크 `a.go`(외국인 수급·백테스트·사무실·VLO). PC 밝은 테마는 왼쪽 메뉴의 테마 아래, 폰은 탭 줄을 오른쪽으로 밀면 보임.
 
 ## 백테스트(`backtest/`, 대시보드와 분리)
 - `backtest/index.html`(GitHub Pages `/backtest/`) + `backtest/apps_script.gs.txt`(대시보드와 다른 **새 Apps Script 프로젝트**, 자체 `SECRET_KEY`, 스크립트 속성 `NH_APP_KEY`/`NH_APP_SECRET`). 대시보드 코드·키와 공유하지 않음(테마 `portfolio-theme`만 읽음).
@@ -32,6 +33,7 @@
 
 ## 외국인 수급(`foreign/`)
 - `foreign/index.html`(GitHub Pages `/foreign/`): 코스피 시총 상위 50 외국인 순매수. 연결은 `backtest-sync` 공유, 백테스트 Apps Script `?foreign=1&top=50&n=5`(`foreign_`: 종목 마스터 전일 시총 off174로 순위, ETF·리츠·투자회사·우선주 제외, 종목마다 `flows_` 호출, 60초 캐시). `flows_` 줄 뒤에 [종가, 등락률%, 외국인 지분율%]를 덧붙였고, `universe_` 줄 뒤에 [시총(억), 종목구분추가, 자본금 규모, 코스피200 산업군]을 덧붙임(캐시 키 `univ2_`).
+- 30거래일을 받아(`MAXD`, `n=30`) 기간 `ui.per` 최근일/5/10/20/30일로 잘라 봄. 5일 이상이면 업종 누적 흐름 선(`cumChart`, 많이 산 업종 3·판 업종 2). 연속 순매수·순매도 일수 `streak`(5일 이상이면 태그).
 - 금액 = 순매수 수량 × 그날 종가(나무에 금액 칸 없음). 업종은 화면의 `SECTOR` 표, 없으면 코스피200 산업군(`K200`). 시장 대용 = 50종목 시총 가중 평균 등락률. 태그: 지속 유입(5일 중 4일+), 단기 매수, 하락 중 매수, 지속 이탈. 자동 갱신 1/3/5분(평일 9:00~15:40, 화면 켜져 있을 때만). 저장 `foreign-last` `foreign-ui`.
 - 미확인: 장중에 currentInvestor 오늘 줄이 잠정치로 바뀌는지, `prdy_avls` 실제 값, 등락률 부호(`prdy_vrss_sign` 4·5를 음수로 봄).
 
@@ -41,6 +43,7 @@
 ## 메모리 수출 저장소(`trade/`)
 - `trade/trade_fetch.py [--months N]`: 공공데이터포털 "관세청_시도별 품목별 수출입실적(GW)"(`https://apis.data.go.kr/1220000/sidoitemtrade/getSidoitemtradeList`, 인자 strtYymm·endYymm·hsSgn·sidoCd, 응답 expUsdAmt(천 달러)·expLnCnt, 여러 달을 물으면 합계만 와서 달마다 따로 부름, sidoCd 없으면 오류 99)로 HS 854232(메모리) 시도별 월 수출을 `trade/data/memory_exports_sido.csv`에 저장. 키는 `--setkey` → `trade/.data_key`(GitHub 제외). 메모리 수출 시도: 경기·충남·충북(합계 99%).
 - 세부 품목: "관세청_품목별 수출입실적(GW)"(`https://apis.data.go.kr/1220000/Itemtrade/getItemtradeList`, 인자 strtYymm·endYymm(1년까지)·hsSgn, 달마다 10자리 품목 줄 + 총계 줄, 응답 expDlr(달러)·expWgt(kg)·hsCode·statKor) → `trade/data/memory_items.csv`. 8542321010 디램, 8542321030 플래시, 8542323000 복합구조칩(HBM 등), 8542324000 MCO. "품목별 국가별"(`nitemtrade`)과 "시군구별"은 키가 등록 안 됨/주소 미확인.
+- 대시보드: `trade/memory_combo.py [--fetch]` → `trade/data/memory_combo.html`(남색 3장: 품목 막대+kg 단가+수출 YoY+하이닉스 매출 YoY / 품목 막대+하이닉스·삼성전자 주가(네이버 일봉, x축은 이번 달까지) / 품목별 kg 단가 로그). `--fetch`는 `trade_fetch.py --months 36`과 `dart_fetch.py SK하이닉스`를 먼저 돌림. 관세청 월별 자료는 다음 달 15일 무렵 나옴(그 전에는 그달 0으로 와서 그림에서 빠짐).
 
 ## 데이터 흐름
 - 거래내역: 증권사 엑셀(삼성 종합 거래내역, 나무/NH HTML형 xls)을 올려 파싱. 이동평균 단가로 보유·실현손익·배당 계산(`replay`). 기간 일부 파일(삼성은 제목의 조회 기간, 나무는 파일 이름의 `YYYY.MM.DD_YYYY.MM.DD`가 1월 1일이 아님 → `A.from`)은 저장 위치에서 기존 계좌를 고르면 `mergeAcct`로 이어 붙임(기존 거래는 from 전까지만 유지, 연초 수량 유지, 나무 엑셀 달러·엔 예수금은 변동분을 더함). 삼성 계좌번호는 `A.acct`로 저장해 다음 파일의 계좌 자동 선택에 씀. 원화 원가는 거래일 환율(구글 시트 "환율" 탭)로 쌓음.

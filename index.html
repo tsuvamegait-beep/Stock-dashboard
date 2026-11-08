@@ -171,6 +171,14 @@ input::placeholder{color:var(--muted)}
 .tabs{display:flex;gap:4px;border-bottom:1px solid var(--hair);overflow-x:auto}
 .tabs button{border:0;border-bottom:2px solid transparent;border-radius:0;padding:8px 12px;color:var(--ink2);white-space:nowrap}
 .tabs button[aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:700}
+/* 탭 줄 끝의 다른 페이지 바로 가기(즐겨찾기) */
+.tabs .golab{align-self:center;margin-left:10px;padding-left:12px;border-left:1px solid var(--hair);font-size:11px;color:var(--muted);white-space:nowrap}
+.tabs a.go{display:inline-flex;align-items:center;padding:8px 12px;font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap;border-radius:8px;flex-shrink:0}
+.tabs a.go:hover{background:var(--wash,rgba(0,0,0,.05))}
+@media(min-width:1000px){
+ :root[data-theme="light"] .tabs .golab,:root[data-theme="wealth-dark"] .tabs .golab{margin:14px 0 0;padding:10px 15px 0;border-left:0;border-top:1px solid var(--hair)}
+ :root[data-theme="light"] .tabs a.go,:root[data-theme="wealth-dark"] .tabs a.go{padding:10px 15px}
+}
 /* 카드: 테두리 상자 대신 위쪽 진한 줄로 구역을 나눔 */
 .card{background:transparent;border:0;border-top:1px solid var(--ink);border-radius:0;padding:14px 0;min-width:0}
 .col{display:flex;flex-direction:column;gap:14px;min-width:0}
@@ -465,6 +473,11 @@ svg circle:not([fill="none"]){vector-effect:non-scaling-stroke;stroke-width:1px}
     <button type="button" role="tab" data-tab="opening" aria-selected="false">연초 잔고</button>
     <button type="button" role="tab" data-tab="accounts" aria-selected="false">계좌 관리</button>
     <button type="button" role="tab" data-tab="theme" aria-selected="false">테마</button>
+    <span class="golab" aria-hidden="true">바로 가기</span>
+    <a class="go" href="foreign/">외국인 수급 ↗</a>
+    <a class="go" href="backtest/">백테스트 ↗</a>
+    <a class="go" href="office/">사무실 ↗</a>
+    <a class="go" href="vlo/">VLO 모니터 ↗</a>
   </nav>
 
   <section id="tab-holdings" class="col">

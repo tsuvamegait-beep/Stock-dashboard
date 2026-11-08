@@ -70,6 +70,7 @@ input{font:inherit;font-size:14px;color:var(--ink);background:var(--field);borde
 .dots{display:inline-flex;gap:2px;vertical-align:middle}
 .dots i{width:9px;height:9px;border-radius:2px;background:var(--grid)}
 .dots i.b{background:var(--up)} .dots i.s{background:var(--dn)}
+.dots.sm{gap:1px} .dots.sm i{width:5px;height:10px;border-radius:1px}
 /* 종목 줄 */
 .list{display:flex;flex-direction:column}
 .it{display:grid;grid-template-columns:22px 1fr auto;gap:2px 10px;padding:9px 0;border-bottom:1px solid var(--hair);align-items:baseline}
@@ -95,7 +96,7 @@ th[aria-sort]{color:var(--ink)}
   <header class="row" style="justify-content:space-between;align-items:flex-end">
     <div>
       <h1>외국인 수급</h1>
-      <p class="meta">코스피 시가총액 상위 50 · 외국인이 어디로 돈을 넣고 빼는지</p>
+      <p class="meta">코스피 시가총액 상위 50 · 최근 30거래일 외국인이 어디로 돈을 넣고 빼는지</p>
     </div>
     <p class="meta"><a href="../">대시보드</a> · <a href="../office/">사무실</a></p>
   </header>
@@ -106,7 +107,7 @@ th[aria-sort]{color:var(--ink)}
       <button data-v="0">자동 끔</button><button data-v="1">1분</button><button data-v="3">3분</button><button data-v="5">5분</button>
     </span>
     <span class="seg" id="per" aria-label="기간">
-      <button data-v="1">최근일</button><button data-v="5">5일</button>
+      <button data-v="1">최근일</button><button data-v="5">5일</button><button data-v="10">10일</button><button data-v="20">20일</button><button data-v="30">30일</button>
     </span>
     <button id="cfg" title="연결 설정">⚙ 연결</button>
   </section>
@@ -183,7 +184,9 @@ $('cSave').onclick = async () => {
 };
 
 /* ===== 상태 ===== */
-const ui = Object.assign({auto: 0, per: 5, sort: 'amt', dir: -1}, lsGet('foreign-ui', {}));
+const MAXD = 30; // 받는 거래일 수(Apps Script 상한 30)
+const ui = Object.assign({auto: 0, per: 5, sort: 'sumW', dir: -1}, lsGet('foreign-ui', {}));
+if (ui.sort === 'sum5' || ui.sort === 'str5' || ui.sort === 'amt') ui.sort = ui.sort === 'str5' ? 'strW' : 'sumW'; // 예전 저장값
 let D = lsGet('foreign-last', null), busy = false, timer = null;
 const saveUi = () => lsSet('foreign-ui', ui);
 
@@ -205,9 +208,9 @@ async function load() {
   if (busy) return; busy = true; $('go').disabled = true;
   const pg = $('prog'), bar = pg.firstElementChild; pg.hidden = false; bar.style.transition = 'none'; bar.style.width = '0';
   requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '92%'; });
-  $('status').textContent = '50종목 수급을 받는 중입니다(20~30초 걸립니다)…';
+  $('status').textContent = '50종목 ' + MAXD + '거래일 수급을 받는 중입니다(20~40초 걸립니다)…';
   try {
-    const j = await api('foreign=1&top=50&n=5');
+    const j = await api('foreign=1&top=50&n=' + MAXD);
     if (!Array.isArray(j.items)) throw new Error('Apps Script가 외국인 수급을 모릅니다 — 새 코드를 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오');
     D = {at: j.at, items: j.items, errors: j.errors || {}}; lsSet('foreign-last', D);
     render();
@@ -225,33 +228,41 @@ function schedule() {
 }
 
 /* ===== 계산 ===== */
-// 금액(원) = 순매수 수량 × 그날 종가
+// 금액(원) = 순매수 수량 × 그날 종가. 기간 W(1·5·10·20·30거래일)로 잘라서 봄. 태그의 "지속 유입·이탈"은 늘 최근 5일 기준
 function build() {
   if (!D || !D.items) return null;
   const dset = new Set(); D.items.forEach(it => (it.f || []).forEach(r => dset.add(r[0])));
-  const days = [...dset].sort().slice(-5); if (!days.length) return null;
-  const last = days[days.length - 1];
+  const all = [...dset].sort().slice(-MAXD); if (!all.length) return null;
+  const W = Math.max(1, ui.per), WD = W === 1 ? Math.min(5, all.length) : Math.min(W, all.length); // WD: 네모·표에 보일 날 수
+  const days = all.slice(-WD), last = all[all.length - 1];
   const rows = D.items.map(it => {
     const m = {}; (it.f || []).forEach(r => { m[r[0]] = r; });
-    const amt = days.map(d => { const r = m[d]; return r && r[4] ? r[1] * r[4] : null; });
+    const amtAll = all.map(d => { const r = m[d]; return r && r[4] ? r[1] * r[4] : null; });
+    const amt = amtAll.slice(-WD), a5 = amtAll.slice(-5);
     const lr = m[last] || [], fr = m[days[0]] || [];
-    const has = amt.filter(x => x != null);
-    const sum5 = has.reduce((a, b) => a + b, 0), today = amt[amt.length - 1];
+    const has = amt.filter(x => x != null), h5 = a5.filter(x => x != null);
+    const sumD = has.reduce((a, b) => a + b, 0), today = amtAll[amtAll.length - 1];
+    const sum5 = h5.reduce((a, b) => a + b, 0), b5 = h5.filter(x => x > 0).length;
     const buys = has.filter(x => x > 0).length;
     const cap = it.cap * 1e8;
-    const chg5 = (() => { const p0 = fr[4], p1 = lr[4]; return p0 && p1 && fr !== lr ? (p1 / p0 - 1) * 100 : null; })();
+    // 최근일부터 거꾸로 같은 방향(순매수/순매도)이 이어진 날 수
+    let streak = 0; for (let i = amtAll.length - 1; i >= 0; i--) { const x = amtAll[i]; if (x == null || !x) break; if (!streak || Math.sign(x) === Math.sign(streak)) streak += Math.sign(x); else break; }
+    const chgD = (() => { const p0 = fr[4], p1 = lr[4]; return p0 && p1 && fr !== lr ? (p1 / p0 - 1) * 100 : null; })();
     const tags = [];
-    if (has.length >= 4 && buys >= 4 && sum5 > 0) tags.push(['지속 유입', 'up']);
-    else if (today > 0 && buys <= 2 && has.length >= 3) tags.push(['단기 매수', 'up']);
+    if (h5.length >= 4 && b5 >= 4 && sum5 > 0) tags.push(['지속 유입', 'up']);
+    else if (today > 0 && b5 <= 2 && h5.length >= 3) tags.push(['단기 매수', 'up']);
     if (today > 0 && lr[5] < 0) tags.push(['하락 중 매수', 'up']);
-    if (has.length >= 4 && buys <= 1 && sum5 < 0) tags.push(['지속 이탈', 'dn']);
-    return {c: it.c, n: it.n, sec: sectorOf(it), cap: it.cap, amt, today, sum5, buys, cnt: has.length,
-      ret: lr[5] != null ? lr[5] : null, chg5, price: lr[4] || 0, fr: lr[6], frd: lr[6] != null && fr[6] != null ? lr[6] - fr[6] : null,
-      str1: today != null && cap ? today / cap * 100 : null, str5: cap ? sum5 / cap * 100 : null, tags, err: D.errors[it.c]};
+    if (h5.length >= 4 && b5 <= 1 && sum5 < 0) tags.push(['지속 이탈', 'dn']);
+    if (streak >= 5) tags.push([streak + '일 연속 매수', 'up']); else if (streak <= -5) tags.push([-streak + '일 연속 매도', 'dn']);
+    const sumW = W === 1 ? today : sumD;
+    return {c: it.c, n: it.n, sec: sectorOf(it), cap: it.cap, amt, amtAll, today, sumW, sum5, buys, cnt: has.length, streak,
+      ret: lr[5] != null ? lr[5] : null, chgW: W === 1 ? (lr[5] != null ? lr[5] : null) : chgD, price: lr[4] || 0,
+      frd: lr[6] != null && fr[6] != null && fr !== lr ? lr[6] - fr[6] : null,
+      strW: sumW != null && cap ? sumW / cap * 100 : null, tags, err: D.errors[it.c]};
   });
   // 시장 대용: 50종목 시가총액 가중 평균 등락률(최근일)
   let w = 0, s = 0; rows.forEach(r => { if (r.ret != null) { w += r.cap; s += r.cap * r.ret; } });
-  return {days, last, rows, mkt: w ? s / w : null};
+  return {all, days, last, rows, W, WD, mkt: w ? s / w : null};
 }
 
 /* ===== 표시 도우미 ===== */
@@ -263,47 +274,70 @@ const eok = v => { // 원 → 억/조 표기, 부호 포함
 const pct = (v, d = 2) => v == null || !isFinite(v) ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d) + '%';
 const cls = v => v > 0 ? 'up' : v < 0 ? 'dn' : '';
 const md = d => +d.slice(4, 6) + '/' + +d.slice(6);
-const dots = (amt) => '<span class="dots" title="오래된 날 → 최근일">' + amt.map(x => '<i class="' + (x == null ? '' : x > 0 ? 'b' : x < 0 ? 's' : '') + '"></i>').join('') + '</span>';
-const val = r => ui.per === 1 ? r.today : r.sum5;
-const strOf = r => ui.per === 1 ? r.str1 : r.str5;
+const dots = (amt) => '<span class="dots' + (amt.length > 10 ? ' sm' : '') + '" title="오래된 날 → 최근일">' + amt.map(x => '<i class="' + (x == null ? '' : x > 0 ? 'b' : x < 0 ? 's' : '') + '"></i>').join('') + '</span>';
 
 function itemHtml(r, i) {
   return '<div class="it"><span class="rk">' + (i + 1) + '</span>' +
     '<span class="nm">' + esc(r.n) + '<small>' + esc(r.sec) + '</small></span>' +
-    '<span class="am ' + cls(val(r)) + '">' + eok(val(r)) + '</span>' +
-    '<span class="sb">' + dots(r.amt) + '<span>주가 <b class="n ' + cls(ui.per === 1 ? r.ret : r.chg5) + '">' + pct(ui.per === 1 ? r.ret : r.chg5) + '</b></span>' +
-    '<span>시총 대비 <span class="n">' + pct(strOf(r), 3) + '</span></span>' +
+    '<span class="am ' + cls(r.sumW) + '">' + eok(r.sumW) + '</span>' +
+    '<span class="sb">' + dots(r.amt) + (ui.per > 1 ? '<span class="n">' + r.buys + '/' + r.cnt + '일 매수</span>' : '') +
+    '<span>주가 <b class="n ' + cls(r.chgW) + '">' + pct(r.chgW) + '</b></span>' +
+    '<span>시총 대비 <span class="n">' + pct(r.strW, 3) + '</span></span>' +
     r.tags.map(t => '<span class="tag ' + t[1] + '">' + t[0] + '</span>').join('') + '</span></div>';
+}
+
+// 업종 누적 순매수 선 그래프(기간 안 날마다 더해 감)
+const PAL = ['var(--up)', 'oklch(62% .15 45)', 'oklch(55% .1 165)', 'var(--dn)', 'oklch(55% .12 300)'];
+function cumChart(list, days) {
+  if (days.length < 3 || !list.length) return '';
+  const Wd = 640, H = 300, L = 110, R = 10, T = 14, B = 36;
+  const ser = list.map(s => { let c = 0; return s.days.map(x => (c += x)); });
+  let lo = 0, hi = 0; ser.forEach(a => a.forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); }));
+  if (hi === lo) hi = lo + 1;
+  const X = i => L + (Wd - L - R) * (days.length === 1 ? 0 : i / (days.length - 1)), Y = v => T + (H - T - B) * (hi - v) / (hi - lo);
+  let g = '<line x1="' + L + '" x2="' + (Wd - R) + '" y1="' + Y(0) + '" y2="' + Y(0) + '" stroke="var(--axis)"/>';
+  [hi, lo].forEach(v => { if (v) g += '<text x="' + (L - 6) + '" y="' + (Y(v) + 8) + '" text-anchor="end" font-size="22" fill="var(--muted)">' + eok(v) + '</text>'; });
+  const step = Math.ceil(days.length / 5);
+  days.forEach((d, i) => { const endL = i === days.length - 1; if ((i % step === 0 && days.length - 1 - i >= step / 2) || endL) g += '<text x="' + X(i) + '" y="' + (H - 8) + '" text-anchor="' + (endL ? 'end' : i ? 'middle' : 'start') + '" font-size="22" fill="var(--muted)">' + md(d) + '</text>'; });
+  ser.forEach((a, k) => { g += '<polyline fill="none" stroke="' + PAL[k] + '" stroke-width="3" points="' + a.map((v, i) => X(i).toFixed(1) + ',' + Y(v).toFixed(1)).join(' ') + '"/>'; });
+  return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" style="width:100%;height:auto;display:block" role="img" aria-label="업종별 누적 순매수">' + g + '</svg>' +
+    '<p class="row note" style="gap:4px 14px">' + list.map((s, k) => '<span><i style="display:inline-block;width:12px;height:3px;vertical-align:middle;background:' + PAL[k] + '"></i> ' + esc(s.n) + '</span>').join('') + '</p>';
 }
 
 /* ===== 그리기 ===== */
 function render() {
   const B = build(), out = $('out');
   if (!B) { out.innerHTML = ''; return; }
-  const {days, last, rows, mkt} = B, isToday = last === todayStr();
+  const {all, days, last, rows, W, mkt} = B, isToday = last === todayStr();
   const errN = rows.filter(r => r.err).length;
-  $('status').innerHTML = '받은 시각 ' + esc(D.at) + ' · 최근일 ' + md(last) + (isToday ? (marketOpen() ? ' (오늘, 장중 값)' : ' (오늘)') : ' (오늘 자료 아님 — 직전 거래일)') +
+  $('status').innerHTML = '받은 시각 ' + esc(D.at) + ' · ' + all.length + '거래일치 · 최근일 ' + md(last) + (isToday ? (marketOpen() ? ' (오늘, 장중 값)' : ' (오늘)') : ' (오늘 자료 아님 — 직전 거래일)') +
     (errN ? ' · <span class="dn">' + errN + '종목 받기 실패</span>' : '');
-  const per = ui.per === 1 ? md(last) + ' 하루' : md(days[0]) + '~' + md(last) + ' ' + days.length + '거래일';
-  const ok = rows.filter(r => val(r) != null);
-  const tot = ok.reduce((a, r) => a + val(r), 0), nb = ok.filter(r => val(r) > 0).length;
+  const per = W === 1 ? md(last) + ' 하루' : md(days[0]) + '~' + md(last) + ' ' + days.length + '거래일';
+  const ok = rows.filter(r => r.sumW != null);
+  const tot = ok.reduce((a, r) => a + r.sumW, 0), nb = ok.filter(r => r.sumW > 0).length;
+
+  // 0) 받은 날이 고른 기간보다 짧을 때
+  let h = W > all.length ? '<p class="banner">받아 둔 자료가 ' + all.length + '거래일치뿐입니다. "새로 받기"를 누르면 ' + MAXD + '거래일치를 받습니다(Apps Script 새 버전이 필요할 수 있습니다).</p>' : '';
 
   // 1) 요약
   const down = mkt != null && mkt <= -0.5, crash = mkt != null && mkt <= -1.5;
   const against = rows.filter(r => r.today > 0 && r.ret != null && r.ret < 0).sort((a, b) => b.today - a.today).slice(0, 5);
   const steady = rows.filter(r => r.tags.some(t => t[0] === '지속 유입')).sort((a, b) => b.sum5 - a.sum5).slice(0, 5);
-  let h = '<section class="lead' + (down ? ' down' : '') + '">' +
+  const longRun = rows.filter(r => r.streak >= 5).sort((a, b) => b.streak - a.streak).slice(0, 5);
+  h += '<section class="lead' + (down ? ' down' : '') + '">' +
     '<p>' + md(last) + ' 상위 ' + rows.length + '종목 시가총액 가중 평균 등락률은 <b class="n ' + cls(mkt) + '">' + pct(mkt) + '</b>입니다' +
     (crash ? ' — <b>급락장</b>입니다.' : down ? ' — 약세장입니다.' : '.') + '</p>' +
     '<p>' + per + ' 동안 외국인은 ' + rows.length + '종목에서 합계 <b class="n ' + cls(tot) + '">' + eok(tot) + '</b>을 ' + (tot >= 0 ? '순매수' : '순매도') + '했고, ' + nb + '종목을 순매수했습니다.</p>' +
     (against.length ? '<p>주가가 떨어졌는데도 외국인이 산 종목(최근일): ' + against.map(r => '<b>' + esc(r.n) + '</b> ' + eok(r.today)).join(', ') + '</p>' : '<p>최근일에 주가가 떨어졌는데 외국인이 산 종목은 없습니다.</p>') +
-    (steady.length ? '<p>5일 중 4일 이상 꾸준히 산 종목: ' + steady.map(r => '<b>' + esc(r.n) + '</b>').join(', ') + '</p>' : '') +
+    (steady.length ? '<p>최근 5일 중 4일 이상 꾸준히 산 종목: ' + steady.map(r => '<b>' + esc(r.n) + '</b>').join(', ') + '</p>' : '') +
+    (longRun.length ? '<p>5일 넘게 하루도 빠짐없이 사고 있는 종목: ' + longRun.map(r => '<b>' + esc(r.n) + '</b> ' + r.streak + '일').join(', ') + '</p>' : '') +
     '</section>';
 
   // 2) 업종별
   const secs = {};
-  rows.forEach(r => { const s = secs[r.sec] || (secs[r.sec] = {n: r.sec, v: 0, cap: 0, cnt: 0, days: days.map(() => 0)}); if (val(r) != null) s.v += val(r); s.cap += r.cap; s.cnt++; r.amt.forEach((x, i) => { if (x != null) s.days[i] += x; }); });
+  rows.forEach(r => { const s = secs[r.sec] || (secs[r.sec] = {n: r.sec, v: 0, cap: 0, cnt: 0, days: days.map(() => 0)}); if (r.sumW != null) s.v += r.sumW; s.cap += r.cap; s.cnt++; r.amt.forEach((x, i) => { if (x != null) s.days[i] += x; }); });
   const sl = Object.values(secs).sort((a, b) => b.v - a.v), mx = Math.max(1, ...sl.map(s => Math.abs(s.v)));
+  const nz = sl.filter(s => s.v), pick = W >= 5 ? nz.filter(s => s.v > 0).slice(0, 3).concat(nz.filter(s => s.v < 0).slice(-2)) : [];
   h += '<section class="card"><h2>업종별 외국인 순매수 <span class="note">' + per + '</span></h2>' +
     '<div class="sec">' + sl.map(s => {
       const w = Math.abs(s.v) / mx * 50, left = s.v >= 0 ? 50 : 50 - w;
@@ -312,31 +346,35 @@ function render() {
         '<span class="v n ' + cls(s.v) + '">' + eok(s.v) + '</span>';
     }).join('') + '</div>' +
     '<p class="note">오른쪽(빨강)이 순매수, 왼쪽(파랑)이 순매도입니다. 이름 옆 숫자는 묶인 종목 수입니다.</p>' +
+    (pick.length ? '<h3 style="font-size:14px">누적 흐름 <span class="note">많이 산 업종 3개·많이 판 업종 2개, 기간 첫날부터 더해 감</span></h3>' + cumChart(pick, days) : '') +
     '<details><summary class="note">업종별 날짜 흐름 보기</summary><div class="tbl"><table style="min-width:420px"><thead><tr><th>업종</th><th></th>' +
     days.map(d => '<th>' + md(d) + '</th>').join('') + '</tr></thead><tbody>' +
     sl.map(s => '<tr><td>' + esc(s.n) + '</td><td></td>' + s.days.map(x => '<td class="n ' + cls(x) + '">' + eok(x) + '</td>').join('') + '</tr>').join('') +
     '</tbody></table></div></details></section>';
 
   // 3) 순매수·순매도 상위
-  const sorted = ok.slice().sort((a, b) => val(b) - val(a));
-  const tb = sorted.filter(r => val(r) > 0).slice(0, 10), ts = sorted.filter(r => val(r) < 0).reverse().slice(0, 10);
+  const sorted = ok.slice().sort((a, b) => b.sumW - a.sumW);
+  const tb = sorted.filter(r => r.sumW > 0).slice(0, 10), ts = sorted.filter(r => r.sumW < 0).reverse().slice(0, 10);
   h += '<section class="card"><h2>종목 순위 <span class="note">' + per + '</span></h2><div class="cols">' +
     '<div><h3 class="up" style="font-size:14px">순매수 상위</h3><div class="list">' + (tb.map(itemHtml).join('') || '<p class="note">없음</p>') + '</div></div>' +
     '<div><h3 class="dn" style="font-size:14px">순매도 상위</h3><div class="list">' + (ts.map(itemHtml).join('') || '<p class="note">없음</p>') + '</div></div>' +
-    '</div><p class="note">네모 다섯 칸은 오래된 날부터 최근일까지 외국인이 산 날(빨강)·판 날(파랑)입니다. "지속 유입"은 5일 중 4일 이상 순매수, "단기 매수"는 최근일엔 샀지만 5일 중 2일 이하, "하락 중 매수"는 최근일 주가가 내렸는데 산 경우, "지속 이탈"은 5일 중 4일 이상 순매도입니다.</p></section>';
+    '</div><p class="note">네모 칸은 오래된 날부터 최근일까지 외국인이 산 날(빨강)·판 날(파랑)입니다. "지속 유입"은 최근 5일 중 4일 이상 순매수, "단기 매수"는 최근일엔 샀지만 5일 중 2일 이하, "하락 중 매수"는 최근일 주가가 내렸는데 산 경우, "지속 이탈"은 5일 중 4일 이상 순매도, "○일 연속"은 최근일까지 하루도 빠짐없이 같은 방향인 날 수입니다.</p></section>';
 
   // 4) 전체 표
-  const COLS = [['n', '종목'], ['sec', '업종'], ['cap', '시총'], ['today', '최근일'], ['sum5', '5일 합계'], ['buys', '산 날'], ['str5', '5일 시총 대비'], ['ret', '등락률'], ['frd', '지분율 변화']];
+  const wl = W === 1 ? '최근일' : days.length + '일';
+  const COLS = [['n', '종목'], ['sec', '업종'], ['cap', '시총'], ['today', '최근일'], ['sumW', wl + ' 합계'], ['buys', '산 날'], ['streak', '연속'], ['strW', '시총 대비'], ['chgW', '주가'], ['frd', '지분율 변화']];
   const get = (r, k) => k === 'n' || k === 'sec' ? r[k] : r[k] == null ? -Infinity : r[k];
-  const all = rows.slice().sort((a, b) => { const x = get(a, ui.sort), y = get(b, ui.sort); return (typeof x === 'string' ? x.localeCompare(y) : x - y) * ui.dir; });
-  h += '<section class="card"><h2>' + rows.length + '종목 전체</h2><div class="tbl"><table><thead><tr>' +
+  if (!COLS.some(c => c[0] === ui.sort)) ui.sort = 'sumW';
+  const list = rows.slice().sort((a, b) => { const x = get(a, ui.sort), y = get(b, ui.sort); return (typeof x === 'string' ? x.localeCompare(y) : x - y) * ui.dir; });
+  h += '<section class="card"><h2>' + rows.length + '종목 전체 <span class="note">' + per + '</span></h2><div class="tbl"><table><thead><tr>' +
     COLS.map(c => '<th data-k="' + c[0] + '"' + (ui.sort === c[0] ? ' aria-sort="' + (ui.dir > 0 ? 'ascending' : 'descending') + '"' : '') + '>' + c[1] + (ui.sort === c[0] ? (ui.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') +
-    '</tr></thead><tbody>' + all.map(r => '<tr><td>' + esc(r.n) + (r.err ? ' <span class="dn" title="' + esc(r.err) + '">!</span>' : '') + '</td><td>' + esc(r.sec) + '</td>' +
+    '</tr></thead><tbody>' + list.map(r => '<tr><td>' + esc(r.n) + (r.err ? ' <span class="dn" title="' + esc(r.err) + '">!</span>' : '') + '</td><td>' + esc(r.sec) + '</td>' +
       '<td class="n">' + (r.cap >= 10000 ? (r.cap / 10000).toFixed(1) + '조' : r.cap.toLocaleString() + '억') + '</td>' +
-      '<td class="n ' + cls(r.today) + '">' + eok(r.today) + '</td><td class="n ' + cls(r.sum5) + '">' + eok(r.sum5) + '</td>' +
-      '<td>' + dots(r.amt) + '</td><td class="n">' + pct(r.str5, 3) + '</td><td class="n ' + cls(r.ret) + '">' + pct(r.ret) + '</td>' +
+      '<td class="n ' + cls(r.today) + '">' + eok(r.today) + '</td><td class="n ' + cls(r.sumW) + '">' + eok(r.sumW) + '</td>' +
+      '<td>' + dots(r.amt) + '</td><td class="n ' + cls(r.streak) + '">' + (r.streak ? (r.streak > 0 ? '매수 ' : '매도 ') + Math.abs(r.streak) + '일' : '–') + '</td>' +
+      '<td class="n">' + pct(r.strW, 3) + '</td><td class="n ' + cls(r.chgW) + '">' + pct(r.chgW) + '</td>' +
       '<td class="n ' + cls(r.frd) + '">' + (r.frd == null ? '–' : (r.frd > 0 ? '+' : r.frd < 0 ? '−' : '') + Math.abs(r.frd).toFixed(2) + '%p') + '</td></tr>').join('') +
-    '</tbody></table></div><p class="note">제목을 누르면 그 기준으로 정렬합니다. 지분율 변화는 5일 전 대비 외국인 지분율 차이입니다.</p></section>';
+    '</tbody></table></div><p class="note">제목을 누르면 그 기준으로 정렬합니다. 주가와 지분율 변화는 기간 첫날 대비입니다(최근일은 전일 대비 등락률).</p></section>';
 
   out.innerHTML = h;
   out.querySelectorAll('th[data-k]').forEach(th => th.onclick = () => {

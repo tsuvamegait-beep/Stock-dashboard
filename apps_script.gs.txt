@@ -38,6 +38,7 @@ function save_(obj) {
 }
 function doGet(e) {
   if (!e || !e.parameter || e.parameter.key !== SECRET_KEY) return out_({ok: false, error: '비밀번호가 맞지 않습니다'});
+  if (e.parameter.gas === 'quotes') return out_(gasQuotes_());
   if (e.parameter.history) return out_({ok: true, history: readHistory_()});
   if (e.parameter.trades) return out_({ok: true, rows: readTrades_()});
   if (e.parameter.series) return out_(readSeries_(String(e.parameter.t || ''), String(e.parameter.from || '')));
@@ -497,4 +498,67 @@ function listNh() {
     Logger.log((i + 1) + '번 계좌: ' + a.no.slice(0, 3) + '-' + a.no.slice(3, 5) + '-' + a.no.slice(5) + ' (구분 ' + a.type + ') · 올해 거래 ' + n + '건');
     Utilities.sleep(300);
   });
+}
+
+// ICE 공개 지연 체결가와 ECB 기준환율. 호출 시 5분 캐시를 공유한다.
+const GAS_FEEDS = {
+  hh: [53, 68],
+  ttf: [4331, 7979],
+  jkm: [4172, 7903]
+};
+
+function gasContracts_(body) {
+  const months = 'Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec'.split(' ');
+  const rows = JSON.parse(body).flatMap(row => {
+    const month = /^([A-Z][a-z]{2})(\d{2})$/.exec(row.marketStrip);
+    const time = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}) (AM|PM) GMT$/.exec(row.lastTime);
+    if (!month || !time || !Number.isFinite(row.lastPrice)) return [];
+    const monthNumber = months.indexOf(month[1]) + 1;
+    if (!monthNumber) return [];
+    const [, m, d, y, h, min, meridiem] = time;
+    const hour = String(Number(h) % 12 + (meridiem === 'PM' ? 12 : 0)).padStart(2, '0');
+    return [{
+      month: '20' + month[2] + '-' + String(monthNumber).padStart(2, '0'),
+      time: y + '-' + m + '-' + d + 'T' + hour + ':' + min + ':00Z',
+      price: row.lastPrice,
+      change: Number.isFinite(row.change) ? row.change : null
+    }];
+  });
+  if (!rows.length) throw new Error('No monthly trades');
+  return rows.sort((a, b) => a.month.localeCompare(b.month)).slice(0, 12);
+}
+
+function gasFx_(body) {
+  // ECB reference-rate XML has one dated Cube per observation.
+  const rates = {};
+  for (const [, date, contents] of body.matchAll(/<Cube\s+time=["'](\d{4}-\d{2}-\d{2})["']>([\s\S]*?)<\/Cube>/g)) {
+    const usd = /<Cube\s+currency=["']USD["']\s+rate=["']([\d.]+)["']/.exec(contents);
+    if (usd && Number(usd[1]) > 0) rates[date] = Number(usd[1]);
+  }
+  if (!Object.keys(rates).length) throw new Error('No ECB rates');
+  return rates;
+}
+
+function gasQuotes_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get('gas-quotes-v1');
+  if (cached) return JSON.parse(cached);
+  const names = [...Object.keys(GAS_FEEDS), 'fx'];
+  const urls = Object.values(GAS_FEEDS).map(([product, hub]) =>
+    'https://www.ice.com/marketdata/api/productguide/charting/contract-data?productId='
+      + product + '&hubId=' + hub + '&mode=2');
+  urls.push('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist-90d.xml');
+  const result = {ok: true, checkedAt: new Date().toISOString(), feeds: {}, errors: []};
+  const responses = UrlFetchApp.fetchAll(urls.map(url => ({url, muteHttpExceptions: true})));
+  names.forEach((name, i) => {
+    try {
+      if (responses[i].getResponseCode() !== 200) throw new Error('Upstream error');
+      const body = responses[i].getContentText();
+      result.feeds[name] = name === 'fx' ? gasFx_(body) : gasContracts_(body);
+    } catch (_) {
+      result.errors.push(name);
+    }
+  });
+  cache.put('gas-quotes-v1', JSON.stringify(result), result.errors.length ? 60 : 300);
+  return result;
 }

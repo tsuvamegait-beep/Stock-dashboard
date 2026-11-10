@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가스 가격 모니터 · 주식 투자 대시보드</title>
+<style>
+:root{color-scheme:light dark;--bg:#f1f5f7;--card:#fff;--ink:#132933;--muted:#49616e;--line:#d6e1e6;--accent:#006960}
+@media(prefers-color-scheme:dark){:root{--bg:#131e24;--card:#1c2a31;--ink:#f0f6f7;--muted:#b5c8ce;--line:#43525a;--accent:#83dfce}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,sans-serif}main{width:min(1080px,calc(100% - 32px));margin:30px auto 54px}a{color:var(--accent)}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,5vw,46px);line-height:1.15;margin:14px 0 8px}h2{font-size:21px;margin-bottom:10px}h3{font-size:16px}.muted,small{color:var(--muted)}header{margin-bottom:22px}.card{padding:17px;border:1px solid var(--line);border-radius:14px;background:var(--card);min-width:0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}.block{margin-top:14px}.row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}select,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}button{cursor:pointer}button:disabled{cursor:wait}.price{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;text-align:left}th,td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}tr.selected{background:color-mix(in srgb,var(--accent) 12%,var(--card))}.strategy p{margin:6px 0 12px}.strategy p:last-child{margin-bottom:0}.links{margin-top:9px}
+@media(max-width:660px){main{width:calc(100% - 24px);margin-top:18px}.grid{grid-template-columns:1fr}.price{font-size:25px}}
+</style>
+<main>
+  <header>
+    <a href="../">← 주식 투자 대시보드</a>
+    <h1>가스 가격 모니터</h1>
+    <p class="muted">미국 헨리허브 · 유럽 TTF · 아시아 JKM의 같은 인도월 선물 비교</p>
+  </header>
+
+  <section aria-label="시장 가격">
+    <div class="row">
+      <label for="month">인도월</label><select id="month" disabled><option>—</option></select>
+      <button id="refresh" type="button">시세 새로고침</button>
+    </div>
+    <p id="status" class="muted" role="status">시세를 불러오는 중…</p>
+    <div id="quotes" class="grid"></div>
+  </section>
+
+  <section class="card block">
+    <h2>지역 간 가격차</h2>
+    <div class="table-wrap"><table><thead><tr><th scope="col">비교</th><th scope="col">차이 ($/MMBtu)</th><th scope="col">기준일 (UTC)</th></tr></thead><tbody id="spreads"></tbody></table></div>
+    <p class="muted links">같은 인도월과 같은 UTC 날짜의 최근 체결가끼리 비교합니다. 체결 시각은 서로 다를 수 있습니다. TTF 환산값은 €/MWh × ECB 달러/유로 ÷ 3.412141633입니다. 환율 휴일에는 4일 이내의 직전 관측값을 사용합니다.</p>
+    <p class="muted">가격차에서 액화·선박 운임·재기화·연료비를 빼야 LNG 거래의 채산성을 가늠할 수 있습니다.</p>
+  </section>
+
+  <section class="card block">
+    <h2>인도월별 선물 가격</h2>
+    <div class="table-wrap" tabindex="0" aria-label="인도월별 가격표"><table><thead><tr><th scope="col">인도월</th><th scope="col">헨리허브 $/MMBtu</th><th scope="col">TTF €/MWh</th><th scope="col">JKM $/MMBtu</th></tr></thead><tbody id="curve"></tbody></table></div>
+    <p class="muted links">ICE 지연 체결가 기준. 최근 4일을 넘긴 체결은 표에서 제외합니다. 빈칸은 해당 월물의 유효한 체결가가 없는 경우입니다.</p>
+  </section>
+
+  <section class="card block strategy">
+    <h2>트레이더라면 볼 종목과 매수 조건</h2>
+    <h3>미국 가스 강세 · EQT (EQT)</h3>
+    <p>헨리허브 근월과 다음 월물이 함께 오르고, 미국 재고의 5년 평균 대비 초과분이 줄거나 부족분이 커지면 EQT를 먼저 검토하겠습니다. 실제 판매가에 영향을 주는 애팔래치아 지역 가격차와 헤지 비중을 확인한 뒤 진입하겠습니다. 근월만 급등하면 진입을 보류합니다. <a href="https://ir.eqt.com/investor-relations/financials/quarterly-results/default.aspx">EQT 실적</a> · <a href="https://www.eia.gov/naturalgas/storage/">EIA 가스 재고</a></p>
+    <h3>해외 LNG 프리미엄 확대 · Cheniere Energy (LNG)</h3>
+    <p>TTF 또는 JKM의 헨리허브 대비 프리미엄이 지속되고 액화·운송 비용을 뺀 채산성도 개선되면 LNG를 검토하겠습니다. 장기계약 비중이 높으므로 단기 가격차보다 터미널 가동률, 신규 물량, 미계약 물량의 판매 마진과 현금흐름을 우선 확인합니다. <a href="https://lngir.cheniere.com/sec-filings/quarterly-reports/content/0000003570-26-000014/0000003570-26-000014.pdf">Cheniere 계약 구조</a> · <a href="https://agsi.gie.eu/">유럽 가스 재고</a></p>
+    <h3>원유 강세 · ExxonMobil (XOM) / 정유 · Valero (VLO)</h3>
+    <p>Brent·WTI가 함께 강해지고 미국 상업용 원유 재고 감소가 이어지면 XOM을 검토하겠습니다. VLO는 휘발유·디젤과 원유의 가격차인 정제마진, 제품 재고, 가동률이 개선될 때 따로 보겠습니다. 가스 급등은 정유사의 연료비 부담도 키울 수 있습니다. <a href="https://www.eia.gov/petroleum/supply/weekly/">EIA 석유 수급</a> · <a href="https://investor.exxonmobil.com/earnings">XOM 실적</a> · <a href="https://investorvalero.com/financials/default.aspx">VLO 실적</a> · <a href="../vlo/">VLO 모니터</a></p>
+  </section>
+  <p class="muted links">시세 출처 ICE · 환율 출처 <a href="https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates">ECB</a>. 화면을 열 때와 화면이 보이는 동안 5분마다 확인합니다.</p>
+</main>
+<script src="monitor.js" defer></script>
+</html>

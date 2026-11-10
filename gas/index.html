@@ -9,6 +9,12 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,sans-serif}main{width:min(1080px,calc(100% - 32px));margin:30px auto 54px}a{color:var(--accent)}h1,h2,h3,p{margin:0}h1{font-size:clamp(30px,5vw,46px);line-height:1.15;margin:14px 0 8px}h2{font-size:21px;margin-bottom:10px}h3{font-size:16px}.muted,small{color:var(--muted)}header{margin-bottom:22px}.card{padding:17px;border:1px solid var(--line);border-radius:14px;background:var(--card);min-width:0}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}.block{margin-top:14px}.row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}select,button{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}button{cursor:pointer}button:disabled{cursor:wait}.price{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;text-align:left}th,td{padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}tr.selected{background:color-mix(in srgb,var(--accent) 12%,var(--card))}.strategy p{margin:6px 0 12px}.strategy p:last-child{margin-bottom:0}.links{margin-top:9px}
 @media(max-width:660px){main{width:calc(100% - 24px);margin-top:18px}.grid{grid-template-columns:1fr}.price{font-size:25px}}
 .market-data{position:relative;isolation:isolate}.market-data::before{content:"";position:absolute;inset:0;background:url("https://owlchart.com/images/owlchart-watermark.svg") center/contain no-repeat;opacity:.09;z-index:-1;pointer-events:none}.market-data .card{background:color-mix(in srgb,var(--card) 92%,transparent)}
+.trend-svg{display:block;width:100%;height:250px;color:var(--muted);font-size:12px;touch-action:pan-y}
+.trend-svg line{stroke:var(--line)}.trend-svg text{fill:currentColor}.trend-svg .cursor{stroke:currentColor;stroke-dasharray:4 4}
+.trend-svg path{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.trend-legend{display:flex;gap:5px 14px;flex-wrap:wrap;font-size:14px}
+.trend-legend span::before{content:"";display:inline-block;width:14px;vertical-align:middle;margin-right:5px;border-top:3px solid var(--series)}
+.trend-range{display:flex;align-items:center;gap:10px}.trend-range input{flex:1;min-width:0;height:44px;accent-color:var(--accent)}
 </style>
 <main>
   <header>
@@ -24,6 +30,25 @@
     <p id="status" class="muted" role="status">시세를 불러오는 중…</p>
     <div id="quotes" class="grid"></div>
     <p class="links"><a href="https://owlchart.com/">Powered by OwlChart</a> · 공급처 지연 시세</p>
+  </section>
+
+  <section class="card block market-data" aria-labelledby="trend-title">
+    <h2 id="trend-title">최근 1년 가스 가격 추세</h2>
+    <div class="row">
+      <label for="trend-mode">그래프 보기</label>
+      <select id="trend-mode">
+        <option value="prices">세 지표 비교</option>
+        <option value="henry">헨리허브 확대</option>
+        <option value="spreads">지역 간 가격차</option>
+      </select>
+    </div>
+    <p id="trend-period" class="muted links"></p>
+    <svg id="trend-chart" class="trend-svg" role="img" aria-label="최근 1년 일별 가스 선물 가격 그래프"></svg>
+    <div id="trend-legend" class="trend-legend"></div>
+    <label class="trend-range" for="trend-day">관측일 <input id="trend-day" type="range" min="0" max="0" value="0" disabled></label>
+    <output id="trend-values" class="muted" for="trend-day"></output>
+    <p class="muted links">단위 $/MMBtu. TTF에는 관측일별 ECB 환율을 적용합니다. 가격차는 같은 UTC 관측일끼리 계산하며 인도월은 다를 수 있습니다.</p>
+    <p class="muted">근월 선물은 계약 교체 시 가격이 뛸 수 있습니다. 출처 <a href="https://owlchart.com/">Powered by OwlChart</a></p>
   </section>
 
   <section class="card block">
@@ -51,5 +76,5 @@
   </section>
   <p class="muted links">시세 제공 OwlChart · 환율 출처 <a href="https://data.ecb.europa.eu/key-figures/ecb-interest-rates-and-exchange-rates/exchange-rates">ECB</a> (Frankfurter 경유). 화면을 열 때와 화면이 보이는 동안 5분마다 확인합니다.</p>
 </main>
-<script src="monitor.js?v=browser-1" defer></script>
+<script src="monitor.js?v=trend-1" defer></script>
 </html>

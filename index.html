@@ -1729,7 +1729,7 @@ const SEC_ETF = [
 const SEC_BM = 'SPY', SEC_LS = 'portfolio-sector';
 const SEC_PER = [{id: '1d', l: '1일'}, {id: '1w', l: '1주', d: 7}, {id: '1m', l: '1개월', m: 1}, {id: '3m', l: '3개월', m: 3}, {id: '6m', l: '6개월', m: 6}, {id: 'ytd', l: 'YTD'}, {id: '1y', l: '1년', m: 12}];
 const sec = (() => { const d = {per: '1w', off: []}; try { return Object.assign(d, JSON.parse(localStorage.getItem(SEC_LS) || '{}')); } catch (e) { return d; } })();
-sec.busy = false; sec.msg = ''; sec.auto = ''; sec.open = [];
+sec.busy = false; sec.msg = ''; sec.auto = ''; sec.open = []; sec.pick = null; sec.sbusy = {}; sec.serr = {};
 const secSave = () => { try { localStorage.setItem(SEC_LS, JSON.stringify({per: sec.per, off: sec.off})); } catch (e) {} };
 async function secFetch(force) {
   const cfg = getSync();
@@ -1830,7 +1830,7 @@ const SEC_TOP = {
 };
 function secTop(out, ok) {
   const card = mk('div', {class: 'card'}, out); mk('h2', {}, card, '섹터별 대표 종목');
-  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, '각 섹터 ETF에서 비중이 큰 순서입니다(대략적인 구성으로, 분기마다 조금씩 바뀝니다). 섹터 순서는 위 수익률 순위를 따릅니다. "10개 보기"를 누르면 펼쳐집니다.');
+  mk('p', {class: 'sub', style: 'margin:2px 0 10px'}, card, '각 섹터 ETF에서 비중이 큰 순서입니다(대략적인 구성으로, 분기마다 조금씩 바뀝니다). 섹터 순서는 위 수익률 순위를 따릅니다. "10개 보기"를 누르면 펼쳐지고, 종목을 누르면 6개월 주가 그래프가 나옵니다.');
   const all = mk('button', {type: 'button', style: 'margin-bottom:10px'}, card, sec.open.length >= SEC_ETF.length ? '모두 5개로 접기' : '모두 10개로 펼치기');
   all.addEventListener('click', () => { sec.open = sec.open.length >= SEC_ETF.length ? [] : SEC_ETF.map(x => x.t); render(); });
   const grid = mk('div', {style: 'display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px'}, card);
@@ -1848,10 +1848,56 @@ function secTop(out, ok) {
       mk('td', {style: 'width:22px;padding:4px 2px;color:var(--muted)'}, tr, String(i + 1));
       mk('td', {style: 'text-align:left;padding:4px 2px'}, tr, s[1]);
       mk('td', {style: 'text-align:right;padding:4px 2px;color:var(--muted);font-size:12px'}, tr, s[0]);
+      const on = sec.pick && sec.pick.t === s[0] && sec.pick.s === t;
+      tr.style.cursor = 'pointer'; tr.tabIndex = 0; tr.setAttribute('role', 'button'); tr.setAttribute('aria-pressed', String(!!on));
+      if (on) { tr.style.background = 'var(--wash, rgba(0,0,0,.05))'; tr.style.fontWeight = '700'; }
+      const pick = () => { sec.pick = on ? null : {t: s[0], n: s[1], s: t}; if (!on) secStockFetch(s[0]); render(); };
+      tr.addEventListener('click', pick); tr.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } });
     });
     const b = mk('button', {type: 'button', style: 'margin-top:6px;padding:3px 10px;font-size:12px'}, box, open ? '5개만 보기 ▴' : '10개 보기 ▾');
     b.addEventListener('click', () => { const i = sec.open.indexOf(t); if (i >= 0) sec.open.splice(i, 1); else sec.open.push(t); render(); });
+    if (sec.pick && sec.pick.s === t) secStockPanel(grid, z.x);
   });
+}
+// 대표 종목 6개월 주가: 누를 때 그 종목만 ?series=1로 한 번 받아 rsCache에 하루 보관
+const SEC_GT = {'BRK.B': 'NYSE:BRK.B'}; // GOOGLEFINANCE 표기가 다른 티커
+async function secStockFetch(t) {
+  const today = rsDay(Date.now());
+  if ((rsCache[t] && rsCache[t].day === today && rsCache[t].rows && rsCache[t].rows.length) || sec.sbusy[t]) return;
+  const cfg = getSync();
+  if (!cfg) { sec.serr[t] = '계좌 관리 탭에서 기기 간 동기화(Apps Script 주소·비밀번호)를 먼저 설정하세요.'; scheduleRender(); return; }
+  sec.sbusy[t] = true; delete sec.serr[t]; scheduleRender();
+  try {
+    const gt = SEC_GT[t] || t, from = rsDay(Date.now() - 200 * 864e5);
+    const res = await fetch(cfg.url + (cfg.url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(cfg.key) + '&series=1&from=' + from + '&t=' + encodeURIComponent(gt), {cache: 'no-store'});
+    const j = await res.json(); if (!j.ok) throw new Error(j.error || '연결 실패');
+    const x = j.series && j.series[gt];
+    if (!x || !x.ok || !x.rows || !x.rows.length) throw new Error((x && x.error) || '시세 없음');
+    rsCache[t] = {day: today, ts: Date.now(), rows: x.rows}; rsCacheSave();
+  } catch (e) { sec.serr[t] = '주가를 불러오지 못했습니다: ' + (e && e.message ? e.message : e); }
+  delete sec.sbusy[t]; scheduleRender();
+}
+function secStockPanel(grid, etf) {
+  const P = sec.pick, t = P.t, box = mk('div', {style: 'grid-column:1/-1;border:1px solid var(--grid);border-radius:10px;padding:10px 12px'}, grid);
+  const h = mk('div', {style: 'display:flex;align-items:center;gap:8px;flex-wrap:wrap'}, box);
+  mk('b', {}, h, P.n + ' ' + t + ' · 6개월 주가');
+  const x = mk('button', {type: 'button', style: 'margin-left:auto;padding:3px 10px;font-size:12px'}, h, '닫기'); x.addEventListener('click', () => { sec.pick = null; render(); });
+  const c = rsCache[t], rows = c && c.rows;
+  if (!rows || rows.length < 2) { mk('p', {class: 'sub', style: 'margin:8px 0 0'}, box, sec.sbusy[t] ? '주가를 불러오는 중입니다…' : (sec.serr[t] || '주가가 없습니다.')); return; }
+  const end = rows[rows.length - 1][0], k0 = rsAt(rows, rsStart({m: 6}, end)), s0 = rows[k0 == null ? 0 : k0][0];
+  const seg = rows.filter(r => r[0] >= s0), p0 = seg[0][1], last = seg[seg.length - 1][1], r6 = last / p0 - 1;
+  const er = rsCache[etf.t] && rsCache[etf.t].rows, ek = er ? rsAt(er, s0) : null, eb = ek != null ? er[ek][1] : null;
+  const eR = eb ? er[er.length - 1][1] / eb - 1 : null;
+  const money = v => '$' + v.toLocaleString('en-US', {maximumFractionDigits: v >= 100 ? 0 : 2});
+  const sub = mk('p', {class: 'sub', style: 'margin:4px 0 8px'}, box);
+  sub.append(seg[0][0] + ' → ' + end + ' · ' + money(p0) + ' → ' + money(last) + ' · ');
+  const rb = mk('b', {}, sub, pct(r6)); rb.style.color = r6 > 0 ? 'var(--up)' : r6 < 0 ? 'var(--dn)' : '';
+  if (eR != null) sub.append(' · 같은 기간 ' + etf.n + ' ' + etf.t + ' ' + pct(eR) + ' (' + secPp(r6 - eR) + '%p)');
+  const lines = [{k: 'S', name: t, color: etf.c, w: '2.4'}];
+  const pts = seg.map(r => { const p = {d: r[0], S: r[1] / p0 * 100}; if (eb) { const kk = rsAt(er, r[0]); p.E = kk != null ? er[kk][1] / eb * 100 : 100; } return p; });
+  if (eb) lines.push({k: 'E', name: etf.t + '(섹터)', color: 'var(--muted)', w: '1.4'});
+  rsChart(box, pts, lines, {label: P.n + ' 6개월 주가', fmt: v => money(v / 100 * p0), tip: v => money(v / 100 * p0) + ' (' + (v >= 100 ? '+' : '') + (v - 100).toFixed(1) + '%)'});
+  if (eb) mk('p', {class: 'sub', style: 'margin:6px 0 0'}, box, '회색 선은 같은 기간 ' + etf.t + '를 이 종목 시작 가격에 맞춰 그린 것입니다.');
 }
 
 /* ================= 화면: 종목분석 (내 종목 주가 + 코스피 신용잔고) ================= */

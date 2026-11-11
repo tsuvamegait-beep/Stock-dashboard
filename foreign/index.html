@@ -247,12 +247,12 @@ async function load(mode) {
       $('status').textContent = '구글 시트 기록을 불러오는 중입니다…';
       let j = null;
       try { j = await api('fsheet=1&days=' + MAXD); }
-      catch (e) { if (!/기록 시트/.test(e.message)) throw e; note = e.message; }
+      catch (e) { if (!/기록 시트|FOREIGN_SHEET_ID|외국인수급/.test(e.message)) throw e; note = e.message; }
       if (j && Array.isArray(j.items)) {
         D = {at: j.at, items: j.items, errors: {}, sheetAt: j.at}; lsSet('foreign-last', D); render();
         return;
       }
-      if (!note) note = 'Apps Script가 기록 시트를 모릅니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포한 뒤 setupForeignSheet를 한 번 실행해 주십시오';
+      if (!note) note = 'Apps Script가 기록 시트를 모릅니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포한 뒤 스크립트 속성 FOREIGN_SHEET_ID에 StockCode 시트 주소를 넣고 setupForeignSheet를 한 번 실행해 주십시오';
     }
     // 시트가 없거나 "장중 지금 값": 나무에서 직접(시트 기록이 있으면 최근 3일만 받아 덮어 붙임)
     const hasBase = mode === 'live' && D && D.sheetAt;

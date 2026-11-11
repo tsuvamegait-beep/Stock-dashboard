@@ -210,12 +210,34 @@ async function load() {
   requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '92%'; });
   $('status').textContent = '50종목 ' + MAXD + '거래일 수급을 받는 중입니다(20~40초 걸립니다)…';
   try {
-    const j = await api('foreign=1&top=50&n=' + MAXD);
-    if (!Array.isArray(j.items)) throw new Error('Apps Script가 외국인 수급을 모릅니다 — 새 코드를 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오');
-    D = {at: j.at, items: j.items, errors: j.errors || {}}; lsSet('foreign-last', D);
+    // 한 번에 50종목을 받으면 Apps Script가 오래 걸려 끊길 수 있어(Failed to fetch), 종목 목록을 받고 10종목씩 나눠 받음
+    let top = lsGet('foreign-top', null);
+    if (!top || top.day !== todayStr() || !Array.isArray(top.list) || top.list.length < 10) {
+      $('status').textContent = '코스피 시가총액 순위를 받는 중입니다…';
+      const u = await api('universe=1');
+      const list = (u.list || []).filter(r => r[2] === '1' && r[6] > 0 && r[8] && r[8] !== ' ' && r[8] !== '0' && '5689A'.indexOf(r[7] || '-') < 0)
+        .sort((a, b) => b[6] - a[6]).slice(0, 50).map(r => ({c: r[0], n: r[1], cap: r[6], k2: r[9] || '0'}));
+      if (!list.length) throw new Error('종목 목록에 시가총액이 없습니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오');
+      top = {day: todayStr(), list}; lsSet('foreign-top', top);
+    }
+    const items = [], errors = {};
+    for (let i = 0; i < top.list.length; i += 10) {
+      const part = top.list.slice(i, i + 10);
+      $('status').textContent = '외국인 수급을 받는 중입니다… ' + i + '/' + top.list.length + '종목';
+      const j = await api('flows=' + part.map(x => x.c + ':1').join(',') + '&n=' + MAXD);
+      Object.assign(errors, j.errors || {});
+      part.forEach(x => items.push(Object.assign({}, x, {f: (j.data && j.data[x.c]) || []})));
+    }
+    const t = kst().toISOString();
+    D = {at: t.slice(0, 10) + ' ' + t.slice(11, 19), items, errors}; lsSet('foreign-last', D);
     render();
   } catch (e) {
-    $('status').textContent = '받기 실패: ' + e.message;
+    let msg = '받기 실패: ' + e.message;
+    if (/Failed to fetch|NetworkError|Load failed|network/i.test(e.message)) {
+      try { await api('ping=1'); msg += ' — Apps Script 연결은 정상입니다. 잠시 뒤 "새로 받기"를 다시 눌러 주십시오(나무 응답이 늦었을 수 있습니다).'; }
+      catch (e2) { msg += ' — Apps Script에 연결되지 않습니다. 백테스트 Apps Script의 "배포 관리"에서 웹 앱 주소가 /exec로 끝나는지, 액세스가 "모든 사용자"인지 확인하고, ⚙ 연결 설정의 주소가 같은지 봐 주십시오.'; }
+    }
+    $('status').textContent = msg;
   } finally {
     busy = false; $('go').disabled = false; bar.style.transition = 'width .2s'; bar.style.width = '100%'; setTimeout(() => { pg.hidden = true; }, 300);
   }

@@ -7,7 +7,6 @@
 - 저장소: `index.html`(앱), `apps_script.gs.txt`(구글 Apps Script 서버 코드 — 사용자가 구글에 직접 붙여넣어 배포), `README.md`(기능별 사용법).
 - 서버 없음. 데이터는 브라우저 localStorage + 구글 시트 + Apps Script 웹 앱.
 - `index.html` 안의 화면별 함수: `renderHoldings`(보유 현황) `renderDetail`(상세 현황) `renderRS`(RS) `renderAna`(종목분석: 종목 직접 입력 `ana.base`, 보기 `ana.view` = 주가(기본, 안에 관련 종목 비교 `anaPeerControls`/`anaPeerChart` — 자동 추천) / 신용잔고 비교 `anaCreditData`) `renderSector`(미국 섹터: 11개 섹터 ETF `SEC_ETF` XLK…XLRE + 기준 SPY, RS와 같은 `?series=1`을 4개씩 차례로 받아 `rsCache`에 하루 한 번 보관, 탭을 열면 자동으로 받음. 기간 `SEC_PER` 1일~1년, 순위 막대·누적 흐름 선·기간별 표, 그 아래 섹터별 대표 종목 `SEC_TOP`(비중 상위 10개 고정 목록, 기본 5개·`sec.open`으로 펼침) `secTop`, 저장 `portfolio-sector`) `renderTrades` `renderPrices`(시세·환율) `renderOpening`(연초 잔고) `renderAccounts`(계좌 관리) `renderTheme`. 진입점은 `render()`.
-- 매도 알람(`sellCard`, 보유 현황 맨 위, 선택 계좌 전체): 보유 종목마다 `sellEval`로 0 정상/1 주의/2 경고/3 매도 검토. 손절선 평단 −`sell.stop`%(기본 10), 최근 60거래일 최고 종가 대비 −`sell.peak`%(20), 60일선 이탈 → 3. 20일선 2일 연속 이탈, 고점 하락 한도 3/4, 이익 5%+인데 고점 −10% → 2. 20일선 하루 이탈, 5일 안 하루 −8%, 손절선 70% → 1. 분류(`sectorOf`) 비중 `sell.conc`%(40) 초과 경고. 시세는 `?series=1`을 4개씩 `sellFetch`(탭 열면 하루 한 번), 시세 시트 지금가를 오늘 값으로 붙임. 설정 localStorage `portfolio-sell`. `rsCache` 보관 개수 80. 2026 반도체 복기(analysis/, GitHub 제외)로 만든 규칙.
 - 탭 줄(`#tabs`) 맨 끝, 테마 탭 다음에 "바로 가기" 버튼 `#goBtn`(탭과 같은 모양, `data-tab` 없음 — 탭 처리는 `#tabs button[data-tab]`만 봄). 누르면 `#goList` 링크 `a.go`(외국인 수급·백테스트·사무실·VLO)가 펼쳐지고 상태는 localStorage `portfolio-go`. PC 밝은 테마는 왼쪽 메뉴에서 아래로 펼침.
 
 ## 백테스트(`backtest/`, 대시보드와 분리)

@@ -1,4 +1,4 @@
-// 버전: 2026-11-06 · 마지막 변경: 외국인 수급(?foreign=1) 추가 — 코스피 시총 상위 50 종목별 외국인 순매수
+// 버전: 2026-11-11 · 마지막 변경: 외국인 수급 기록 시트(setupForeignSheet 한 번 실행 → 매일 18시 자동 수집, ?fsheet=1로 읽기)
 /**
  * 백테스트용 Apps Script (주식 대시보드 Apps Script와 별개의 새 프로젝트)
  * 나무증권 Open API(NH PLUG)에서 국내 종목 목록, 일봉, 투자자별 순매수를, DART에서 분기 재무를 받아 옵니다. 조회 전용 — 주문 API는 쓰지 않습니다.
@@ -9,6 +9,7 @@
  * 3) 왼쪽 톱니바퀴(프로젝트 설정) > 스크립트 속성 > 속성 추가
  *    이름 NH_APP_KEY / 값 nhplug.com 앱키,  이름 NH_APP_SECRET / 값 앱시크릿  (키는 코드에 직접 적지 마세요)
  *    (재무 기능) 이름 DART_API_KEY / 값 opendart.fss.or.kr 인증키 40자리
+ *    (외국인 수급 기록) 편집기 위쪽 함수 선택에서 setupForeignSheet → 실행 → 권한 허용. 시트가 만들어지고 매일 18시에 자동으로 쌓임
  * 4) 배포 > 새 배포 > 유형: 웹 앱 > 실행 계정: 나 > 액세스 권한: 모든 사용자 → 나온 웹 앱 주소를 백테스트 화면에 입력
  *    코드를 고친 뒤에는 "배포 관리 → 수정(연필) → 버전: 새 버전"으로 배포(주소가 그대로 유지됨)
  * 확인용: 편집기 위쪽 함수 선택에서 testBt → 실행 → 실행 로그 확인
@@ -23,6 +24,7 @@ function out_(obj) {
 //   한 봉 = [yyyyMMdd, 시가, 고가, 저가, 종가, 거래량, 기준가, 락구분코드] — 분할·배당락 보정은 백테스트 화면에서 기준가로 함
 // ?dart=005930&q=8 : DART 분기별 재무(최근 q개 보고서) + 주식 수. 금액은 원 단위
 // ?flows=005930:1,…&n=999 : 종목별 투자자 순매수(오래된 날짜 → 최근, 최대 999일). 한 줄 = [yyyyMMdd, 외국인, 기관계, 개인] 순매수 수량(주), 뒤에 [종가, 등락률%, 외국인 지분율%]
+// ?fsheet=1&days=30 : 외국인 수급 기록 시트에서 최근 days거래일(?foreign=1과 같은 모양). 시트는 setupForeignSheet로 만들고 매일 18시 자동으로 쌓임
 // ?foreign=1&top=50&n=5 : 코스피 시가총액 상위 top개(전일 시총 순) 종목별 최근 n일 수급. {at, items:[{c 코드, n 이름, cap 시총(억), k2 코스피200 산업군, f 위 flows 줄}], errors}
 function doGet(e) {
   const q = (e && e.parameter) || {};
@@ -31,6 +33,7 @@ function doGet(e) {
     if (q.universe) return out_({ok: true, list: universe_()});
     if (q.candles) return out_(candlesMany_(String(q.candles), +q.n || 300));
     if (q.flows) return out_(flowsMany_(String(q.flows), +q.n || 300));
+    if (q.fsheet) return out_(foreignSheet_(Math.max(1, Math.min(+q.days || 30, 500))));
     if (q.foreign) return out_(foreign_(Math.max(5, Math.min(+q.top || 50, 60)), Math.max(1, Math.min(+q.n || 5, 30))));
     if (q.dart) return out_(dartFin_(String(q.dart), Math.max(1, Math.min(+q.q || 8, 12))));
     return out_({ok: true, hello: '백테스트 Apps Script 연결됨'});
@@ -177,6 +180,79 @@ function foreign_(top, n) {
   const out = {ok: true, at: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'), items, errors};
   cachePutJson_(ck, out, 60);
   return out;
+}
+
+/* ===== 외국인 수급 기록 시트(매일 18시 자동으로 새 날짜만 덧붙임) =====
+ * 편집기에서 setupForeignSheet를 한 번 실행하면: 구글 드라이브에 "외국인 수급 기록" 시트를 만들고(이미 있으면 그대로),
+ * 스크립트 속성 FOREIGN_SHEET_ID에 적고, 평일 저녁 자동 수집(collectForeign)을 예약하고, 바로 한 번 채웁니다.
+ * "수급" 탭 한 줄 = 날짜, 코드, 이름, 외국인, 기관, 개인(순매수 수량), 종가, 등락률%, 외국인 지분율%
+ * "종목" 탭 = 마지막 수집 때의 시총 상위 50(코드, 이름, 시총(억), 코스피200 산업군) + 수집 시각
+ * 같은 날짜·종목 줄은 새 값으로 덮어씀(장중 잠정치가 나중에 확정치로 바뀌어도 맞춰짐). */
+const FS_HEAD = ['날짜', '코드', '이름', '외국인', '기관', '개인', '종가', '등락률', '지분율'];
+function foreignBook_(create) {
+  const p = PropertiesService.getScriptProperties();
+  let id = p.getProperty('FOREIGN_SHEET_ID'), ss = null;
+  if (id) { try { ss = SpreadsheetApp.openById(id); } catch (e) { ss = null; } }
+  if (!ss) {
+    if (!create) throw new Error('외국인 수급 기록 시트가 아직 없습니다 — Apps Script 편집기에서 setupForeignSheet를 한 번 실행해 주십시오');
+    ss = SpreadsheetApp.create('외국인 수급 기록');
+    p.setProperty('FOREIGN_SHEET_ID', ss.getId());
+  }
+  let sh = ss.getSheetByName('수급');
+  if (!sh) { sh = ss.getSheets()[0]; sh.setName('수급'); }
+  if (sh.getLastRow() < 1) { sh.getRange(1, 1, 1, FS_HEAD.length).setValues([FS_HEAD]); sh.setFrozenRows(1); sh.getRange('A:B').setNumberFormat('@'); }
+  let tp = ss.getSheetByName('종목'); if (!tp) tp = ss.insertSheet('종목');
+  return {ss, sh, tp};
+}
+function collectForeign() { // 자동 수집(트리거)과 setupForeignSheet가 부름
+  const cache = CacheService.getScriptCache(); // 두 번 겹쳐 돌지 않게(나무 토큰이 스크립트 잠금을 쓰므로 여기서는 잠금 대신 표시만)
+  if (cache.get('fcol')) return; cache.put('fcol', '1', 300);
+  try {
+    const {sh, tp} = foreignBook_(true);
+    const empty = sh.getLastRow() < 2;
+    const list = universe_().filter(r => r[2] === '1' && r[6] > 0 && r[8] && r[8] !== ' ' && r[8] !== '0' && '5689A'.indexOf(r[7] || '-') < 0)
+      .sort((a, b) => b[6] - a[6]).slice(0, 50);
+    if (!list.length) throw new Error('종목 목록에 시가총액이 없습니다');
+    const n = empty ? 30 : 5, got = [], errors = {}; // 처음엔 30거래일, 그다음부턴 최근 5일만(빠진 날·잠정치 보정용)
+    list.forEach((r, i) => {
+      if (i) Utilities.sleep(220);
+      try { flows_(r[0], '1', n).forEach(f => got.push([f[0], r[0], r[1], f[1], f[2], f[3], f[4], f[5], f[6]])); }
+      catch (err) { errors[r[0]] = String(err && err.message || err); }
+    });
+    // 기존 줄을 모두 읽어 (날짜, 코드)가 같으면 새 값으로 바꾸고, 없으면 더한 뒤 날짜·코드 순으로 통째로 다시 씀
+    const last = sh.getLastRow(), map = {};
+    if (last >= 2) sh.getRange(2, 1, last - 1, FS_HEAD.length).getValues().forEach(v => { v[0] = String(v[0]); v[1] = String(v[1]); map[v[0] + '|' + v[1]] = v; });
+    let added = 0; got.forEach(row => { const k = row[0] + '|' + row[1]; if (!map[k]) added++; map[k] = row; });
+    const all = Object.keys(map).sort().map(k => map[k]);
+    if (all.length) sh.getRange(2, 1, all.length, FS_HEAD.length).setValues(all);
+    const at = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    tp.clearContents();
+    tp.getRange(1, 1, 1, 5).setValues([['코드', '이름', '시총(억)', '산업군', '수집 ' + at]]);
+    tp.getRange(2, 1, list.length, 2).setNumberFormat('@');
+    tp.getRange(2, 1, list.length, 4).setValues(list.map(r => [r[0], r[1], r[6], r[9] || '0']));
+    return {added, updated: got.length - added, errors};
+  } finally { cache.remove('fcol'); }
+}
+function foreignSheet_(days) { // 화면용: 시트에서 최근 days거래일을 foreign_와 같은 모양으로
+  const {sh, tp} = foreignBook_(false);
+  const tv = tp.getDataRange().getDisplayValues();
+  if (tv.length < 2) throw new Error('외국인 수급 기록 시트가 비어 있습니다 — 편집기에서 collectForeign을 한 번 실행해 주십시오');
+  const at = String(tv[0][4] || '').replace('수집 ', '');
+  const items = tv.slice(1).filter(r => r[0]).map(r => ({c: r[0], n: r[1], cap: +r[2] || 0, k2: r[3] || '0', f: []})), byC = {};
+  items.forEach(it => { byC[it.c] = it; });
+  const last = sh.getLastRow(), rows = last >= 2 ? sh.getRange(2, 1, last - 1, FS_HEAD.length).getValues() : [];
+  const ds = String, dates = [...new Set(rows.map(r => ds(r[0])))].sort().slice(-days), keep = new Set(dates);
+  rows.forEach(r => { const it = byC[ds(r[1])]; if (it && keep.has(ds(r[0]))) it.f.push([ds(r[0]), +r[3] || 0, +r[4] || 0, +r[5] || 0, +r[6] || 0, +r[7] || 0, +r[8] || 0]); });
+  items.forEach(it => it.f.sort((a, b) => a[0] < b[0] ? -1 : 1));
+  return {ok: true, at, items, errors: {}, sheet: true, days: dates.length};
+}
+function setupForeignSheet() { // 편집기에서 한 번 실행
+  const {ss} = foreignBook_(true);
+  ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'collectForeign') ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('collectForeign').timeBased().everyDays(1).atHour(18).inTimezone('Asia/Seoul').create();
+  const r = collectForeign();
+  Logger.log('시트: ' + ss.getUrl());
+  Logger.log('매일 18시 자동 수집 예약됨 · 이번에 새 줄 ' + (r ? r.added : '?') + '개, 고친 줄 ' + (r ? r.updated : '?') + '개 · 실패 ' + JSON.stringify(r ? r.errors : {}));
 }
 
 /* ===== DART(금감원 전자공시 오픈API) 재무 =====

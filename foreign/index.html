@@ -103,6 +103,7 @@ th[aria-sort]{color:var(--ink)}
 
   <section class="row">
     <button class="primary" id="go">새로 받기</button>
+    <button id="live" title="장중에 나무증권에서 오늘 값을 직접 받음(30초쯤 걸림)">장중 지금 값</button>
     <span class="seg" id="auto" aria-label="자동 갱신">
       <button data-v="0">자동 끔</button><button data-v="1">1분</button><button data-v="3">3분</button><button data-v="5">5분</button>
     </span>
@@ -112,7 +113,7 @@ th[aria-sort]{color:var(--ink)}
     <button id="cfg" title="연결 설정">⚙ 연결</button>
   </section>
   <div class="prog" id="prog" hidden><i></i></div>
-  <p class="meta" id="status">아직 받은 자료가 없습니다. "새로 받기"를 눌러 주십시오.</p>
+  <p class="meta" id="status">아직 받은 자료가 없습니다. "새로 받기"를 누르면 구글 시트에 쌓인 기록을 불러옵니다.</p>
 
   <section class="card" id="conn" hidden>
     <h2>연결 설정</h2>
@@ -204,49 +205,78 @@ const kst = () => new Date(Date.now() + 9 * 3600e3); // UTC 기준 날짜 함수
 const todayStr = () => kst().toISOString().slice(0, 10).replace(/-/g, '');
 function marketOpen() { const t = kst(), d = t.getUTCDay(), m = t.getUTCHours() * 60 + t.getUTCMinutes(); return d > 0 && d < 6 && m >= 540 && m <= 940; } // 평일 9:00~15:40
 
-async function load() {
-  if (busy) return; busy = true; $('go').disabled = true;
+// 나무에서 직접: 시총 상위 50을 고르고 10종목씩 n일치 받음(한 번에 50종목이면 Apps Script가 끊길 수 있음)
+async function fetchLive(n) {
+  let top = lsGet('foreign-top', null);
+  if (!top || top.day !== todayStr() || !Array.isArray(top.list) || top.list.length < 10) {
+    $('status').textContent = '코스피 시가총액 순위를 받는 중입니다…';
+    const u = await api('universe=1');
+    const list = (u.list || []).filter(r => r[2] === '1' && r[6] > 0 && r[8] && r[8] !== ' ' && r[8] !== '0' && '5689A'.indexOf(r[7] || '-') < 0)
+      .sort((a, b) => b[6] - a[6]).slice(0, 50).map(r => ({c: r[0], n: r[1], cap: r[6], k2: r[9] || '0'}));
+    if (!list.length) throw new Error('종목 목록에 시가총액이 없습니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오');
+    top = {day: todayStr(), list}; lsSet('foreign-top', top);
+  }
+  const items = [], errors = {};
+  for (let i = 0; i < top.list.length; i += 10) {
+    const part = top.list.slice(i, i + 10);
+    $('status').textContent = '나무증권에서 받는 중입니다… ' + i + '/' + top.list.length + '종목';
+    const j = await api('flows=' + part.map(x => x.c + ':1').join(',') + '&n=' + n);
+    Object.assign(errors, j.errors || {});
+    part.forEach(x => items.push(Object.assign({}, x, {f: (j.data && j.data[x.c]) || []})));
+  }
+  const t = kst().toISOString();
+  return {at: t.slice(0, 10) + ' ' + t.slice(11, 19), items, errors};
+}
+// 장중 값을 시트 기록 위에 덮어 붙임(같은 날짜는 새 값)
+function mergeLive(base, live) {
+  if (!base || !base.items) return live;
+  const old = {}; base.items.forEach(it => { old[it.c] = it; });
+  const items = live.items.map(it => {
+    const m = {}; ((old[it.c] && old[it.c].f) || []).forEach(r => { m[r[0]] = r; }); it.f.forEach(r => { m[r[0]] = r; });
+    return Object.assign({}, it, {f: Object.keys(m).sort().map(d => m[d])});
+  });
+  return {at: live.at + ' (장중)', items, errors: live.errors, sheetAt: base.sheetAt || base.at};
+}
+async function load(mode) {
+  if (busy) return; busy = true; $('go').disabled = $('live').disabled = true;
   const pg = $('prog'), bar = pg.firstElementChild; pg.hidden = false; bar.style.transition = 'none'; bar.style.width = '0';
-  requestAnimationFrame(() => { bar.style.transition = 'width 30s linear'; bar.style.width = '92%'; });
-  $('status').textContent = '50종목 ' + MAXD + '거래일 수급을 받는 중입니다(20~40초 걸립니다)…';
+  requestAnimationFrame(() => { bar.style.transition = 'width ' + (mode === 'live' ? 30 : 5) + 's linear'; bar.style.width = '92%'; });
+  let note = '';
   try {
-    // 한 번에 50종목을 받으면 Apps Script가 오래 걸려 끊길 수 있어(Failed to fetch), 종목 목록을 받고 10종목씩 나눠 받음
-    let top = lsGet('foreign-top', null);
-    if (!top || top.day !== todayStr() || !Array.isArray(top.list) || top.list.length < 10) {
-      $('status').textContent = '코스피 시가총액 순위를 받는 중입니다…';
-      const u = await api('universe=1');
-      const list = (u.list || []).filter(r => r[2] === '1' && r[6] > 0 && r[8] && r[8] !== ' ' && r[8] !== '0' && '5689A'.indexOf(r[7] || '-') < 0)
-        .sort((a, b) => b[6] - a[6]).slice(0, 50).map(r => ({c: r[0], n: r[1], cap: r[6], k2: r[9] || '0'}));
-      if (!list.length) throw new Error('종목 목록에 시가총액이 없습니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포해 주십시오');
-      top = {day: todayStr(), list}; lsSet('foreign-top', top);
+    if (mode !== 'live') {
+      $('status').textContent = '구글 시트 기록을 불러오는 중입니다…';
+      let j = null;
+      try { j = await api('fsheet=1&days=' + MAXD); }
+      catch (e) { if (!/기록 시트/.test(e.message)) throw e; note = e.message; }
+      if (j && Array.isArray(j.items)) {
+        D = {at: j.at, items: j.items, errors: {}, sheetAt: j.at}; lsSet('foreign-last', D); render();
+        return;
+      }
+      if (!note) note = 'Apps Script가 기록 시트를 모릅니다 — 백테스트 Apps Script를 새 코드로 붙여넣고 "배포 관리 → 새 버전"으로 배포한 뒤 setupForeignSheet를 한 번 실행해 주십시오';
     }
-    const items = [], errors = {};
-    for (let i = 0; i < top.list.length; i += 10) {
-      const part = top.list.slice(i, i + 10);
-      $('status').textContent = '외국인 수급을 받는 중입니다… ' + i + '/' + top.list.length + '종목';
-      const j = await api('flows=' + part.map(x => x.c + ':1').join(',') + '&n=' + MAXD);
-      Object.assign(errors, j.errors || {});
-      part.forEach(x => items.push(Object.assign({}, x, {f: (j.data && j.data[x.c]) || []})));
-    }
-    const t = kst().toISOString();
-    D = {at: t.slice(0, 10) + ' ' + t.slice(11, 19), items, errors}; lsSet('foreign-last', D);
+    // 시트가 없거나 "장중 지금 값": 나무에서 직접(시트 기록이 있으면 최근 3일만 받아 덮어 붙임)
+    const hasBase = mode === 'live' && D && D.sheetAt;
+    const live = await fetchLive(hasBase ? 3 : MAXD);
+    D = hasBase ? mergeLive(D, live) : live; lsSet('foreign-last', D);
     render();
+    if (note) $('status').innerHTML += '<br><span class="dn">' + esc(note) + ' (이번에는 나무증권에서 직접 받았습니다)</span>';
   } catch (e) {
     let msg = '받기 실패: ' + e.message;
     if (/Failed to fetch|NetworkError|Load failed|network/i.test(e.message)) {
-      try { await api('ping=1'); msg += ' — Apps Script 연결은 정상입니다. 잠시 뒤 "새로 받기"를 다시 눌러 주십시오(나무 응답이 늦었을 수 있습니다).'; }
+      try { await api('ping=1'); msg += ' — Apps Script 연결은 정상입니다. 잠시 뒤 다시 눌러 주십시오(나무 응답이 늦었을 수 있습니다).'; }
       catch (e2) { msg += ' — Apps Script에 연결되지 않습니다. 백테스트 Apps Script의 "배포 관리"에서 웹 앱 주소가 /exec로 끝나는지, 액세스가 "모든 사용자"인지 확인하고, ⚙ 연결 설정의 주소가 같은지 봐 주십시오.'; }
     }
     $('status').textContent = msg;
   } finally {
-    busy = false; $('go').disabled = false; bar.style.transition = 'width .2s'; bar.style.width = '100%'; setTimeout(() => { pg.hidden = true; }, 300);
+    busy = false; $('go').disabled = $('live').disabled = false; bar.style.transition = 'width .2s'; bar.style.width = '100%'; setTimeout(() => { pg.hidden = true; }, 300);
   }
 }
-$('go').onclick = load;
+$('go').onclick = () => load();
+$('live').onclick = () => load('live');
 function schedule() {
   clearInterval(timer); timer = null;
   if (!ui.auto) return;
-  timer = setInterval(() => { if (!document.hidden && marketOpen()) load(); }, Math.max(1, ui.auto) * 60e3);
+  timer = setInterval(() => { if (!document.hidden && marketOpen()) load('live'); }, Math.max(1, ui.auto) * 60e3);
 }
 
 /* ===== 계산 ===== */
@@ -332,7 +362,7 @@ function render() {
   if (!B) { out.innerHTML = ''; return; }
   const {all, days, last, rows, W, mkt} = B, isToday = last === todayStr();
   const errN = rows.filter(r => r.err).length;
-  $('status').innerHTML = '받은 시각 ' + esc(D.at) + ' · ' + all.length + '거래일치 · 최근일 ' + md(last) + (isToday ? (marketOpen() ? ' (오늘, 장중 값)' : ' (오늘)') : ' (오늘 자료 아님 — 직전 거래일)') +
+  $('status').innerHTML = (D.sheetAt && D.sheetAt === D.at ? '구글 시트 기록 · 마지막 수집 ' : '받은 시각 ') + esc(D.at) + ' · ' + all.length + '거래일치 · 최근일 ' + md(last) + (isToday ? (marketOpen() ? ' (오늘, 장중 값)' : ' (오늘)') : ' (오늘 자료 아님 — 직전 거래일)') +
     (errN ? ' · <span class="dn">' + errN + '종목 받기 실패</span>' : '');
   const per = W === 1 ? md(last) + ' 하루' : md(days[0]) + '~' + md(last) + ' ' + days.length + '거래일';
   const ok = rows.filter(r => r.sumW != null);

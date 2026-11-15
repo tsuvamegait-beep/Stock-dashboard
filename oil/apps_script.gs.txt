@@ -1,10 +1,12 @@
 /**
  * Oil monitor — dedicated Google Apps Script project.
- * Script properties (Project settings): OIL_SHEET_ID, EIA_API_KEY.
+ * Script properties (Project settings): EIA_API_KEY.
+ * OIL_SHEET_ID is optional when using the new sheet created for this project.
  * Run setupOilMonitor() once as the spreadsheet owner, then deploy as a web app
  * (execute as me, access anyone). The public endpoint exposes only oil tabs.
  */
 const OIL_TZ = 'Asia/Seoul';
+const OIL_DEFAULT_SHEET_ID = '14mtcTipZQ4UPazQCS29rHLBjS3Fad5OsAsxJe3a8aI0';
 const OIL_NAMES = {daily:'Oil_Daily',prices:'Oil_Prices',inventory:'Oil_Inventory',russia:'Oil_Russia',valero:'Oil_Valero',log:'Oil_Log'};
 const OIL_HEADERS = {
   daily:['snapshot_date','fetched_at_kst','crack_date','ulds_usd_gal','wti_usd_bbl','brent_usd_bbl','wti_crack_usd_bbl','brent_crack_usd_bbl','inventory_date','inventory_million_bbl','inventory_5y_avg_million_bbl','russia_date','russia_kbd','russia_published','russia_source','valero_quarter_end','valero_margin_usd_bbl','valero_published','valero_source'],
@@ -22,8 +24,7 @@ const OIL_SERIES = {
 };
 
 function oilBook_() {
-  const id = PropertiesService.getScriptProperties().getProperty('OIL_SHEET_ID');
-  if (!id) throw new Error('스크립트 속성 OIL_SHEET_ID가 없습니다.');
+  const id = PropertiesService.getScriptProperties().getProperty('OIL_SHEET_ID') || OIL_DEFAULT_SHEET_ID;
   return SpreadsheetApp.openById(id);
 }
 function oilTab_(name) {

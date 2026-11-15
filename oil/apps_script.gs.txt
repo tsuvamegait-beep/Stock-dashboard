@@ -82,7 +82,7 @@ function oilFiveYear_(date, lookup) {
     const d=Utilities.formatDate(target,'UTC','yyyy-MM-dd');
     if(lookup.has(d)) vals.push(lookup.get(d));
   }
-  return vals.length>=4 ? oilRound(vals.reduce((a,b)=>a+b,0)/vals.length) : '';
+  return vals.length>=4 ? oilRound_(vals.reduce((a,b)=>a+b,0)/vals.length) : '';
 }
 function oilLog_(result, detail) {
   const tab=oilTab_('log'); tab.appendRow([oilNow_(),result,String(detail||'').slice(0,500)]);
@@ -92,7 +92,9 @@ function setupOilMonitor() {
   Object.keys(OIL_NAMES).forEach(oilTab_);
   ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='refreshOilData').forEach(t=>ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('refreshOilData').timeBased().everyDays(1).atHour(19).inTimezone(OIL_TZ).create();
-  refreshOilData();
+  // 초기 과거자료 수집은 별도 실행으로 넘겨 setup 함수가 제한시간에 걸리지 않게 한다.
+  ScriptApp.newTrigger('refreshOilData').timeBased().after(60 * 1000).create();
+  return '설정 완료: 약 1분 뒤 첫 수집이 시작되고, 이후 매일 19시에 갱신됩니다.';
 }
 
 function refreshOilData() {

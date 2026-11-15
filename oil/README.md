@@ -10,7 +10,7 @@
 2. [EIA Open Data](https://www.eia.gov/opendata/register.php)에서 무료 API 키를 발급받습니다.
 3. 새 [Google Apps Script](https://script.google.com/) 프로젝트를 만들고 [`apps_script.gs.txt`](./apps_script.gs.txt) 전체를 붙여넣습니다.
 4. Apps Script **프로젝트 설정 → 스크립트 속성**에 `EIA_API_KEY`를 추가합니다. 키를 GitHub 파일에 쓰지 않습니다. 다른 시트를 사용하려면 `OIL_SHEET_ID` 속성으로 변경할 수 있습니다.
-5. Apps Script 편집기에서 `setupOilMonitor`를 한 번 실행하고 권한을 허용합니다. 시트 탭 생성, 첫 EIA 수집, **서울시간 매일 19시** 갱신 트리거를 만듭니다. 시간 기반 트리거는 해당 시각의 한 시간 범위에서 실행될 수 있습니다.
+5. Apps Script 편집기에서 `setupOilMonitor`를 한 번 실행하고 권한을 허용합니다. 함수는 시트와 트리거만 만든 뒤 빠르게 끝납니다. 첫 EIA 수집은 약 1분 뒤 별도로 시작되며, 이후 **서울시간 매일 19시**에 갱신됩니다. Google 시간 기반 트리거는 지정 시각보다 다소 늦게 실행될 수 있습니다.
 6. **배포 → 새 배포 → 웹 앱**, 실행 계정 **나**, 액세스 권한 **모든 사용자**를 선택합니다. `/exec`로 끝나는 URL을 복사합니다.
 7. `oil/` 페이지의 **Google Sheets 연결**에 URL을 붙여넣습니다. 한 번 저장하면 해당 기기 브라우저에 남습니다. 모든 기기에서 자동 연결하려면 `index.html`의 `API_URL`에 공개 `/exec` URL을 넣어 GitHub에 올립니다. 이 URL은 읽기 전용 응답이며 EIA 키를 포함하지 않습니다.
 

@@ -1,0 +1,129 @@
+/**
+ * Oil monitor — dedicated Google Apps Script project.
+ * Script properties (Project settings): OIL_SHEET_ID, EIA_API_KEY.
+ * Run setupOilMonitor() once as the spreadsheet owner, then deploy as a web app
+ * (execute as me, access anyone). The public endpoint exposes only oil tabs.
+ */
+const OIL_TZ = 'Asia/Seoul';
+const OIL_NAMES = {daily:'Oil_Daily',prices:'Oil_Prices',inventory:'Oil_Inventory',russia:'Oil_Russia',valero:'Oil_Valero',log:'Oil_Log'};
+const OIL_HEADERS = {
+  daily:['snapshot_date','fetched_at_kst','crack_date','ulds_usd_gal','wti_usd_bbl','brent_usd_bbl','wti_crack_usd_bbl','brent_crack_usd_bbl','inventory_date','inventory_million_bbl','inventory_5y_avg_million_bbl','russia_date','russia_kbd','russia_published','russia_source','valero_quarter_end','valero_margin_usd_bbl','valero_published','valero_source'],
+  prices:['date','ulds_usd_gal','wti_usd_bbl','brent_usd_bbl','wti_crack_usd_bbl','brent_crack_usd_bbl'],
+  inventory:['date','million_bbl','five_year_avg_million_bbl'],
+  russia:['observation_date','exports_kbd','source_url','published_date','note'],
+  valero:['quarter_end','gulf_coast_margin_usd_bbl','source_url','published_date','note'],
+  log:['time_kst','result','detail']
+};
+const OIL_SERIES = {
+  u:'PET.EER_EPD2DXL0_PF4_RGC_DPG.D', // U.S. Gulf Coast ULSD spot, $/gal
+  w:'PET.RWTC.D',                    // WTI Cushing spot, $/bbl
+  b:'PET.RBRTE.D',                   // Brent spot, $/bbl
+  i:'PET.WDISTUS1.W'                 // U.S. distillate stocks, thousand bbl
+};
+
+function oilBook_() {
+  const id = PropertiesService.getScriptProperties().getProperty('OIL_SHEET_ID');
+  if (!id) throw new Error('스크립트 속성 OIL_SHEET_ID가 없습니다.');
+  return SpreadsheetApp.openById(id);
+}
+function oilTab_(name) {
+  const book = oilBook_(), tab = book.getSheetByName(OIL_NAMES[name]) || book.insertSheet(OIL_NAMES[name]);
+  if (tab.getLastRow() === 0) tab.getRange(1,1,1,OIL_HEADERS[name].length).setValues([OIL_HEADERS[name]]);
+  return tab;
+}
+function oilDate_(date) { return Utilities.formatDate(date, OIL_TZ, 'yyyy-MM-dd'); }
+function oilNow_() { return Utilities.formatDate(new Date(), OIL_TZ, 'yyyy-MM-dd HH:mm:ss'); }
+function oilStart_(years) { const d = new Date(); d.setUTCFullYear(d.getUTCFullYear()-years); return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd'); }
+function oilNum_(v) { const n=Number(v); return v==='' || v==null || !Number.isFinite(n) ? null : n; }
+
+function oilFetch_(series, start) {
+  const key = PropertiesService.getScriptProperties().getProperty('EIA_API_KEY');
+  if (!key) throw new Error('스크립트 속성 EIA_API_KEY가 없습니다.');
+  const url = 'https://api.eia.gov/v2/seriesid/' + encodeURIComponent(series)
+    + '?api_key=' + encodeURIComponent(key) + '&start=' + encodeURIComponent(start)
+    + '&sort%5B0%5D%5Bcolumn%5D=period&sort%5B0%5D%5Bdirection%5D=desc&length=5000';
+  const response = UrlFetchApp.fetch(url,{muteHttpExceptions:true});
+  let parsed;
+  try { parsed = JSON.parse(response.getContentText()); } catch (_) { throw new Error('EIA 응답을 해석하지 못했습니다: ' + series); }
+  if (response.getResponseCode() !== 200 || !parsed.response || !Array.isArray(parsed.response.data)) {
+    throw new Error('EIA ' + series + ': ' + (parsed.error && (parsed.error.message || parsed.error) || response.getResponseCode()));
+  }
+  const rows = new Map();
+  parsed.response.data.forEach(x => { const d=String(x.period||'').slice(0,10), v=oilNum_(x.value); if(/^\d{4}-\d{2}-\d{2}$/.test(d) && v!==null) rows.set(d,v); });
+  if (!rows.size) throw new Error('EIA 값이 비었습니다: ' + series);
+  return rows;
+}
+function oilRound_(n) { return n==null ? '' : Math.round(n*1000)/1000; }
+function oilReplace_(name, rows) {
+  const tab=oilTab_(name), headers=OIL_HEADERS[name];
+  tab.clearContents();
+  tab.getRange(1,1,1,headers.length).setValues([headers]);
+  if (rows.length) tab.getRange(2,1,rows.length,headers.length).setValues(rows);
+  tab.setFrozenRows(1);
+}
+function oilRows_(name) {
+  const tab=oilTab_(name), n=tab.getLastRow();
+  if(n<2) return [];
+  return tab.getRange(2,1,n-1,OIL_HEADERS[name].length).getValues().map(row=>row.map((v,ix)=>
+    v instanceof Date ? Utilities.formatDate(v,OIL_TZ,OIL_HEADERS[name][ix].includes('at_kst')||OIL_HEADERS[name][ix]==='time_kst'?'yyyy-MM-dd HH:mm:ss':'yyyy-MM-dd') : v));
+}
+function oilManual_(name) {
+  const today=oilDate_(new Date());
+  const rows=oilRows_(name).filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r[0]) && r[0]<=today && (!r[3] || r[3]<=today) && oilNum_(r[1])!==null);
+  rows.sort((a,b)=>b[0].localeCompare(a[0]));
+  return rows[0] || null;
+}
+function oilFiveYear_(date, lookup) {
+  const vals=[];
+  for(let year=1;year<=5;year++) {
+    // Weekly EIA observations are normally seven days apart. 364 days keeps the weekday aligned.
+    const target=new Date(date+'T00:00:00Z'); target.setUTCDate(target.getUTCDate()-364*year);
+    const d=Utilities.formatDate(target,'UTC','yyyy-MM-dd');
+    if(lookup.has(d)) vals.push(lookup.get(d));
+  }
+  return vals.length>=4 ? oilRound(vals.reduce((a,b)=>a+b,0)/vals.length) : '';
+}
+function oilLog_(result, detail) {
+  const tab=oilTab_('log'); tab.appendRow([oilNow_(),result,String(detail||'').slice(0,500)]);
+}
+
+function setupOilMonitor() {
+  Object.keys(OIL_NAMES).forEach(oilTab_);
+  ScriptApp.getProjectTriggers().filter(t=>t.getHandlerFunction()==='refreshOilData').forEach(t=>ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('refreshOilData').timeBased().everyDays(1).atHour(19).inTimezone(OIL_TZ).create();
+  refreshOilData();
+}
+
+function refreshOilData() {
+  const lock=LockService.getScriptLock();
+  if(!lock.tryLock(30000)) throw new Error('다른 수집 작업이 진행 중입니다.');
+  try {
+    const [u,w,i]=[oilFetch_(OIL_SERIES.u,oilStart_(2)),oilFetch_(OIL_SERIES.w,oilStart_(2)),oilFetch_(OIL_SERIES.i,oilStart_(7))];
+    let b=new Map(), brentError='';
+    try { b=oilFetch_(OIL_SERIES.b,oilStart_(2)); } catch(e) { brentError=String(e.message||e); }
+    const prices=[...u].filter(([d])=>w.has(d)).map(([d,uv])=>[d,oilRound_(uv),oilRound_(w.get(d)),b.has(d)?oilRound_(b.get(d)):'',oilRound_(uv*42-w.get(d)),b.has(d)?oilRound_(uv*42-b.get(d)):'']).sort((a,c)=>a[0].localeCompare(c[0]));
+    if(!prices.length) throw new Error('ULSD와 WTI의 공통 관측일이 없습니다.');
+    const invMap=new Map([...i].map(([d,v])=>[d,v/1000]));
+    const inventory=[...invMap].map(([d,v])=>[d,oilRound_(v),oilFiveYear_(d,invMap)]).sort((a,c)=>a[0].localeCompare(c[0]));
+    oilReplace_('prices',prices); oilReplace_('inventory',inventory);
+    const p=prices[prices.length-1], s=inventory[inventory.length-1], ru=oilManual_('russia'), vlo=oilManual_('valero');
+    const row=[oilDate_(new Date()),oilNow_(),...p,...s.slice(0,3),ru?ru[0]:'',ru?oilNum_(ru[1]):'',ru?ru[3]:'',ru?ru[2]:'',vlo?vlo[0]:'',vlo?oilNum_(vlo[1]):'',vlo?vlo[3]:'',vlo?vlo[2]:''];
+    const tab=oilTab_('daily'), all=oilRows_('daily'), ix=all.findIndex(r=>r[0]===row[0]);
+    if(ix>=0) tab.getRange(ix+2,1,1,row.length).setValues([row]); else tab.appendRow(row);
+    oilLog_('OK',`prices ${prices.length}, inventory ${inventory.length}, latest ${p[0]}/${s[0]}${brentError?'; Brent: '+brentError:''}`);
+    return {ok:true,priceDate:p[0],inventoryDate:s[0],brentWarning:brentError};
+  } catch(e) { oilLog_('ERROR',e.message||e); throw e; }
+  finally { lock.releaseLock(); }
+}
+
+function doGet() {
+  try {
+    const daily=oilRows_('daily'), prices=oilRows_('prices'), inventory=oilRows_('inventory');
+    const latest=daily.length?daily[daily.length-1]:null;
+    const manual={russia:oilManual_('russia'),valero:oilManual_('valero')};
+    const data={ok:true,asOf:oilNow_(),headers:OIL_HEADERS.daily,latest,history:daily.slice(-400),prices:prices.slice(-730),inventory:inventory.slice(-370),manual};
+    return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+  } catch(e) {
+    return ContentService.createTextOutput(JSON.stringify({ok:false,error:String(e.message||e)})).setMimeType(ContentService.MimeType.JSON);
+  }
+}
